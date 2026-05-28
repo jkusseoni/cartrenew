@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useUser } from '@clerk/nextjs'
-import { supabaseClient } from '@/lib/supabase'
+import { getSupabaseClient } from '@/lib/supabase-browser'
 
 interface DailyAnalytics {
   date: string
@@ -28,7 +28,8 @@ export default function AnalyticsPage() {
     try {
       setLoading(true)
 
-      const { data: store } = await supabaseClient
+      const client = getSupabaseClient()
+      const { data: store } = await client
         .from('stores')
         .select('id')
         .eq('clerk_user_id', user!.id)
@@ -42,7 +43,7 @@ export default function AnalyticsPage() {
       const startDate = new Date()
       startDate.setDate(startDate.getDate() - dateRange)
 
-      const { data } = await supabaseClient
+      const { data } = await client
         .from('analytics_daily')
         .select('*')
         .eq('store_id', store.id)

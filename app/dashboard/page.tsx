@@ -2,12 +2,9 @@
 
 import { useState, useEffect } from 'react'
 import { UserButton, useUser } from '@clerk/nextjs'
-import { createClient } from '@supabase/supabase-js'
+import { getSupabaseClient } from '@/lib/supabase-browser'
 import { DashboardSkeleton } from '@/components/dashboard/DashboardSkeleton'
 import { StatsCards } from '@/components/dashboard/StatsCards'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 
 export default function DashboardPage() {
   const { user, isLoaded } = useUser()
@@ -23,9 +20,15 @@ export default function DashboardPage() {
   const [hasStore, setHasStore] = useState(false)
 
   useEffect(() => {
-    if (!isLoaded || !user || !supabaseUrl || !supabaseKey) return
+    if (!isLoaded || !user) return
 
-    const supabase = createClient(supabaseUrl, supabaseKey)
+    let supabase: ReturnType<typeof getSupabaseClient>
+    try {
+      supabase = getSupabaseClient()
+    } catch (error) {
+      console.error('Supabase client init error:', error)
+      return
+    }
 
     async function load() {
       try {

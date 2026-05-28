@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useUser } from '@clerk/nextjs'
-import { supabaseClient } from '@/lib/supabase'
+import { getSupabaseClient } from '@/lib/supabase-browser'
 
 interface StoreSettings {
   id: string
@@ -31,7 +31,8 @@ export default function SettingsPage() {
 
   const fetchStore = async () => {
     try {
-      const { data } = await supabaseClient
+      const client = getSupabaseClient()
+      const { data } = await client
         .from('stores')
         .select('*')
         .eq('clerk_user_id', user!.id)
@@ -64,13 +65,14 @@ export default function SettingsPage() {
         whatsapp_business_account_id: whatsappBusinessId || null,
       }
 
+      const client = getSupabaseClient()
       if (store) {
-        await supabaseClient
+        await client
           .from('stores')
           .update(payload)
           .eq('id', store.id)
       } else {
-        await supabaseClient.from('stores').insert(payload)
+        await client.from('stores').insert(payload)
       }
 
       setMessage('Settings saved successfully!')
