@@ -29,7 +29,7 @@ export default function DashboardPage() {
         const { data: store } = await supabase
           .from('stores')
           .select('id')
-          .eq('clerk_user_id', user.id)
+          .eq('clerk_user_id', user!.id)   // user! add karo
           .single()
 
         if (!store) {
