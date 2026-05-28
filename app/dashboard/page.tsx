@@ -2,138 +2,115 @@
 
 import { useState, useEffect } from 'react'
 import { UserButton, useUser } from '@clerk/nextjs'
-import { supabaseClient } from '@/lib/supabase'
-import { StatsCards } from '@/components/dashboard/StatsCards'
-import { RecentCartsTable } from '@/components/dashboard/RecentCartsTable'
-import { DashboardSkeleton } from '@/components/dashboard/DashboardSkeleton'
+import { createClient } from '@supabase/supabase-js'
 
-interface DashboardStats {
-  totalCarts: number
-  recovered: number
-  revenue: number
-  recoveryRate: number
-  messagesSent: number
-  messagesDelivered: number
-  messagesRead: number
-  pendingCarts: number
-}
-
-interface CartItem {
-  id: string
-  customer_name: string | null
-  customer_phone: string | null
-  customer_email: string | null
-  cart_value: number
-  status: string
-  items: any[]
-  checkout_url: string | null
-  created_at: string
-  message_sent_at: string | null
-  message_read_at: string | null
-}
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+)
 
 export default function DashboardPage() {
   const { user, isLoaded } = useUser()
-  const [stats, setStats] = useState<DashboardStats>({
+  const [stats, setStats] = useState({
     totalCarts: 0,
     recovered: 0,
     revenue: 0,
-    recoveryRate: 0,
+    pending: 0,
     messagesSent: 0,
-    messagesDelivered: 0,
     messagesRead: 0,
-    pendingCarts: 0,
+    deliveryRate: 0,
+    recoveryRate: 0,
   })
-  const [carts, setCarts] = useState<CartItem[]>([])
+  const [carts, setCarts] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (isLoaded && user) {
-      fetchDashboardData()
+    if (!isLoaded || !user) return
+
+    async function fetchData() {
+      try {
+        // Get store
+        const { data: store } = await supabase
+          .from('stores')
+          .select('id')
+          .eq('clerk_user_id', user.id)
+          .single()
+
+        if (!store) {
+          setLoading(false)
+          return
+        }
+
+        // Fetch carts
+        const { data: cartsData } = await supabase
+          .from('abandoned_carts')
+          .select('*')
+          .eq('store_id', store.id)
+          .order('created_at', { ascending: false })
+
+        const allCarts = cartsData || []
+        const recovered = allCarts.filter((c: any) => c.status === 'recovered').length
+        const pending = allCarts.filter((c: any) => c.status === 'pending').length
+        const revenue = allCarts
+          .filter((c: any) => c.status === 'recovered')
+          .reduce((sum: number, c: any) => sum + (c.cart_value || 0), 0)
+
+        // Fetch analytics
+        const startOfMonth = new Date()
+        startOfMonth.setDate(1)
+        const { data: analyticsData } = await supabase
+          .from('analytics_daily')
+          .select('*')
+          .eq('store_id', store.id)
+          .gte('date', startOfMonth.toISOString().split('T')[0])
+
+        const monthly = analyticsData || []
+        const sent = monthly.reduce((s: number, a: any) => s + (a.messages_sent || 0), 0)
+        const delivered = monthly.reduce((s: number, a: any) => s + (a.messages_delivered || 0), 0)
+        const read = monthly.reduce((s: number, a: any) => s + (a.messages_read || 0), 0)
+
+        setStats({
+          totalCarts: allCarts.length,
+          recovered,
+          revenue,
+          pending,
+          messagesSent: sent,
+          messagesRead: read,
+          deliveryRate: sent > 0 ? Math.round((delivered / sent) * 100) : 0,
+          recoveryRate: allCarts.length > 0 ? Math.round((recovered / allCarts.length) * 100) : 0,
+        })
+
+        setCarts(allCarts.slice(0, 10))
+      } catch (e) {
+        console.error('Dashboard fetch error:', e)
+      } finally {
+        setLoading(false)
+      }
     }
+
+    fetchData()
   }, [isLoaded, user])
 
-  const fetchDashboardData = async () => {
-    try {
-      setLoading(true)
+  const statCards = [
+    { label: 'Total Carts', value: stats.totalCarts, color: 'text-blue-600', bg: 'bg-blue-50' },
+    { label: 'Recovered', value: stats.recovered, color: 'text-green-600', bg: 'bg-green-50' },
+    { label: 'Revenue', value: `₹${stats.revenue.toLocaleString('en-IN')}`, color: 'text-purple-600', bg: 'bg-purple-50' },
+    { label: 'Pending', value: stats.pending, color: 'text-yellow-600', bg: 'bg-yellow-50' },
+    { label: 'Messages Sent', value: stats.messagesSent, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+    { label: 'Messages Read', value: stats.messagesRead, color: 'text-teal-600', bg: 'bg-teal-50' },
+    { label: 'Delivery Rate', value: `${stats.deliveryRate}%`, color: 'text-cyan-600', bg: 'bg-cyan-50' },
+    { label: 'Recovery Rate', value: `${stats.recoveryRate}%`, color: 'text-orange-600', bg: 'bg-orange-50' },
+  ]
 
-      // Get store
-      const { data: store } = await supabaseClient
-        .from('stores')
-        .select('id')
-        .eq('clerk_user_id', user!.id)
-        .single()
-
-      if (!store) {
-        setLoading(false)
-        return
-      }
-
-      // Fetch stats from abandoned_carts
-      const { data: cartsData } = await supabaseClient
-        .from('abandoned_carts')
-        .select('*')
-        .eq('store_id', store.id)
-        .order('created_at', { ascending: false })
-        .limit(50)
-
-      // Get analytics for this month
-      const startOfMonth = new Date()
-      startOfMonth.setDate(1)
-      startOfMonth.setHours(0, 0, 0, 0)
-
-      const { data: analyticsData } = await supabaseClient
-        .from('analytics_daily')
-        .select('*')
-        .eq('store_id', store.id)
-        .gte('date', startOfMonth.toISOString().split('T')[0])
-
-      // Calculate stats
-      const allCarts = cartsData || []
-      const recovered = allCarts.filter(c => c.status === 'recovered').length
-      const pending = allCarts.filter(c => c.status === 'pending').length
-      const revenue = allCarts
-        .filter(c => c.status === 'recovered')
-        .reduce((sum, c) => sum + (c.cart_value || 0), 0)
-
-      const monthlyAnalytics = analyticsData || []
-      const messagesSent = monthlyAnalytics.reduce((s, a) => s + (a.messages_sent || 0), 0)
-      const messagesDelivered = monthlyAnalytics.reduce((s, a) => s + (a.messages_delivered || 0), 0)
-      const messagesRead = monthlyAnalytics.reduce((s, a) => s + (a.messages_read || 0), 0)
-
-      setStats({
-        totalCarts: allCarts.length,
-        recovered,
-        revenue,
-        recoveryRate: allCarts.length > 0 ? Math.round((recovered / allCarts.length) * 100) : 0,
-        messagesSent,
-        messagesDelivered,
-        messagesRead,
-        pendingCarts: pending,
-      })
-
-      setCarts(allCarts.slice(0, 20).map(c => ({
-        id: c.id,
-        customer_name: c.customer_name,
-        customer_phone: c.customer_phone,
-        customer_email: c.customer_email,
-        cart_value: c.cart_value,
-        status: c.status,
-        items: c.items || [],
-        checkout_url: c.checkout_url,
-        created_at: c.created_at,
-        message_sent_at: c.message_sent_at,
-        message_read_at: c.message_read_at,
-      })))
-
-    } catch (error) {
-      console.error('Error fetching dashboard:', error)
-    } finally {
-      setLoading(false)
-    }
+  const statusColors: Record<string, string> = {
+    pending: 'bg-yellow-100 text-yellow-700',
+    messaged: 'bg-blue-100 text-blue-700',
+    delivered: 'bg-cyan-100 text-cyan-700',
+    read: 'bg-indigo-100 text-indigo-700',
+    recovered: 'bg-green-100 text-green-700',
+    lost: 'bg-gray-100 text-gray-700',
+    opted_out: 'bg-red-100 text-red-700',
   }
-
-  if (loading) return <DashboardSkeleton />
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -141,61 +118,84 @@ export default function DashboardPage() {
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-gray-900">CartRenew</h1>
-              <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                Dashboard
-              </span>
-            </div>
-            <div className="flex items-center gap-4">
-              <span className="text-sm text-gray-500 hidden sm:block">
-                {user?.emailAddresses[0]?.emailAddress}
-              </span>
-              <UserButton />
-            </div>
+            <h1 className="text-2xl font-bold text-gray-900">CartRenew Dashboard</h1>
+            <UserButton />
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Stats Overview */}
-        <div className="mb-8">
-          <StatsCards stats={stats} />
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+        {/* Stats Grid */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {statCards.map((card) => (
+            <div key={card.label} className={`${card.bg} rounded-xl p-4 border border-gray-100`}>
+              <p className="text-sm font-medium text-gray-600">{card.label}</p>
+              <p className={`text-2xl font-bold ${card.color} mt-1`}>{card.value}</p>
+            </div>
+          ))}
         </div>
 
         {/* Quick Actions */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-8">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h2>
           <div className="flex flex-wrap gap-3">
-            <a
-              href="/settings"
-              className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
+            <a href="/settings" className="px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium">
               Connect Shopify & WhatsApp
             </a>
-            <a
-              href="/analytics"
-              className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-              </svg>
+            <a href="/analytics" className="px-4 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm font-medium">
               View Analytics
             </a>
           </div>
         </div>
 
-        {/* Recent Carts */}
+        {/* Carts Table */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200">
           <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
             <h2 className="text-lg font-semibold text-gray-900">Recent Abandoned Carts</h2>
-            <span className="text-sm text-gray-500">{carts.length} carts</span>
+            <span className="text-sm text-gray-500">{carts.length} total</span>
           </div>
-          <RecentCartsTable carts={carts} onRefresh={fetchDashboardData} />
+
+          {carts.length === 0 ? (
+            <div className="p-12 text-center">
+              <p className="text-gray-500 font-medium">No abandoned carts yet</p>
+              <p className="text-gray-400 text-sm mt-1">Connect Shopify to start tracking</p>
+              <a href="/settings" className="inline-block mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm">
+                Go to Settings
+              </a>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 text-gray-600">
+                  <tr>
+                    <th className="px-6 py-3 text-left">Customer</th>
+                    <th className="px-6 py-3 text-left">Value</th>
+                    <th className="px-6 py-3 text-left">Status</th>
+                    <th className="px-6 py-3 text-left">Date</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {carts.map((cart: any) => (
+                    <tr key={cart.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-3">
+                        <p className="font-medium text-gray-900">{cart.customer_name || 'Unknown'}</p>
+                        <p className="text-gray-500 text-xs">{cart.customer_phone || 'No phone'}</p>
+                      </td>
+                      <td className="px-6 py-3 font-semibold">₹{cart.cart_value?.toLocaleString('en-IN')}</td>
+                      <td className="px-6 py-3">
+                        <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${statusColors[cart.status] || statusColors.pending}`}>
+                          {cart.status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-3 text-gray-500">
+                        {new Date(cart.created_at).toLocaleDateString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </main>
     </div>
