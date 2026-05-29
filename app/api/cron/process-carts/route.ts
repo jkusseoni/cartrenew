@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
+import { alertEvent } from '@/lib/monitoring'
 
 const CRON_SECRET = process.env.CRON_SECRET || 'your-cron-secret'
+const MAX_SEND_ATTEMPTS = 5
 
 // ============================================
 // GET /api/cron/process-carts
@@ -36,8 +38,51 @@ export async function GET(req: NextRequest) {
     
     for (const cart of pendingCarts) {
       try {
+        // Claim the cart for processing to avoid duplicate sends from concurrent runners
+        const nowISO = new Date().toISOString()
+        const { data: claimed, error: claimError } = await supabaseAdmin
+          .from('abandoned_carts')
+          .update({
+            status: 'processing',
+            attempts: (cart.attempts ?? 0) + 1,
+            processing_started_at: nowISO,
+          })
+          .eq('id', cart.id)
+          .eq('status', 'pending')
+          .select('id,attempts,status')
+          .single()
+
+        if (claimError || !claimed) {
+          results.push({ cart: cart.id, status: 'skipped', reason: 'claimed_by_other' })
+          continue
+        }
+
+        // Stop retrying after max attempts
+        if ((claimed.attempts ?? 0) > MAX_SEND_ATTEMPTS) {
+          await supabaseAdmin
+            .from('abandoned_carts')
+            .update({ status: 'failed_permanently' })
+            .eq('id', cart.id)
+
+          // alert for operators
+          try {
+            await alertEvent('error', 'cron/process-carts', 'failed_permanently', { cartId: cart.id, storeId: cart.store_id, attempts: claimed.attempts })
+          } catch (e) {
+            console.error('alertEvent error', e)
+          }
+
+          results.push({ cart: cart.id, status: 'failed_permanently' })
+          continue
+        }
+
         // Skip if store doesn't have WhatsApp configured
         if (!cart.store?.whatsapp_phone_id || !cart.store?.whatsapp_access_token) {
+          // release claim and mark skipped
+          await supabaseAdmin
+            .from('abandoned_carts')
+            .update({ status: 'pending' })
+            .eq('id', cart.id)
+
           results.push({ cart: cart.id, status: 'skipped', reason: 'WhatsApp not configured' })
           continue
         }
@@ -79,6 +124,7 @@ export async function GET(req: NextRequest) {
             .update({
               status: 'messaged',
               message_sent_at: new Date().toISOString(),
+              processing_started_at: null,
             })
             .eq('id', cart.id)
           
@@ -111,13 +157,16 @@ export async function GET(req: NextRequest) {
               body: messageBody,
               status: 'failed',
               error_message: waResult.error,
+              attempts: (claimed.attempts ?? 0),
             })
           
-          // Reschedule for 30 minutes later
+          // Reschedule with progressive backoff based on attempts
+          const backoffMinutes = Math.min(30 * (claimed.attempts ?? 1), 24 * 60) // cap at 1 day
           await supabaseAdmin
             .from('abandoned_carts')
             .update({
-              scheduled_message_at: new Date(Date.now() + 30 * 60000).toISOString(),
+              scheduled_message_at: new Date(Date.now() + backoffMinutes * 60000).toISOString(),
+              status: 'pending',
             })
             .eq('id', cart.id)
           
@@ -129,7 +178,7 @@ export async function GET(req: NextRequest) {
       }
       
       // Small delay to respect rate limits
-      await new Promise(resolve => setTimeout(resolve, 200))
+      await new Promise((resolve) => setTimeout(resolve, 200))
     }
     
     return NextResponse.json({

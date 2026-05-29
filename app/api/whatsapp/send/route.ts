@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import { auth } from '@clerk/nextjs/server'
+import { alertEvent } from '@/lib/monitoring'
+
+const MAX_SEND_ATTEMPTS = 5
 
 export async function POST(req: NextRequest) {
   try {
@@ -30,6 +33,40 @@ export async function POST(req: NextRequest) {
 
     if (!cart.customer_phone) {
       return NextResponse.json({ error: 'No phone number' }, { status: 400 })
+    }
+
+    // Claim the cart for sending to avoid double sends
+    const nowISO = new Date().toISOString()
+    const { data: claimed, error: claimError } = await supabaseAdmin
+      .from('abandoned_carts')
+      .update({
+        status: 'processing',
+        attempts: (cart.attempts ?? 0) + 1,
+        processing_started_at: nowISO,
+      })
+      .eq('id', cartId)
+      .eq('status', 'pending')
+      .select('id,attempts,status')
+      .single()
+
+    if (claimError || !claimed) {
+      return NextResponse.json({ error: 'Cart already processing or not pending' }, { status: 409 })
+    }
+
+    if ((claimed.attempts ?? 0) > MAX_SEND_ATTEMPTS) {
+      await supabaseAdmin
+        .from('abandoned_carts')
+        .update({ status: 'failed_permanently' })
+        .eq('id', cartId)
+
+      // alert operators
+      try {
+        await alertEvent('error', 'api/whatsapp/send', 'failed_permanently', { cartId, storeId: cart.store_id, attempts: claimed.attempts })
+      } catch (e) {
+        console.error('alertEvent error', e)
+      }
+
+      return NextResponse.json({ error: 'Max attempts exceeded' }, { status: 410 })
     }
 
     const { data: template } = await supabaseAdmin
@@ -65,6 +102,7 @@ export async function POST(req: NextRequest) {
         .update({
           status: 'messaged',
           message_sent_at: new Date().toISOString(),
+          processing_started_at: null,
         })
         .eq('id', cartId)
 
@@ -94,7 +132,18 @@ export async function POST(req: NextRequest) {
           body: messageBody,
           status: 'failed',
           error_message: result.error,
+          attempts: (claimed.attempts ?? 0),
         })
+
+      // Reschedule with backoff and set to pending to allow retry
+      const backoffMinutes = Math.min(30 * (claimed.attempts ?? 1), 24 * 60)
+      await supabaseAdmin
+        .from('abandoned_carts')
+        .update({
+          scheduled_message_at: new Date(Date.now() + backoffMinutes * 60000).toISOString(),
+          status: 'pending',
+        })
+        .eq('id', cartId)
 
       return NextResponse.json({ error: result.error }, { status: 500 })
     }
