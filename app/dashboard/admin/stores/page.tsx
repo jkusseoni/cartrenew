@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '@/lib/supabase'
 import StoresTableClient from './StoresTableClient'
+import PendingMessagesClient from '../messages/PendingMessagesClient'
 
 export const revalidate = 0
 
@@ -24,10 +25,12 @@ export default async function AdminStoresPage() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
           <StoresTableClient initialStores={stores} />
         </div>
+
+        <PendingMessagesClient />
       </main>
     </div>
   )
