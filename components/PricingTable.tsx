@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useMemo } from 'react'
+import Link from 'next/link'
 
 type Market = 'india' | 'global'
 
@@ -235,12 +236,15 @@ export default function PricingTable(): React.ReactElement {
               </ul>
 
               <div className="mt-6">
-                <button
-                  style={{ background: p.accent }}
-                  className="w-full py-3 rounded-xl text-black font-semibold hover:opacity-95 transition"
-                >
-                  {p.cta}
-                </button>
+                <Link href="/sign-up" className="w-full block">
+                  <button
+                    type="button"
+                    style={{ background: p.accent }}
+                    className="w-full py-3 rounded-xl text-black font-semibold hover:opacity-95 transition"
+                  >
+                    {p.cta}
+                  </button>
+                </Link>
               </div>
             </article>
           ))}
@@ -260,7 +264,9 @@ export default function PricingTable(): React.ReactElement {
                   {d.tag && <div className="text-xs font-bold px-2 py-1 bg-[#FF6B35] text-black rounded">{d.tag}</div>}
                 </div>
                 <div className="text-sm text-slate-300">{d.stores}</div>
-                <button className="mt-3 rounded-lg bg-[#00C896] py-2 text-black font-semibold">Buy Now</button>
+                <Link href="/sign-up" className="mt-3 block rounded-lg bg-[#00C896] py-2 text-center text-black font-semibold hover:opacity-95 transition">
+                  Buy Now
+                </Link>
               </div>
             ))}
           </div>
