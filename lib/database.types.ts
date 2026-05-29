@@ -108,7 +108,7 @@ export interface Database {
           phone: string
           template_name: string
           body: string | null
-          status: 'sent' | 'delivered' | 'read' | 'failed'
+          status: 'sent' | 'delivered' | 'read' | 'failed' | 'queued' | 'pending'
           whatsapp_message_id: string | null
           error_message: string | null
           sent_at: string
@@ -121,7 +121,7 @@ export interface Database {
           phone: string
           template_name: string
           body?: string | null
-          status?: 'sent' | 'delivered' | 'read' | 'failed'
+          status?: 'sent' | 'delivered' | 'read' | 'failed' | 'queued' | 'pending'
           whatsapp_message_id?: string | null
           error_message?: string | null
           sent_at?: string
@@ -134,7 +134,7 @@ export interface Database {
           phone?: string
           template_name?: string
           body?: string | null
-          status?: 'sent' | 'delivered' | 'read' | 'failed'
+          status?: 'sent' | 'delivered' | 'read' | 'failed' | 'queued' | 'pending'
           whatsapp_message_id?: string | null
           error_message?: string | null
           sent_at?: string

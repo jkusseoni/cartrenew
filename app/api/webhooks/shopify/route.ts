@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
+import { queueRecoveryMessageForCart } from '@/lib/services/messaging'
 import crypto from 'crypto'
 
 const SHOPIFY_WEBHOOK_SECRET = process.env.SHOPIFY_APP_API_SECRET || ''
@@ -193,7 +194,7 @@ async function handleCartWebhook(storeId: string, payload: any) {
     const delayMinutes = 60 // Default 1 hour
     const scheduledAt = new Date(Date.now() + delayMinutes * 60000)
     
-    await supabaseAdmin
+    const { data: insertedCart, error: insertError } = await supabaseAdmin
       .from('abandoned_carts')
       .insert({
         store_id: storeId,
@@ -207,7 +208,32 @@ async function handleCartWebhook(storeId: string, payload: any) {
         status: 'pending',
         scheduled_message_at: scheduledAt.toISOString(),
       })
-    
+      .select('id')
+      .single()
+
+    if (insertError) {
+      console.error('Failed to insert abandoned cart', insertError)
+      return
+    }
+
+    if (insertedCart?.id) {
+      const queued = await queueRecoveryMessageForCart({
+        storeId,
+        cartId: insertedCart.id,
+        customerPhone: customer.phone || null,
+        customerName: `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || null,
+        checkoutUrl: payload.abandoned_checkout_url || null,
+        cartValue,
+        items,
+        customerEmail: customer.email || null,
+        cartToken: token,
+      })
+
+      if (!queued) {
+        console.warn(`Recovery message queue failed for cart ${insertedCart.id}`)
+      }
+    }
+
     // Update analytics
     await incrementAnalytics(storeId, 'carts_created')
   }
@@ -243,7 +269,7 @@ async function handleCheckoutWebhook(storeId: string, payload: any) {
   if (!existingCart) {
     const scheduledAt = new Date(Date.now() + 60 * 60000)
     
-    await supabaseAdmin
+    const { data: insertedCart, error: insertError } = await supabaseAdmin
       .from('abandoned_carts')
       .insert({
         store_id: storeId,
@@ -257,6 +283,31 @@ async function handleCheckoutWebhook(storeId: string, payload: any) {
         status: 'pending',
         scheduled_message_at: scheduledAt.toISOString(),
       })
+      .select('id')
+      .single()
+
+    if (insertError) {
+      console.error('Failed to insert abandoned checkout', insertError)
+      return
+    }
+
+    if (insertedCart?.id) {
+      const queued = await queueRecoveryMessageForCart({
+        storeId,
+        cartId: insertedCart.id,
+        customerPhone: customer.phone || null,
+        customerName: `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || null,
+        checkoutUrl: payload.abandoned_checkout_url || null,
+        cartValue,
+        items,
+        customerEmail: customer.email || null,
+        cartToken: token,
+      })
+
+      if (!queued) {
+        console.warn(`Recovery message queue failed for cart ${insertedCart.id}`)
+      }
+    }
     
     await incrementAnalytics(storeId, 'carts_created')
   }
