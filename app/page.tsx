@@ -1,4 +1,5 @@
 import Image from "next/image";
+import PricingTable from '@/components/PricingTable'
 
 export default function Home() {
   return (
@@ -59,7 +60,12 @@ export default function Home() {
             Documentation
           </a>
         </div>
-      </main>
+        </main>
+
+      {/* Pricing Section - Landing */}
+      <div className="w-full bg-[#0A0A0F]">
+        <PricingTable />
+      </div>
     </div>
   );
 }
