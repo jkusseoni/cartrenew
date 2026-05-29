@@ -16,6 +16,8 @@ export default function StoresTableClient({ initialStores }: { initialStores: St
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [processing, setProcessing] = useState(false)
+  const [processResult, setProcessResult] = useState<any | null>(null)
 
   async function fetchStores() {
     setLoading(true)
@@ -29,6 +31,24 @@ export default function StoresTableClient({ initialStores }: { initialStores: St
       setError(e.message || 'Unknown error')
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleSendNow() {
+    setProcessing(true)
+    setProcessResult(null)
+    setError(null)
+    try {
+      const res = await fetch('/api/admin/messages/process-queue', { method: 'POST' })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json?.error || 'Processing failed')
+      setProcessResult(json)
+      // refresh store list to reflect any status changes
+      await fetchStores()
+    } catch (e: any) {
+      setError(e.message || 'Send failed')
+    } finally {
+      setProcessing(false)
     }
   }
 
@@ -65,11 +85,27 @@ export default function StoresTableClient({ initialStores }: { initialStores: St
           >
             {loading ? 'Refreshing…' : 'Refresh'}
           </button>
+          <button
+            onClick={handleSendNow}
+            disabled={processing}
+            className="rounded-2xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
+          >
+            {processing ? 'Processing…' : 'Send Now'}
+          </button>
         </div>
       </div>
 
       {error && (
         <div className="rounded-2xl bg-red-50 border border-red-200 p-3 text-sm text-red-700">{error}</div>
+      )}
+
+      {processResult && (
+        <div className="rounded-2xl bg-white border border-slate-200 p-3 text-sm text-slate-700">
+          <div className="font-medium">Last run:</div>
+          <div>Processed: {processResult.processed ?? 0}</div>
+          <div>Successes: {processResult.successes ?? 0}</div>
+          <div>Failures: {processResult.failures ?? 0}</div>
+        </div>
       )}
 
       <div className="overflow-x-auto">

@@ -1,9 +1,19 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import { sendMessage } from '@/lib/services/provider'
+import { getAuth } from '@clerk/nextjs/server'
 
 export async function POST(req: Request) {
   try {
+    // Simple protection: allow Clerk-authenticated admin users OR a signed secret header.
+    const { userId } = getAuth(req as any)
+    const adminSecret = process.env.ADMIN_PROCESS_SECRET
+    const providedSecret = (req.headers.get && req.headers.get('x-admin-secret')) || null
+
+    if (!userId && (!adminSecret || providedSecret !== adminSecret)) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     // fetch a batch of pending messages (tune limit as needed)
     const { data: messages, error } = await supabaseAdmin
       .from('messages')
