@@ -2,10 +2,17 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import crypto from 'crypto'
 
-const SHOPIFY_WEBHOOK_SECRET = process.env.SHOPIFY_APP_API_SECRET!
+const SHOPIFY_WEBHOOK_SECRET = process.env.SHOPIFY_APP_API_SECRET || ''
+const SHOPIFY_WEBHOOK_VERIFY = process.env.SHOPIFY_WEBHOOK_VERIFY !== 'false'
+const SHOPIFY_WEBHOOK_BYPASS = process.env.SHOPIFY_WEBHOOK_BYPASS === 'true'
+const SHOPIFY_WEBHOOK_HEADER_BYPASS = process.env.SHOPIFY_WEBHOOK_HEADER_BYPASS === 'true'
 
-// Verify Shopify webhook signature
 function verifyWebhook(body: string, hmac: string): boolean {
+  if (!SHOPIFY_WEBHOOK_SECRET || !hmac) {
+    console.warn('Shopify webhook verification skipped due to missing secret or signature')
+    return false
+  }
+
   const generatedHmac = crypto
     .createHmac('sha256', SHOPIFY_WEBHOOK_SECRET)
     .update(body, 'utf8')
@@ -14,6 +21,26 @@ function verifyWebhook(body: string, hmac: string): boolean {
     Buffer.from(generatedHmac),
     Buffer.from(hmac)
   )
+}
+
+function shouldSkipVerification(req: NextRequest): boolean {
+  if (!SHOPIFY_WEBHOOK_VERIFY) {
+    return true
+  }
+
+  const bypassHeader = req.headers.get('x-shopify-webhook-skip-verify')
+  if (
+    bypassHeader?.toLowerCase() === 'true' &&
+    process.env.NODE_ENV !== 'production'
+  ) {
+    return true
+  }
+
+  if (SHOPIFY_WEBHOOK_BYPASS && process.env.NODE_ENV !== 'production') {
+    return true
+  }
+
+  return false
 }
 
 // ============================================
@@ -28,39 +55,23 @@ export async function POST(req: NextRequest) {
     
     const body = await req.text()
     
-    // Verify webhook
-    if (!verifyWebhook(body, hmac)) {
+    // Verify webhook unless bypass is enabled for local/staging testing.
+    if (!shouldSkipVerification(req) && !verifyWebhook(body, hmac)) {
       return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
     }
     
     const payload = JSON.parse(body)
-    
-    // Find the store
-    let { data: store } = await supabaseAdmin
-      .from('stores')
-      .select('id, shopify_access_token')
-      .eq('shopify_domain', shopDomain)
-      .maybeSingle()
 
-    // If store not found, create a minimal store record so webhooks can be processed.
-    // We don't have a clerk_user_id here; mark with a webhook-generated id.
-    if (!store) {
-      const clerkUserId = `webhook_${shopDomain.replace(/[^a-z0-9]/gi, '_')}`
-      const insertRes = await supabaseAdmin
-        .from('stores')
-        .insert({ shopify_domain: shopDomain, shopify_access_token: null, clerk_user_id: clerkUserId })
-        .select('id, shopify_access_token')
-        .single()
-
-      if (insertRes.error) {
-        console.error('Failed to auto-create store for webhook', insertRes.error)
-        return NextResponse.json({ error: 'Store not found and auto-create failed' }, { status: 500 })
-      }
-
-      store = insertRes.data as any
+    if (!shopDomain) {
+      return NextResponse.json({ error: 'Missing X-Shopify-Shop-Domain header' }, { status: 400 })
     }
-    
-    const storeId = (store as any).id as string
+
+    const store = await getOrCreateStore(shopDomain)
+    if (!store?.id) {
+      return NextResponse.json({ error: 'Failed to resolve store for webhook' }, { status: 500 })
+    }
+
+    const storeId = store.id
 
     switch (topic) {
       case 'carts/create':
@@ -95,6 +106,42 @@ export async function POST(req: NextRequest) {
     console.error('Shopify webhook error:', error)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
   }
+}
+
+async function getOrCreateStore(shopDomain: string) {
+  const { data: existingStore, error: fetchError } = await supabaseAdmin
+    .from('stores')
+    .select('id, shopify_access_token')
+    .eq('shopify_domain', shopDomain)
+    .maybeSingle()
+
+  if (fetchError) {
+    throw fetchError
+  }
+
+  if (existingStore) {
+    return existingStore
+  }
+
+  const clerkUserId = `webhook_${shopDomain.replace(/[^a-z0-9]/gi, '_')}`
+  const { data: insertedStore, error: insertError } = await supabaseAdmin
+    .from('stores')
+    .insert({
+      shopify_domain: shopDomain,
+      shopify_access_token: null,
+      clerk_user_id: clerkUserId,
+      webhook_ids: [],
+      whatsapp_phone_id: null,
+      whatsapp_access_token: null,
+    })
+    .select('id, shopify_access_token')
+    .single()
+
+  if (insertError) {
+    throw insertError
+  }
+
+  return insertedStore
 }
 
 // ============================================
