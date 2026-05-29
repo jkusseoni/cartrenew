@@ -5,6 +5,8 @@ const publicRoutes = createRouteMatcher([
   "/api/webhooks/shopify",
   "/api/cron(.*)",
   "/api/alerts(.*)",
+  "/admin",
+  "/admin/(.*)",
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
