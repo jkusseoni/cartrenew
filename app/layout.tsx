@@ -15,7 +15,12 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  return (
+  const skipClerk = process.env.NODE_ENV === 'development'
+  return skipClerk ? (
+    <html lang="en">
+      <body className={inter.className}>{children}</body>
+    </html>
+  ) : (
     <ClerkProvider afterSignOutUrl="/" signInUrl="/sign-in" signUpUrl="/sign-up">
       <html lang="en">
         <body className={inter.className}>{children}</body>
