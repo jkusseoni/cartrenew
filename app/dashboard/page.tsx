@@ -18,6 +18,10 @@ export default function DashboardPage() {
   const [deliveryRate, setDeliveryRate] = useState(0)
   const [recoveryRate, setRecoveryRate] = useState(0)
   const [hasStore, setHasStore] = useState(false)
+  const [storeConfigs, setStoreConfigs] = useState<any[]>([])
+  const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null)
+  const [isRefreshingStores, setIsRefreshingStores] = useState(false)
+  const [storeConfigError, setStoreConfigError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!isLoaded || !user) return
@@ -86,7 +90,57 @@ export default function DashboardPage() {
     }
 
     load()
+    loadStoreConfigs()
   }, [isLoaded, user])
+
+  async function loadStoreConfigs() {
+    setIsRefreshingStores(true)
+    setStoreConfigError(null)
+    try {
+      const supabase = getSupabaseClient()
+      const { data, error } = await supabase
+        .from('stores')
+        .select('id, shopify_domain, webhook_ids, clerk_user_id, updated_at')
+        .order('updated_at', { ascending: false })
+
+      if (error) {
+        throw error
+      }
+
+      setStoreConfigs(data || [])
+    } catch (error) {
+      console.error('Store config load failed:', error)
+      setStoreConfigError('Unable to load webhook configurations.')
+    } finally {
+      setIsRefreshingStores(false)
+    }
+  }
+
+  async function handleClearWebhooks(storeId: string) {
+    setIsRefreshingStores(true)
+    setStoreConfigError(null)
+    try {
+      const response = await fetch('/api/admin/stores/clear-webhooks', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ storeId }),
+      })
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => null)
+        throw new Error(body?.error || 'Failed to clear webhooks')
+      }
+
+      await loadStoreConfigs()
+    } catch (error) {
+      console.error('Clear webhook ids failed:', error)
+      setStoreConfigError('Unable to clear webhook configurations.')
+    } finally {
+      setIsRefreshingStores(false)
+    }
+  }
 
   if (!isLoaded) {
     return <DashboardSkeleton />
@@ -166,6 +220,94 @@ export default function DashboardPage() {
             pendingCarts: pending,
           }}
         />
+
+        <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div>
+              <p className="text-sm font-medium uppercase tracking-[0.2em] text-slate-500">Webhook registration monitor</p>
+              <h2 className="mt-2 text-2xl font-semibold text-slate-900">Store webhook configurations</h2>
+              <p className="mt-3 text-sm text-slate-600 max-w-2xl">
+                Review active Shopify webhook IDs for each connected store, refresh the list, and clear webhook registration data when needed.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={loadStoreConfigs}
+              disabled={isRefreshingStores}
+              className="inline-flex items-center rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isRefreshingStores ? 'Refreshing…' : 'Refresh configs'}
+            </button>
+          </div>
+
+          {storeConfigError && (
+            <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {storeConfigError}
+            </div>
+          )}
+
+          <div className="mt-6 space-y-4">
+            {storeConfigs.length === 0 ? (
+              <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600">
+                No stores found yet. Once your Shopify store is connected, registered webhook IDs will appear here.
+              </div>
+            ) : (
+              storeConfigs.map((store) => {
+                const activeWebhooks = Array.isArray(store.webhook_ids) ? store.webhook_ids : []
+                const isSelected = selectedStoreId === store.id
+
+                return (
+                  <div key={store.id} className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+                    <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">{store.shopify_domain || 'Unknown store'}</p>
+                        <p className="mt-1 text-sm text-slate-500">Store ID: {store.id}</p>
+                        <p className="mt-1 text-sm text-slate-500">Owner: {store.clerk_user_id || 'N/A'}</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedStoreId(isSelected ? null : store.id)}
+                          className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
+                        >
+                          {isSelected ? 'Hide details' : 'View details'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleClearWebhooks(store.id)}
+                          className="rounded-2xl border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                          disabled={isRefreshingStores}
+                        >
+                          Clear webhook configs
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 rounded-3xl border border-slate-200 bg-white p-4">
+                      <p className="text-sm font-medium text-slate-600">Active webhook IDs</p>
+                      {activeWebhooks.length === 0 ? (
+                        <p className="mt-2 text-sm text-slate-500">No active webhook configurations detected.</p>
+                      ) : (
+                        <ul className="mt-3 grid gap-2 sm:grid-cols-2">
+                          {activeWebhooks.map((webhookId: any, index: number) => (
+                            <li key={index} className="rounded-2xl bg-slate-100 px-3 py-2 text-sm text-slate-700">
+                              {typeof webhookId === 'string' ? webhookId : JSON.stringify(webhookId)}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      {isSelected && (
+                        <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                          <pre className="whitespace-pre-wrap break-words">{JSON.stringify(store.webhook_ids ?? [], null, 2)}</pre>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </div>
+        </section>
 
         {!hasStore && (
           <div className="rounded-3xl border border-blue-200 bg-blue-50 p-6 shadow-sm">
