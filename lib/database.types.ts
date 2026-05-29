@@ -111,6 +111,8 @@ export interface Database {
           status: 'sent' | 'delivered' | 'read' | 'failed' | 'queued' | 'pending'
           whatsapp_message_id: string | null
           error_message: string | null
+          attempt_count: number
+          next_retry_at: string | null
           sent_at: string
           created_at: string
         }
@@ -124,6 +126,8 @@ export interface Database {
           status?: 'sent' | 'delivered' | 'read' | 'failed' | 'queued' | 'pending'
           whatsapp_message_id?: string | null
           error_message?: string | null
+          attempt_count?: number
+          next_retry_at?: string | null
           sent_at?: string
           created_at?: string
         }
@@ -137,6 +141,8 @@ export interface Database {
           status?: 'sent' | 'delivered' | 'read' | 'failed' | 'queued' | 'pending'
           whatsapp_message_id?: string | null
           error_message?: string | null
+          attempt_count?: number
+          next_retry_at?: string | null
           sent_at?: string
           created_at?: string
         }

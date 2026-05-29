@@ -84,6 +84,8 @@ export async function queueRecoveryMessageForCart({
       template_name: templateName,
       body: messageBody,
       status: 'pending' as any,
+      attempt_count: 0,
+      next_retry_at: null,
     })
 
     return true
