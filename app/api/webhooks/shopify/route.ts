@@ -36,29 +36,53 @@ export async function POST(req: NextRequest) {
     const payload = JSON.parse(body)
     
     // Find the store
-    const { data: store } = await supabaseAdmin
+    let { data: store } = await supabaseAdmin
       .from('stores')
-      .select('id')
+      .select('id, shopify_access_token')
       .eq('shopify_domain', shopDomain)
-      .single()
-    
+      .maybeSingle()
+
+    // If store not found, create a minimal store record so webhooks can be processed.
+    // We don't have a clerk_user_id here; mark with a webhook-generated id.
     if (!store) {
-      return NextResponse.json({ error: 'Store not found' }, { status: 404 })
+      const clerkUserId = `webhook_${shopDomain.replace(/[^a-z0-9]/gi, '_')}`
+      const insertRes = await supabaseAdmin
+        .from('stores')
+        .insert({ shopify_domain: shopDomain, shopify_access_token: null, clerk_user_id: clerkUserId })
+        .select('id, shopify_access_token')
+        .single()
+
+      if (insertRes.error) {
+        console.error('Failed to auto-create store for webhook', insertRes.error)
+        return NextResponse.json({ error: 'Store not found and auto-create failed' }, { status: 500 })
+      }
+
+      store = insertRes.data as any
     }
     
+    const storeId = (store as any).id as string
+
     switch (topic) {
       case 'carts/create':
       case 'carts/update':
-        await handleCartWebhook(store.id, payload)
+        await handleCartWebhook(storeId, payload)
+        break
+
+      case 'carts/delete':
+        await handleCartDelete(storeId, payload)
         break
       
       case 'checkouts/create':
       case 'checkouts/update':
-        await handleCheckoutWebhook(store.id, payload)
+        await handleCheckoutWebhook(storeId, payload)
         break
       
       case 'orders/create':
-        await handleOrderCreated(store.id, payload)
+        await handleOrderCreated(storeId, payload)
+        break
+
+      case 'app/uninstalled':
+        await handleAppUninstalled(storeId, shopDomain)
         break
       
       default:
@@ -259,5 +283,50 @@ async function incrementAnalytics(
         [field]: 1,
         ...(field === 'carts_recovered' ? { revenue_recovered: value || 0 } : {}),
       })
+  }
+}
+
+// ============================================
+// Handle cart delete
+// ============================================
+async function handleCartDelete(storeId: string, payload: any) {
+  const token = payload.token || payload.id
+  if (!token) return
+
+  const { data: cart } = await supabaseAdmin
+    .from('abandoned_carts')
+    .select('id, status')
+    .eq('store_id', storeId)
+    .eq('shopify_cart_token', token)
+    .single()
+
+  if (cart) {
+    await supabaseAdmin
+      .from('abandoned_carts')
+      .update({ status: 'lost', updated_at: new Date().toISOString() })
+      .eq('id', cart.id)
+  }
+}
+
+// ============================================
+// Handle app uninstall
+// ============================================
+async function handleAppUninstalled(storeId: string, shopDomain: string) {
+  try {
+    // Mark all carts for this store as lost
+    await supabaseAdmin
+      .from('abandoned_carts')
+      .update({ status: 'lost', updated_at: new Date().toISOString() })
+      .eq('store_id', storeId)
+
+    // Optionally remove the store record to avoid further sends
+    await supabaseAdmin
+      .from('stores')
+      .delete()
+      .eq('id', storeId)
+
+    console.log(`Store uninstalled: ${shopDomain}, cleaned up data`)
+  } catch (err) {
+    console.error('Error handling app uninstall for', shopDomain, err)
   }
 }

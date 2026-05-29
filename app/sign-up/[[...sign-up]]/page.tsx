@@ -3,7 +3,8 @@ import { SignUp } from "@clerk/nextjs";
 export default function Page() {
   return (
     <div className="flex items-center justify-center min-h-screen bg-gray-50">
-      <SignUp />
+      {/* Clerk SignUp doesn't expose redirectUrl in types; cast to any to pass through */}
+      <SignUp {...({ redirectUrl: '/dashboard' } as any)} />
     </div>
   );
 }

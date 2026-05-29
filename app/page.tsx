@@ -1,4 +1,5 @@
 import PricingTable from '@/components/PricingTable'
+import Link from 'next/link'
 
 export default function Home() {
   return (
@@ -19,18 +20,18 @@ export default function Home() {
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <a
+              <Link
                 href="/sign-up"
                 className="inline-flex items-center justify-center rounded-full bg-emerald-400 px-8 py-4 text-sm font-semibold text-slate-950 transition hover:bg-emerald-300"
               >
                 Start Your Free Trial
-              </a>
-              <a
+              </Link>
+              <Link
                 href="/settings"
                 className="inline-flex items-center justify-center rounded-full border border-slate-700 bg-white/5 px-8 py-4 text-sm font-semibold text-slate-100 transition hover:border-slate-500 hover:bg-white/10"
               >
                 View Integrations
-              </a>
+              </Link>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-3">

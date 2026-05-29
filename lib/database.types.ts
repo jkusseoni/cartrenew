@@ -14,6 +14,7 @@ export interface Database {
           id: string
           shopify_domain: string
           shopify_access_token: string | null
+          webhook_ids: Json | null
           clerk_user_id: string
           whatsapp_phone_id: string | null
           whatsapp_access_token: string | null
@@ -24,6 +25,7 @@ export interface Database {
           id?: string
           shopify_domain: string
           shopify_access_token?: string | null
+          webhook_ids?: Json | null
           clerk_user_id: string
           whatsapp_phone_id?: string | null
           whatsapp_access_token?: string | null
@@ -34,6 +36,7 @@ export interface Database {
           id?: string
           shopify_domain?: string
           shopify_access_token?: string | null
+          webhook_ids?: Json | null
           clerk_user_id?: string
           whatsapp_phone_id?: string | null
           whatsapp_access_token?: string | null
