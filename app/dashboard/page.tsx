@@ -1,13 +1,13 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { UserButton, useUser } from '@clerk/nextjs'
+import { SafeUserButton, useSafeUser } from '@/lib/clerk'
 import { getSupabaseClient } from '@/lib/supabase-browser'
 import { DashboardSkeleton } from '@/components/dashboard/DashboardSkeleton'
 import { StatsCards } from '@/components/dashboard/StatsCards'
 
 export default function DashboardPage() {
-  const { user, isLoaded } = useUser()
+  const { user, isLoaded } = useSafeUser()
   const [totalCarts, setTotalCarts] = useState(0)
   const [recovered, setRecovered] = useState(0)
   const [revenue, setRevenue] = useState(0)
@@ -155,7 +155,7 @@ export default function DashboardPage() {
               <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">CartRenew</p>
               <h1 className="text-2xl font-semibold text-slate-900">Dashboard</h1>
             </div>
-            <UserButton />
+            <SafeUserButton />
           </div>
         </div>
       </header>

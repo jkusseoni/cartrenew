@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useUser } from '@clerk/nextjs'
+import { useSafeUser } from '@/lib/clerk'
 import { getSupabaseClient } from '@/lib/supabase-browser'
 
 interface DailyAnalytics {
@@ -15,7 +15,7 @@ interface DailyAnalytics {
 }
 
 export default function AnalyticsPage() {
-  const { user, isLoaded } = useUser()
+  const { user, isLoaded } = useSafeUser()
   const [analytics, setAnalytics] = useState<DailyAnalytics[]>([])
   const [loading, setLoading] = useState(true)
   const [dateRange, setDateRange] = useState(30) // days

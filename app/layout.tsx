@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+import AppProviders from "./providers";
 import "./globals.css";
-import { ClerkProvider } from "@clerk/nextjs";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -15,16 +15,24 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const skipClerk = process.env.NODE_ENV === 'development'
-  return skipClerk ? (
-    <html lang="en">
-      <body className={inter.className}>{children}</body>
-    </html>
-  ) : (
-    <ClerkProvider afterSignOutUrl="/" signInUrl="/sign-in" signUpUrl="/sign-up">
+  const skipClerk =
+    process.env.NODE_ENV === 'development' ||
+    process.env.SKIP_CLERK === 'true' ||
+    process.env.NEXT_PUBLIC_SKIP_CLERK === 'true'
+
+  if (skipClerk) {
+    return (
       <html lang="en">
         <body className={inter.className}>{children}</body>
       </html>
-    </ClerkProvider>
-  );
+    )
+  }
+
+  return (
+    <html lang="en">
+      <body className={inter.className}>
+        <AppProviders>{children}</AppProviders>
+      </body>
+    </html>
+  )
 }

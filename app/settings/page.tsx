@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useUser } from '@clerk/nextjs'
+import { useSafeUser } from '@/lib/clerk'
 import { getSupabaseClient } from '@/lib/supabase-browser'
 
 interface StoreSettings {
@@ -13,7 +13,7 @@ interface StoreSettings {
 }
 
 export default function SettingsPage() {
-  const { user, isLoaded } = useUser()
+  const { user, isLoaded } = useSafeUser()
   const [store, setStore] = useState<StoreSettings | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
