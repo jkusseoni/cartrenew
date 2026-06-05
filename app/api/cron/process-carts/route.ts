@@ -5,8 +5,6 @@ export const maxDuration = 60;
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { generateCartRecoveryMessageForCartId } from "@/lib/cartRecoveryMessage";
-import { prisma } from "@/lib/prisma";
 
 const ABANDONED_STATUS = "abandoned";
 
@@ -30,6 +28,9 @@ export async function GET(request: NextRequest) {
   const results: CartProcessResult[] = [];
 
   try {
+    const { prisma } = await import("@/lib/prisma");
+    const { generateCartRecoveryMessageForCartId } = await import("@/lib/cartRecoveryMessage");
+
     const abandonedCarts = await prisma.cart.findMany({
       where: {
         status: ABANDONED_STATUS,
