@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import MetaCheckoutTracker from "@/components/MetaCheckoutTracker";
+import { HandshakeProvider } from "@/context/HandshakeContext";
 import AppProviders from "./providers";
 import { Suspense } from "react";
 import "./globals.css";
@@ -28,15 +29,17 @@ export default function RootLayout({
       <html lang="en">
         <body className={`${inter.className} bg-neutral-950`}>
           <AppProviders>
-            <div className="flex min-h-screen flex-col bg-neutral-950">
-              <div className="flex-1 bg-neutral-950">
-                <Suspense fallback={null}>
-                  <MetaCheckoutTracker />
-                </Suspense>
-                {children}
+            <HandshakeProvider>
+              <div className="flex min-h-screen flex-col bg-neutral-950">
+                <div className="flex-1 bg-neutral-950">
+                  <Suspense fallback={null}>
+                    <MetaCheckoutTracker />
+                  </Suspense>
+                  {children}
+                </div>
+                <Footer />
               </div>
-              <Footer />
-            </div>
+            </HandshakeProvider>
           </AppProviders>
         </body>
       </html>
@@ -47,15 +50,17 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${inter.className} bg-neutral-950`}>
         <AppProviders>
-          <div className="flex min-h-screen flex-col bg-neutral-950">
-            <div className="flex-1 bg-neutral-950">
-              <Suspense fallback={null}>
-                <MetaCheckoutTracker />
-              </Suspense>
-              {children}
+          <HandshakeProvider>
+            <div className="flex min-h-screen flex-col bg-neutral-950">
+              <div className="flex-1 bg-neutral-950">
+                <Suspense fallback={null}>
+                  <MetaCheckoutTracker />
+                </Suspense>
+                {children}
+              </div>
+              <Footer />
             </div>
-            <Footer />
-          </div>
+          </HandshakeProvider>
         </AppProviders>
       </body>
     </html>
