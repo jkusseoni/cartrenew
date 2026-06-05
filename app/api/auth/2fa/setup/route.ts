@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { generate2FASecret, getOTPAuthUrl } from '@/lib/totp';
