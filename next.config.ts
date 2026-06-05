@@ -8,6 +8,10 @@ type DeploymentNextConfig = NextConfig & {
 
 const nextConfig: DeploymentNextConfig = {
   allowedDevOrigins: ["127.0.0.1", "localhost"],
+  output: undefined,
+  experimental: {
+    ppr: false,
+  },
   typescript: {
     ignoreBuildErrors: true,
   },
