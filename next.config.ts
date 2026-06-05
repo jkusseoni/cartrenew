@@ -1,12 +1,12 @@
 import type { NextConfig } from "next";
 
-type DeploymentNextConfig = NextConfig & {
+type NextConfigWithBuildLintBypass = NextConfig & {
   eslint?: {
     ignoreDuringBuilds?: boolean;
   };
 };
 
-const nextConfig: DeploymentNextConfig = {
+const nextConfig = {
   allowedDevOrigins: ["127.0.0.1", "localhost"],
   cleanDistDir: true,
   output: undefined,
@@ -34,6 +34,6 @@ const nextConfig: DeploymentNextConfig = {
       },
     ];
   },
-};
+} satisfies NextConfigWithBuildLintBypass;
 
 export default nextConfig;

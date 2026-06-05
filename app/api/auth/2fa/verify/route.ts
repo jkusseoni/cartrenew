@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
+export const fetchCache = "force-no-store";
 export const runtime = "nodejs";
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
 import { verify2FAToken } from '@/lib/totp';
 
 export async function POST(request: NextRequest) {
@@ -16,6 +16,8 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    const { prisma } = await import('@/lib/prisma');
 
     // Database se merchant ka temporary secret get karein
     const merchant = await prisma.merchant.findUnique({
