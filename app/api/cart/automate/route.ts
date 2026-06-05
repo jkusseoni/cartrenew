@@ -1,3 +1,7 @@
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+export const fetchCache = "force-no-store";
+
 import * as Sentry from "@sentry/nextjs";
 import { NextResponse } from "next/server";
 
@@ -10,11 +14,7 @@ import {
   getGeoDeliveryStrategy,
   getSuccessStatusForChannel,
 } from "@/lib/geo-policy";
-import { prisma } from "@/lib/prisma";
 import { supabaseAdmin } from "@/lib/supabase";
-
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
 
 type CartAutomatePayload = {
   cartUrl?: unknown;
@@ -153,6 +153,8 @@ export async function POST(req: Request) {
         channelPlan,
         whatsappPolicy: geoStrategy.whatsappPolicy,
       });
+
+      const { prisma } = await import("@/lib/prisma");
 
       let merchant = await prisma.merchant.findFirst({ where: { userId } });
 
