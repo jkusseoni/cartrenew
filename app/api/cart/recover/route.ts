@@ -1,5 +1,6 @@
-export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+export const fetchCache = "force-no-store";
 
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -7,7 +8,6 @@ import {
   generateAICartRecoveryMessage,
   type CartItemContext,
 } from "@/lib/ai-agent";
-import { prisma } from "@/lib/prisma";
 
 type RecoverCartRequestBody = {
   abandonedReason?: unknown;
@@ -36,6 +36,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await readRequestBody(request);
     const cartId = parseCartId(body.cartId ?? request.nextUrl.searchParams.get("cartId"));
+    const { prisma } = await import("@/lib/prisma");
 
     const cart = await prisma.cart.findUnique({
       where: { id: cartId },
