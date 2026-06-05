@@ -1,9 +1,9 @@
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+export const fetchCache = "force-no-store";
 
 import { trackServerEvent } from "@/lib/conversion-api";
 import { getRazorpayClient } from "@/lib/razorpay";
-import { dispatchWebhookEvent } from "@/lib/webhook-dispatcher";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -117,6 +117,8 @@ export async function POST(request: Request) {
       message: generated.message,
       paymentUrl,
     };
+
+    const { dispatchWebhookEvent } = await import("@/lib/webhook-dispatcher");
 
     void dispatchWebhookEvent(cartDetails.merchantId, "cart.recovered", {
       customerName: cartDetails.customerName,
