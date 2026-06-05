@@ -1,3 +1,6 @@
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
@@ -7,10 +10,6 @@ import {
   type LifetimeDealTierKey,
 } from "@/lib/ltd-tiers";
 import { prisma } from "@/lib/prisma";
-
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
 const TRACKING_PARAM_KEYS = [
   "utm_source",
   "utm_medium",

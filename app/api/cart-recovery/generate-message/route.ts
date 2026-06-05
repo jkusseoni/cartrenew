@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+
 export const fetchCache = "force-no-store";
 
 import { trackServerEvent } from "@/lib/conversion-api";

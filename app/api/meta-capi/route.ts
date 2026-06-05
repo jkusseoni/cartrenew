@@ -1,8 +1,8 @@
-import { hashDataUnlessAlreadyHashed } from "@/lib/crypto-utils";
-import { NextRequest, NextResponse } from "next/server";
-
+export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+import { hashDataUnlessAlreadyHashed } from "@/lib/crypto-utils";
+import { NextRequest, NextResponse } from "next/server";
 type MetaCapiRequestBody = {
   eventName?: string;
   eventUrl?: string;

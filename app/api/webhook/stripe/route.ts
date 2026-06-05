@@ -1,3 +1,6 @@
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 
@@ -7,10 +10,6 @@ import {
   parseLifetimeDealTier,
 } from "@/lib/ltd-tiers";
 import { prisma } from "@/lib/prisma";
-
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 const stripe = stripeSecretKey ? new Stripe(stripeSecretKey) : null;

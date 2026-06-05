@@ -1,3 +1,6 @@
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
@@ -10,10 +13,6 @@ import {
   type LifetimeDealTierKey,
 } from "@/lib/ltd-tiers";
 import { prisma } from "@/lib/prisma";
-
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
 const CHECKOUT_CURRENCIES = ["USD", "INR", "EUR", "GBP", "AED"] as const;
 const DEFAULT_CHECKOUT_CURRENCY: CheckoutCurrency = "USD";
 const STRIPE_CURRENCY_BY_CHECKOUT_CURRENCY: Record<CheckoutCurrency, StripeCurrency> = {

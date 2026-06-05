@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
-export const fetchCache = "force-no-store";
 export const runtime = "nodejs";
+
+export const fetchCache = "force-no-store";
 import { NextRequest, NextResponse } from 'next/server';
 import { verify2FAToken } from '@/lib/totp';
 
