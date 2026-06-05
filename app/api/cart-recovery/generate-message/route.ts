@@ -1,10 +1,6 @@
+export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-import {
-  GoogleGenerativeAI as GoogleGenAI,
-  SchemaType,
-  type ResponseSchema,
-} from "@google/generative-ai";
 import { trackServerEvent } from "@/lib/conversion-api";
 import { getRazorpayClient } from "@/lib/razorpay";
 import { dispatchWebhookEvent } from "@/lib/webhook-dispatcher";
@@ -40,10 +36,18 @@ type OfferType =
 
 type LegacyOfferType = OfferType | "10% Discount";
 
-type GeminiMessageResponse = {
+type EndpointAIMessageResponse = {
   success?: unknown;
   offerType?: unknown;
   message: string;
+};
+
+type EndpointAIChatCompletionResponse = {
+  choices?: Array<{
+    message?: {
+      content?: string | null;
+    };
+  }>;
 };
 
 type CartRecoveryDetails = {
@@ -69,7 +73,12 @@ type ShippingRateContext = {
   courierName: string;
 };
 
-const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
+const ENDPOINTAI_CONFIG = {
+  apiKey: process.env.ENDPOINTAI_API_KEY?.trim(),
+  baseURL: "https://api.endpointai.in/v1",
+  model: process.env.ENDPOINTAI_MODEL?.trim() || "meta-llama-3-70b-instruct",
+};
+const ENDPOINTAI_CHAT_COMPLETIONS_URL = `${ENDPOINTAI_CONFIG.baseURL}/chat/completions`;
 const HIGH_VALUE_CART_AMOUNT = 3000;
 const AI_DISCOUNT_PERCENT = 10;
 const PAYMENT_LINK_EXPIRY_SECONDS = 15 * 60;
@@ -81,56 +90,26 @@ const OFFER_TYPES = [
   "10% Discount Code",
   "Free Shipping",
 ] as const;
-const GEMINI_RESPONSE_SCHEMA: ResponseSchema = {
-  type: SchemaType.OBJECT,
-  properties: {
-    success: {
-      type: SchemaType.BOOLEAN,
-    },
-    offerType: {
-      type: SchemaType.STRING,
-      format: "enum",
-      enum: [...OFFER_TYPES],
-    },
-    message: {
-      type: SchemaType.STRING,
-    },
-  },
-  required: ["success", "offerType", "message"],
-};
+const ENDPOINTAI_TIMEOUT_MS = 10000;
 
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as GenerateMessageBody;
     const cartDetails = parseCartRecoveryBody(body);
-    const apiKey = process.env.GEMINI_API_KEY;
     const shippingRateContext = await getShippingRateContext(request, cartDetails);
 
-    if (!apiKey) {
+    if (!ENDPOINTAI_CONFIG.apiKey) {
       return NextResponse.json(
         {
           success: false,
-          error: "GEMINI_API_KEY is not configured",
+          error: "ENDPOINTAI_API_KEY is not configured",
         },
         { status: 500 }
       );
     }
 
-    const client = new GoogleGenAI(apiKey);
-    const model = client.getGenerativeModel({
-      model: getGeminiModel(),
-      generationConfig: {
-        temperature: 0.7,
-        maxOutputTokens: 240,
-        responseMimeType: "application/json",
-        responseSchema: GEMINI_RESPONSE_SCHEMA,
-      },
-      systemInstruction: buildSystemPrompt(shippingRateContext),
-    });
-
-    const result = await model.generateContent(buildUserPrompt(cartDetails));
-    const rawText = result.response.text();
-    const generated = parseGeminiResponseSafely(rawText, cartDetails);
+    const rawText = await generateEndpointAIMessage(cartDetails, shippingRateContext);
+    const generated = parseEndpointAIResponseSafely(rawText, cartDetails);
     const paymentUrl = await getPaymentUrl(cartDetails, generated.offerType);
     const responsePayload = {
       success: true,
@@ -167,7 +146,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json(responsePayload);
   } catch (error) {
-    console.error("Cart recovery Gemini route error:", error);
+    console.error("Cart recovery EndpointAI route error:", error);
 
     return NextResponse.json(
       {
@@ -319,6 +298,48 @@ function buildUserPrompt(cartDetails: CartRecoveryDetails) {
   ].join("\n");
 }
 
+async function generateEndpointAIMessage(
+  cartDetails: CartRecoveryDetails,
+  shippingRateContext?: ShippingRateContext | null
+) {
+  const response = await fetch(ENDPOINTAI_CHAT_COMPLETIONS_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${ENDPOINTAI_CONFIG.apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: ENDPOINTAI_CONFIG.model,
+      messages: [
+        {
+          role: "system",
+          content: buildSystemPrompt(shippingRateContext),
+        },
+        {
+          role: "user",
+          content: buildUserPrompt(cartDetails),
+        },
+      ],
+      temperature: 0.7,
+      max_tokens: 240,
+    }),
+    signal: AbortSignal.timeout(ENDPOINTAI_TIMEOUT_MS),
+  });
+
+  if (!response.ok) {
+    throw new Error(`EndpointAI responded with ${response.status}: ${await getSafeResponseText(response)}`);
+  }
+
+  const data = (await response.json()) as EndpointAIChatCompletionResponse;
+  const message = data.choices?.[0]?.message?.content?.trim();
+
+  if (!message) {
+    throw new Error("EndpointAI returned an empty WhatsApp message");
+  }
+
+  return message;
+}
+
 function formatUserHistory(userHistory: string[]) {
   if (userHistory.length === 0) {
     return "No user history provided";
@@ -411,14 +432,14 @@ function getFallbackShippingRateContext() {
   };
 }
 
-function parseGeminiResponseSafely(rawText: string, cartDetails: CartRecoveryDetails) {
+function parseEndpointAIResponseSafely(rawText: string, cartDetails: CartRecoveryDetails) {
   try {
-    return parseGeminiResponse(rawText, cartDetails);
+    return parseEndpointAIResponse(rawText, cartDetails);
   } catch (error) {
     const offerType = chooseFallbackOfferType(cartDetails);
     const message = getFallbackMessage(rawText, cartDetails, offerType);
 
-    console.warn("Gemini response parsing failed; returning fallback message:", {
+    console.warn("EndpointAI response parsing failed; returning fallback message:", {
       error: getLoggableError(error),
     });
 
@@ -430,17 +451,17 @@ function parseGeminiResponseSafely(rawText: string, cartDetails: CartRecoveryDet
   }
 }
 
-function parseGeminiResponse(rawText: string, cartDetails: CartRecoveryDetails) {
+function parseEndpointAIResponse(rawText: string, cartDetails: CartRecoveryDetails) {
   const parsed = tryParseJsonObject(rawText);
 
-  if (isGeminiMessageResponse(parsed)) {
+  if (isEndpointAIMessageResponse(parsed)) {
     const offerType = isOfferType(parsed.offerType)
       ? parsed.offerType
       : chooseFallbackOfferType(cartDetails);
     const message = extractMessagePayload(parsed.message);
 
     if (!message) {
-      throw new Error("Gemini returned an empty WhatsApp message");
+      throw new Error("EndpointAI returned an empty WhatsApp message");
     }
 
     return {
@@ -453,7 +474,7 @@ function parseGeminiResponse(rawText: string, cartDetails: CartRecoveryDetails) 
   const message = extractMessagePayload(rawText);
 
   if (!message) {
-    throw new Error("Gemini returned an empty WhatsApp message");
+    throw new Error("EndpointAI returned an empty WhatsApp message");
   }
 
   return {
@@ -494,7 +515,7 @@ function extractMessagePayload(message: string) {
   const cleanedMessage = sanitizeGeneratedMessage(stripMarkdownFence(message));
   const nestedJson = tryParseJsonObject(cleanedMessage);
 
-  if (isGeminiMessageResponse(nestedJson)) {
+  if (isEndpointAIMessageResponse(nestedJson)) {
     return extractMessagePayload(nestedJson.message);
   }
 
@@ -508,12 +529,12 @@ function stripMarkdownFence(value: string) {
   return (fenceMatch?.[1] ?? trimmedValue).trim();
 }
 
-function isGeminiMessageResponse(value: unknown): value is GeminiMessageResponse {
+function isEndpointAIMessageResponse(value: unknown): value is EndpointAIMessageResponse {
   return (
     typeof value === "object" &&
     value !== null &&
     !Array.isArray(value) &&
-    typeof (value as GeminiMessageResponse).message === "string"
+    typeof (value as EndpointAIMessageResponse).message === "string"
   );
 }
 
@@ -676,6 +697,12 @@ function getLoggableError(error: unknown) {
 
 class RouteValidationError extends Error {}
 
-function getGeminiModel() {
-  return (process.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL).replace(/^models\//, "");
+async function getSafeResponseText(response: Response) {
+  try {
+    const text = await response.text();
+
+    return text.trim() || "No response body";
+  } catch {
+    return "Unable to read response body";
+  }
 }
