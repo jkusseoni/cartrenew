@@ -1,0 +1,109 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id        String     @id
+  email     String     @unique
+  firstName String?
+  lastName  String?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  merchants Merchant[]
+}
+
+model Merchant {
+  id                       String            @id @default(uuid())
+  userId                   String
+  storeName                String
+  whatsappNum              String?
+  subscriptionTier         LifetimeDealTier?
+  lifetimeDealActive       Boolean           @default(false)
+  lifetimeDealPurchasedAt  DateTime?
+  storeLimit               Int               @default(1)
+  monthlyRecoveryLimit     Int?
+  tempTwoFactorSecret      String?
+  twoFactorSecret          String?
+  twoFactorEnabled         Boolean           @default(false)
+  stripeCustomerId         String?
+  stripeCheckoutSessionId  String?
+  stripePaymentIntentId    String?
+  tierConfig               Json?
+  createdAt                DateTime          @default(now())
+  updatedAt                DateTime          @updatedAt
+  user                     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  carts                    Cart[]
+
+  @@index([userId])
+  @@index([subscriptionTier])
+  @@index([stripeCustomerId])
+  @@index([stripeCheckoutSessionId])
+}
+
+model Cart {
+  id                     String    @id @default(uuid())
+  merchantId             String
+  customerPhone          String
+  cartUrl                String
+  totalAmount            Float
+  status                 String    @default("ABANDONED")
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  merchant               Merchant  @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  customerName           String?
+  phoneNumber            String?
+  notified               Boolean   @default(false)
+  recoveryMessage        String?
+  recoveryMessageModel   String?
+  recoveryMessagePrompt  String?
+  recoveryMessageAt      DateTime?
+
+  @@index([merchantId])
+  @@index([customerPhone])
+  @@index([status])
+}
+
+model WebhookSubscription {
+  id          String   @id @default(uuid())
+  merchantId  String   
+  url         String   // Merchant's target webhook destination
+  eventType   String   // e.g., "cart.recovered" or "order.verified"
+  secret      String   // HMAC signing secret unique to this webhook connection
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([merchantId, url, eventType]) // Restricts duplicate triggers
+  @@index([merchantId])
+}
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  CANCELLED
+  FAILED
+}
+
+model Order {
+  id              String             @id @default(uuid())
+  shopifyOrderId  String             @unique
+  customerName    String
+  phoneNumber     String
+  totalAmount     Float
+  paymentMethod   String             // e.g., "COD" or "Razorpay"
+  status          VerificationStatus @default(PENDING)
+  verificationOtp String?            // OTP stored for validation checking
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@index([phoneNumber])
+}
+
+enum LifetimeDealTier {
+  SINGLE
+  DOUBLE
+  MULTIPLE
+}

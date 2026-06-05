@@ -220,6 +220,77 @@ export interface Database {
           created_at?: string
         }
       }
+      cart_delivery_metrics: {
+        Row: {
+          id: string
+          cart_id: string
+          merchant_id: string
+          user_id: string | null
+          store_name: string | null
+          country: string
+          country_code: string | null
+          primary_channel: string
+          attempted_channel: string
+          status:
+            | 'SUCCESS_WHATSAPP'
+            | 'SUCCESS_WHATSAPP_WEB_LINK'
+            | 'SUCCESS_SMS'
+            | 'SUCCESS_EMAIL'
+            | 'FAILED'
+            | 'FAILED_POLICY'
+          provider: string | null
+          provider_message_id: string | null
+          error_message: string | null
+          payload: Json
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          cart_id: string
+          merchant_id: string
+          user_id?: string | null
+          store_name?: string | null
+          country: string
+          country_code?: string | null
+          primary_channel: string
+          attempted_channel: string
+          status:
+            | 'SUCCESS_WHATSAPP'
+            | 'SUCCESS_WHATSAPP_WEB_LINK'
+            | 'SUCCESS_SMS'
+            | 'SUCCESS_EMAIL'
+            | 'FAILED'
+            | 'FAILED_POLICY'
+          provider?: string | null
+          provider_message_id?: string | null
+          error_message?: string | null
+          payload?: Json
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          cart_id?: string
+          merchant_id?: string
+          user_id?: string | null
+          store_name?: string | null
+          country?: string
+          country_code?: string | null
+          primary_channel?: string
+          attempted_channel?: string
+          status?:
+            | 'SUCCESS_WHATSAPP'
+            | 'SUCCESS_WHATSAPP_WEB_LINK'
+            | 'SUCCESS_SMS'
+            | 'SUCCESS_EMAIL'
+            | 'FAILED'
+            | 'FAILED_POLICY'
+          provider?: string | null
+          provider_message_id?: string | null
+          error_message?: string | null
+          payload?: Json
+          created_at?: string
+        }
+      }
     }
   }
 }
