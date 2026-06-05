@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+export const fetchCache = "force-no-store";
 
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
@@ -12,7 +13,6 @@ import {
   parseLifetimeDealTier,
   type LifetimeDealTierKey,
 } from "@/lib/ltd-tiers";
-import { prisma } from "@/lib/prisma";
 const CHECKOUT_CURRENCIES = ["USD", "INR", "EUR", "GBP", "AED"] as const;
 const DEFAULT_CHECKOUT_CURRENCY: CheckoutCurrency = "USD";
 const STRIPE_CURRENCY_BY_CHECKOUT_CURRENCY: Record<CheckoutCurrency, StripeCurrency> = {
@@ -258,6 +258,7 @@ async function ensureCheckoutUserContext(
     `clerk-${clerkUserId}@cartrenew.local`;
   const firstName = normalizeNullableString(user?.firstName);
   const lastName = normalizeNullableString(user?.lastName);
+  const { prisma } = await import("@/lib/prisma");
 
   await prisma.user.upsert({
     create: {
