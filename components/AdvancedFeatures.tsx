@@ -9,10 +9,10 @@ import {
   Sparkles,
   TrendingUp,
 } from "lucide-react";
-import ChatCheckout from "./features/ChatCheckout";
-import RagChatbot from "./features/RagChatbot";
-import SegmentationTest from "./features/SegmentationTest";
-import VideoMessaging from "./features/VideoMessaging";
+import ChatCheckout from "@/components/features/ChatCheckout";
+import RagChatbot from "@/components/features/RagChatbot";
+import SegmentationTest from "@/components/features/SegmentationTest";
+import VideoMessaging from "@/components/features/VideoMessaging";
 
 type BlueprintRow = {
   area: string;
