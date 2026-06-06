@@ -42,8 +42,8 @@ export default function LaunchTimeline() {
   }, []);
 
   return (
-    <section ref={sectionRef} className="pb-[120px]">
-      <div className="max-w-[1000px] mx-auto px-6">
+    <section ref={sectionRef} className="pb-[120px] overflow-hidden">
+      <div className="max-w-[1000px] mx-auto px-6 overflow-hidden">
         <h2
           className="font-bold text-white tracking-[-0.03em] mb-8"
           style={{ fontSize: "clamp(2rem, 4vw, 3rem)" }}
@@ -51,7 +51,7 @@ export default function LaunchTimeline() {
           Launch Strategy Timeline
         </h2>
 
-        <div className="relative">
+        <div className="relative overflow-hidden">
           {/* Timeline Connector Line - Desktop */}
           <div
             ref={lineRef}

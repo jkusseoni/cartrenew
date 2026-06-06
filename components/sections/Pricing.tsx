@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
@@ -295,19 +296,31 @@ export default function Pricing() {
               </ul>
 
               {/* CTA */}
-              <button
-                onClick={() => void handlePlanCheckout(plan)}
-                disabled={loadingTier !== null}
-                className="w-full mt-8 py-3.5 rounded-[10px] text-sm font-semibold text-white transition-all duration-200 hover:opacity-90"
-                style={{
-                  background: plan.ctaBg === "var(--accent-gradient)" ? undefined : plan.ctaBg,
-                  backgroundImage: plan.ctaBg === "var(--accent-gradient)" ? "linear-gradient(135deg, #00D67D 0%, #22D3EE 100%)" : undefined,
-                  cursor: loadingTier ? "not-allowed" : "pointer",
-                  opacity: loadingTier && !isLoading ? 0.55 : undefined,
-                }}
-              >
-                {isLoading ? "Opening secure checkout..." : plan.ctaText}
-              </button>
+              {plan.key === "SINGLE" ? (
+                <Link
+                  href="/sign-up"
+                  className="w-full mt-8 py-3.5 rounded-[10px] text-sm font-semibold text-white transition-all duration-200 hover:opacity-90 block text-center"
+                  style={{
+                    backgroundImage: "linear-gradient(135deg, #00D67D 0%, #22D3EE 100%)",
+                  }}
+                >
+                  {plan.ctaText}
+                </Link>
+              ) : (
+                <button
+                  onClick={() => void handlePlanCheckout(plan)}
+                  disabled={loadingTier !== null}
+                  className="w-full mt-8 py-3.5 rounded-[10px] text-sm font-semibold text-white transition-all duration-200 hover:opacity-90"
+                  style={{
+                    background: plan.ctaBg === "var(--accent-gradient)" ? undefined : plan.ctaBg,
+                    backgroundImage: plan.ctaBg === "var(--accent-gradient)" ? "linear-gradient(135deg, #00D67D 0%, #22D3EE 100%)" : undefined,
+                    cursor: loadingTier ? "not-allowed" : "pointer",
+                    opacity: loadingTier && !isLoading ? 0.55 : undefined,
+                  }}
+                >
+                  {isLoading ? "Opening secure checkout..." : plan.ctaText}
+                </button>
+              )}
             </div>
             );
           })}

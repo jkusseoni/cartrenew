@@ -1,6 +1,23 @@
-import { clerkMiddleware } from '@clerk/nextjs/server';
+import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+
+const publicRoutes = createRouteMatcher([
+  '/',
+  '/sign-in(.*)',
+  '/sign-up(.*)',
+  '/terms(.*)',
+  '/privacy(.*)',
+  '/refund(.*)',
+  '/marketing-hub(.*)',
+  '/api/webhooks(.*)',
+  '/api/webhook(.*)',
+  '/api/meta-capi(.*)',
+  '/api/cart/automate(.*)',
+  '/api/orders/webhook(.*)',
+  '/api/shopify/callback(.*)',
+  '/api/cron(.*)',
+]);
 
 // Next.js Edge Runtime compatibility ke liye in-memory local tracking map use karenge
 const ipCache = new Map<string, { count: number; resetTime: number }>();
@@ -107,7 +124,13 @@ function handleProxy(request: NextRequest) {
 
 export default skipClerk
   ? handleProxy
-  : clerkMiddleware((_auth, request: NextRequest) => handleProxy(request));
+  : clerkMiddleware(async (auth, request: NextRequest) => {
+      if (!publicRoutes(request)) {
+        await auth.protect();
+      }
+
+      return handleProxy(request);
+    });
 
 // Global matcher parameters Next.js execution cycle optimize karne ke liye
 export const config = {
