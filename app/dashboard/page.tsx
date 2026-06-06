@@ -22,12 +22,12 @@ const skipClerk =
       );
     }
   
-    // 1. Initial Empty State Setup
+    // 1. In dono variables ko try block se pehle declare karein (Scope Lift)
+    let merchant = null;
     let carts = [];
   
-    // 2. Safe Database Fetching Block
     try {
-      const merchant = await prisma.merchant.findFirst({
+      merchant = await prisma.merchant.findFirst({
         where: { userId },
         include: {
           carts: { orderBy: { createdAt: "desc" } },
@@ -39,10 +39,9 @@ const skipClerk =
       }
     } catch (dbError) {
       console.error("Vercel Database Connection Error: ", dbError);
-      // Database fail hone par bhi application crash nahi hogi, empty array use karegi
     }
   
-    // 3. Safe Metrics Generation
+    // 2. Baaki ka metrics calculation block
     const cartRows: CartRowData[] = carts.map((cart) => ({
       cartUrl: cart.cartUrl || "",
       customerName: cart.customerName || "Unknown",
