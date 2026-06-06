@@ -19,9 +19,9 @@ type PricingTier = {
 };
 
 const RAZORPAY_CHECKOUT_URLS: Record<LifetimeDealTier, string> = {
-  DOUBLE: "https://rzp.io/l/apka_double_plan_link",
-  MULTIPLE: "https://rzp.io/l/apka_multiple_plan_link",
-  SINGLE: "https://rzp.io/l/apka_single_plan_link",
+  SINGLE: "https://rzp.io/rzp/6LhjxROW",     // Starter LTD ($99)
+  DOUBLE: "https://rzp.io/rzp/pU7Y7xTj",   // Growth LTD ($199)
+  MULTIPLE: "https://rzp.io/rzp/emdA9Lmk", // Agency LTD ($399)
 };
 
 const pricingTiers: PricingTier[] = [

@@ -15,6 +15,7 @@ const tiers = [
     ],
     buttonText: 'Get Lifetime Access',
     popular: false,
+    checkoutUrl: "https://rzp.io/rzp/6LhjxROW",
   },
   {
     name: 'Growth LTD',
@@ -30,6 +31,7 @@ const tiers = [
     ],
     buttonText: 'Get Growth Access',
     popular: true,
+    checkoutUrl: "https://rzp.io/rzp/pU7Y7xTj",
   },
   {
     name: 'Agency LTD',
@@ -45,6 +47,7 @@ const tiers = [
     ],
     buttonText: 'Get Agency Access',
     popular: false,
+    checkoutUrl: "https://rzp.io/rzp/emdA9Lmk",
   },
 ];
 
@@ -109,14 +112,19 @@ export default function PricingGrid() {
               {/* Action Button */}
               <div className="mt-8">
                 <button
-                  className={`w-full py-3 px-4 rounded-xl text-sm font-semibold tracking-wide transition-all duration-200 shadow-md ${
-                    tier.popular
-                      ? 'bg-indigo-500 hover:bg-indigo-600 text-white shadow-indigo-500/20'
-                      : 'bg-neutral-700 hover:bg-neutral-600 text-neutral-100 hover:text-white'
-                  }`}
-                >
-                  {tier.buttonText}
-                </button>
+  onClick={() => {
+    if (tier.checkoutUrl) {
+      window.location.href = tier.checkoutUrl;
+    }
+  }}
+  className={`w-full py-3 px-4 rounded-xl text-sm font-semibold tracking-wide transition-all
+    ${tier.popular
+      ? 'bg-indigo-500 hover:bg-indigo-600 text-white shadow-indigo-200'
+      : 'bg-neutral-700 hover:bg-neutral-600 text-neutral-100'
+    }`}
+>
+  {tier.buttonText}
+</button>
               </div>
 
             </div>
