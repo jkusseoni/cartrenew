@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 import { auth } from "@clerk/nextjs/server";
 import { Suspense } from "react";
 
@@ -9,50 +11,58 @@ const skipClerk =
   process.env.SKIP_CLERK === "true" ||
   process.env.NEXT_PUBLIC_SKIP_CLERK === "true";
 
-async function DashboardMetrics() {
-  const userId = await getDashboardUserId();
-
-  if (!userId) {
+  async function DashboardMetrics() {
+    const userId = await getDashboardUserId();
+  
+    if (!userId) {
+      return (
+        <p className="p-10 text-center font-bold text-red-500">
+          Unauthorized Access
+        </p>
+      );
+    }
+  
+    // 1. Initial Empty State Setup
+    let carts = [];
+  
+    // 2. Safe Database Fetching Block
+    try {
+      const merchant = await prisma.merchant.findFirst({
+        where: { userId },
+        include: {
+          carts: { orderBy: { createdAt: "desc" } },
+        },
+      });
+      
+      if (merchant && merchant.carts) {
+        carts = merchant.carts;
+      }
+    } catch (dbError) {
+      console.error("Vercel Database Connection Error: ", dbError);
+      // Database fail hone par bhi application crash nahi hogi, empty array use karegi
+    }
+  
+    // 3. Safe Metrics Generation
+    const cartRows: CartRowData[] = carts.map((cart) => ({
+      cartUrl: cart.cartUrl || "",
+      customerName: cart.customerName || "Unknown",
+      customerPhone: cart.customerPhone || "N/A",
+      id: cart.id,
+      status: cart.status,
+      totalAmount: cart.totalAmount || 0,
+    }));
+  
+    const recoveredCarts = carts.filter((cart) => cart.status === "RECOVERED");
+    const abandonedCarts = carts.filter((cart) => cart.status === "ABANDONED");
+  
+    const totalRecovered = recoveredCarts.reduce((total, cart) => total + (cart.totalAmount || 0), 0);
+    const totalAbandoned = abandonedCarts.reduce((total, cart) => total + (cart.totalAmount || 0), 0);
+  
+    const conversionRate = carts.length > 0 
+      ? ((recoveredCarts.length / carts.length) * 100).toFixed(1) 
+      : "0.0";
+  
     return (
-      <p className="p-10 text-center font-bold text-red-500">
-        Unauthorized Access
-      </p>
-    );
-  }
-
-  const merchant = await prisma.merchant.findFirst({
-    where: { userId },
-    include: {
-      carts: {
-        orderBy: { createdAt: "desc" },
-      },
-    },
-  });
-
-  const carts = merchant?.carts || [];
-  const cartRows: CartRowData[] = carts.map((cart) => ({
-    cartUrl: cart.cartUrl,
-    customerName: cart.customerName,
-    customerPhone: cart.customerPhone,
-    id: cart.id,
-    status: cart.status,
-    totalAmount: cart.totalAmount,
-  }));
-
-  const recoveredCarts = carts.filter((cart) => cart.status === "RECOVERED");
-  const abandonedCarts = carts.filter((cart) => cart.status === "ABANDONED");
-  const totalRecovered = recoveredCarts.reduce(
-    (total, cart) => total + cart.totalAmount,
-    0
-  );
-  const totalAbandoned = abandonedCarts.reduce(
-    (total, cart) => total + cart.totalAmount,
-    0
-  );
-  const conversionRate =
-    carts.length > 0 ? ((recoveredCarts.length / carts.length) * 100).toFixed(1) : "0.0";
-
-  return (
     <div className="mx-auto max-w-7xl space-y-6 p-6">
       <div className="flex flex-col gap-4 border-b pb-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
