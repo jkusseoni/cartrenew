@@ -1,4 +1,4 @@
-import React from 'react';
+"use client";import React from 'react';
 import { Check } from 'lucide-react'; // Make sure to run: npm i lucide-react
 
 const tiers = [
