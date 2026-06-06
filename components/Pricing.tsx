@@ -18,17 +18,17 @@ type PricingTier = {
   tag: string;
 };
 
-const STRIPE_CHECKOUT_URLS: Record<LifetimeDealTier, string> = {
-  DOUBLE: process.env.NEXT_PUBLIC_STRIPE_URL_DOUBLE ?? "",
-  MULTIPLE: process.env.NEXT_PUBLIC_STRIPE_URL_MULTIPLE ?? "",
-  SINGLE: process.env.NEXT_PUBLIC_STRIPE_URL_SINGLE ?? "",
+const RAZORPAY_CHECKOUT_URLS: Record<LifetimeDealTier, string> = {
+  DOUBLE: "https://rzp.io/l/apka_double_plan_link",
+  MULTIPLE: "https://rzp.io/l/apka_multiple_plan_link",
+  SINGLE: "https://rzp.io/l/apka_single_plan_link",
 };
 
 const pricingTiers: PricingTier[] = [
   {
     accentClass: "border-emerald-200 bg-emerald-50 text-emerald-700",
     audience: "Solo operators",
-    checkoutUrl: STRIPE_CHECKOUT_URLS.SINGLE,
+    checkoutUrl: RAZORPAY_CHECKOUT_URLS.SINGLE,
     cta: "Claim Single LTD",
     description: "A focused launch tier for one store with core recovery automation.",
     features: [
@@ -46,7 +46,7 @@ const pricingTiers: PricingTier[] = [
   {
     accentClass: "border-indigo-200 bg-indigo-50 text-indigo-700",
     audience: "Growing merchants",
-    checkoutUrl: STRIPE_CHECKOUT_URLS.DOUBLE,
+    checkoutUrl: RAZORPAY_CHECKOUT_URLS.DOUBLE,
     cta: "Claim Double LTD",
     description: "The best fit for teams scaling recovery across multiple stores.",
     features: [
@@ -64,7 +64,7 @@ const pricingTiers: PricingTier[] = [
   {
     accentClass: "border-slate-300 bg-slate-100 text-slate-800",
     audience: "Agencies and portfolios",
-    checkoutUrl: STRIPE_CHECKOUT_URLS.MULTIPLE,
+    checkoutUrl: RAZORPAY_CHECKOUT_URLS.MULTIPLE,
     cta: "Claim Multiple LTD",
     description: "Portfolio-grade access for teams managing many storefronts.",
     features: [
@@ -93,7 +93,7 @@ export default function Pricing() {
             Choose your CartRenew LTD tier
           </h2>
           <p className="mt-4 text-lg text-slate-600">
-            Direct Stripe Payment Links for the launch offer, mapped by tier.
+            Direct Razorpay Payment Links for the launch offer, mapped by tier.
           </p>
         </div>
 
@@ -168,7 +168,7 @@ export default function Pricing() {
 
         <div className="mx-auto mt-8 flex max-w-3xl items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-600 shadow-sm">
           <ShieldCheck aria-hidden="true" className="h-4 w-4 text-emerald-600" />
-          Secure checkout is handled on Stripe-hosted payment pages.
+          Secure checkout is handled on Razorpay-hosted payment pages.
         </div>
       </div>
     </section>
