@@ -1,67 +1,39 @@
-import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { NextResponse } from "next/server";
+import Stripe from "stripe";
 
-export const dynamic = 'force-dynamic';
-export const runtime = 'nodejs';
+// Check if env vars exist
+const stripeSecret = process.env.STRIPE_SECRET_KEY;
+const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
-// Supabase client initialization
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-);
-
-export async function POST(request: Request) {
+export async function POST(req: Request) {
   try {
-    // 1. Fetching the raw payload string from the incoming Stripe webhook stream
-    const rawBody = await request.text();
-    const event = JSON.parse(rawBody);
-
-    // 2. Extracting core stripe parameters
-    const eventType = event.type;
-    console.log(`💳 Stripe Webhook Node Signal Received: ${eventType}`);
-
-    // Target payload execution when a payment checkout session passes successfully
-    if (eventType === 'checkout.session.completed') {
-      const session = event.data.object;
-      
-      const paymentIntentId = session.payment_intent;
-      
-      // Pulling target custom metadata tracking tokens
-      const cartId = session.metadata?.cartId;
-
-      console.log(`✨ Processing successful checkout for Cart reference ID: ${cartId || 'N/A'}`);
-
-      if (cartId) {
-        // 3. Database Sync: Mark the checkout ledger node as completely 'Recovered'
-        // (Yeh wo lines hain jo screenshot me missing thin)
-        const { error: dbError } = await supabase
-          .from('carts')
-          .update({ 
-            delivery_status: 'Recovered', 
-            payment_status: 'Paid',
-            stripe_payment_id: paymentIntentId,
-            recovered_at: new Date().toISOString()
-          })
-          .eq('id', cartId);
-
-        if (dbError) {
-          throw new Error(`Supabase synchronization exception: ${dbError.message}`);
-        }
-
-        console.log(`🟢 Success: Cart state reference ${cartId} updated to RECOVERED in master records.`);
-      } else {
-        console.log(`ℹ️ Webhook processed successfully, but no direct tracking metadata cartId token found.`);
-      }
+    if (!stripeSecret || !webhookSecret) {
+      console.error("Stripe env vars missing");
+      return NextResponse.json({ error: "Stripe not configured" }, { status: 500 });
     }
 
-    // Returning successful status payload back to Stripe
-    return NextResponse.json({ received: true, status: "Handled Securely" }, { status: 200 });
+    const stripe = new Stripe(stripeSecret, { apiVersion: "2024-06-20" });
+    const payload = await req.text();
+    const signature = req.headers.get("stripe-signature");
 
+    if (!signature) {
+      return NextResponse.json({ error: "No signature" }, { status: 400 });
+    }
+
+    const event = stripe.webhooks.constructEvent(payload, signature, webhookSecret);
+
+    switch (event.type) {
+      case "payment_intent.succeeded":
+        // Handle payment success
+        break;
+      case "checkout.session.completed":
+        // Handle checkout complete
+        break;
+    }
+
+    return NextResponse.json({ received: true });
   } catch (error: any) {
-    console.error("❌ Stripe Webhook Operational Engine Collision:", error.message);
-    return NextResponse.json({ 
-      success: false, 
-      error: error.message || "Webhook processing routing breakdown" 
-    }, { status: 400 });
+    console.error("Stripe webhook error:", error.message);
+    return NextResponse.json({ error: error.message }, { status: 400 });
   }
 }

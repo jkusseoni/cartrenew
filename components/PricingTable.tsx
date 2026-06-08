@@ -1,63 +1,101 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Check } from 'lucide-react';
+
+type Market = 'india' | 'global';
 
 type Plan = {
   id: string;
   name: string;
-  priceUSD: string; // Base Global Pricing in USD
-  equivalentINR: string; // Dynamic visualization fallback for local buyers
+  price: string;
   cadence: string;
   features: string[];
   cta: string;
   accent: string;
   highlight?: 'MOST_POPULAR' | 'BEST_VALUE';
-  checkoutUrl: string; // Single smart link that handles auto-currency switching
+  checkoutUrl: string; // Dynamic dedicated link selector
 };
 
 export default function PricingTable() {
-  // 🎯 Default base view is set to USD globally as requested
-  const [displayCurrency, setDisplayCurrency] = useState<'USD' | 'INR'>('USD');
+  const [market, setMarket] = useState<Market>('india');
 
-  const globalPlans: Plan[] = [
-    {
-      id: 'starter',
-      name: 'Starter',
-      priceUSD: '$12',
-      equivalentINR: '₹999',
-      cadence: '/month',
-      // Lemon Squeezy / Paddle Smart Link placeholder that auto-detects country & converts currency on checkout screen
-      checkoutUrl: 'https://cartrenew.lemonsqueezy.com/checkout/buy/starter-id', 
-      cta: 'Start 14-Day Free Trial',
-      accent: 'border-neutral-900 bg-neutral-950/40',
-      features: ['1 Store', '200 Cart Recoveries / month', 'WhatsApp + Email', 'Basic Dashboard', '0% Conversation Markup', '14-day Free Trial']
-    },
-    {
-      id: 'growth',
-      name: 'Growth',
-      priceUSD: '$29',
-      equivalentINR: '₹2,499',
-      cadence: '/month',
-      checkoutUrl: 'https://cartrenew.lemonsqueezy.com/checkout/buy/growth-id', 
-      cta: 'Start Free Trial Node',
-      accent: 'border-emerald-500/30 bg-neutral-950/60 shadow-xl shadow-emerald-500/[0.01]',
-      highlight: 'MOST_POPULAR',
-      features: ['3 Stores', '1,000 Cart Recoveries / month', 'WhatsApp + Email + SMS', 'AI Personalized Messages', '0% Conversation Markup', 'COD Verification']
-    },
-    {
-      id: 'scale',
-      name: 'Scale',
-      priceUSD: '$69',
-      equivalentINR: '₹5,999',
-      cadence: '/month',
-      checkoutUrl: 'https://cartrenew.lemonsqueezy.com/checkout/buy/scale-id', 
-      cta: 'Go Scale Unlimited',
-      accent: 'border-neutral-900 bg-neutral-950/40',
-      highlight: 'BEST_VALUE',
-      features: ['Unlimited Stores', 'Unlimited Recoveries', 'All Channels', 'AI Chatbot', 'Shiprocket Integration', 'Priority Support', 'White Label Option']
-    }
-  ];
+  // 💳 Mapped perfectly with your live Indian Razorpay and Global parameters
+  const plans = useMemo(() => {
+    return {
+      india: [
+        {
+          id: 'in-starter',
+          name: 'Starter',
+          price: '₹999',
+          cadence: '/month',
+          checkoutUrl: 'https://rzp.io/rzp/Vb031St', // ✅ Real Live Razorpay Link 1
+          cta: 'Start 14-Day Free Trial',
+          accent: 'border-neutral-900 bg-neutral-950/40',
+          features: ['1 Store', '200 Cart Recoveries / month', 'WhatsApp + Email', 'Basic Dashboard', '0% Conversation Markup', '14-day Free Trial']
+        },
+        {
+          id: 'in-growth',
+          name: 'Growth',
+          price: '₹2,499',
+          cadence: '/month',
+          checkoutUrl: 'https://rzp.io/rzp/nhwzQWQd', // ✅ Real Live Razorpay Link 2
+          cta: 'Start Free Trial Node',
+          accent: 'border-emerald-500/30 bg-neutral-950/60 shadow-xl shadow-emerald-500/[0.01]',
+          highlight: 'MOST_POPULAR',
+          features: ['3 Stores', '1,000 Cart Recoveries / month', 'WhatsApp + Email + SMS', 'AI Personalized Messages', '0% Conversation Markup', 'COD Verification']
+        },
+        {
+          id: 'in-scale',
+          name: 'Scale',
+          price: '₹5,999',
+          cadence: '/month',
+          checkoutUrl: 'https://rzp.io/rzp/soM2kxu', // ✅ Real Live Razorpay Link 3
+          cta: 'Go Scale',
+          accent: 'border-neutral-900 bg-neutral-950/40',
+          highlight: 'BEST_VALUE',
+          features: ['Unlimited Stores', 'Unlimited Recoveries', 'All Channels', 'AI Chatbot', 'Shiprocket Integration', 'Priority Support', 'Custom Templates', 'White Label Option']
+        }
+      ],
+      global: [
+        {
+          id: 'gl-starter',
+          name: 'Starter',
+          price: '$12',
+          cadence: '/month',
+          // 🔄 Replace with real Lemon Squeezy Link once your store is activated
+          checkoutUrl: 'https://cartrenew.lemonsqueezy.com/checkout/buy/starter-id', 
+          cta: 'Start Global Trial',
+          accent: 'border-neutral-900 bg-neutral-950/40',
+          features: ['1 Store', '200 Cart Recoveries / month', 'WhatsApp + Email', 'Basic Dashboard', '0% Conversation Markup']
+        },
+        {
+          id: 'gl-growth',
+          name: 'Growth',
+          price: '$29',
+          cadence: '/month',
+          checkoutUrl: 'https://cartrenew.lemonsqueezy.com/checkout/buy/growth-id', 
+          cta: 'Get Growth Mode',
+          accent: 'border-emerald-500/30 bg-neutral-950/60 shadow-xl shadow-emerald-500/[0.01]',
+          highlight: 'MOST_POPULAR',
+          features: ['3 Stores', '1,000 Cart Recoveries / month', 'WhatsApp + Email + SMS', 'AI Personalized Messages', '0% Conversation Markup']
+        },
+        {
+          id: 'gl-scale',
+          name: 'Scale',
+          price: '$69',
+          cadence: '/month',
+          checkoutUrl: 'https://cartrenew.lemonsqueezy.com/checkout/buy/scale-id', 
+          cta: 'Go Unlimited Scale',
+          accent: 'border-neutral-900 bg-neutral-950/40',
+          highlight: 'BEST_VALUE',
+          features: ['Unlimited Stores', 'Unlimited Recoveries', 'All Channels', 'AI Chatbot', 'Priority Support', 'White Label Option']
+        }
+      ]
+    };
+  }, []);
+
+  const activePlans = plans[market];
 
   return (
     <section id="trial" className="w-full bg-[#0B0F17] text-white py-20 px-4 sm:px-6 lg:px-8 border-t border-neutral-900/60 relative">
@@ -65,45 +103,44 @@ export default function PricingTable() {
 
       <div className="max-w-7xl mx-auto flex flex-col items-center space-y-12 text-center">
         
-        {/* Header Block */}
         <div className="max-w-3xl space-y-4">
           <h2 className="text-3xl sm:text-4xl font-black tracking-tight leading-tight">
             Predictable tiers. <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#00DF89] to-[#00D1FF]">Zero Variable Markup Surprises</span>.
           </h2>
           <p className="text-xs sm:text-sm text-neutral-400 max-w-2xl mx-auto">
-            Choose the operational architecture that scales your store volume. Checkout natively switches currencies and local payment rails automatically based on your country.
+            Choose the operational architecture that scales your store volume. All plans directly tunnel Meta's base cloud conversation charges without adding commissions.
           </p>
         </div>
 
-        {/* 🌐 VISUAL CURRENCY CONTROLLER SWITCH */}
+        {/* 🌐 LIVE TOGGLE HUB */}
         <div className="inline-flex items-center gap-1.5 p-1 rounded-xl bg-neutral-950 border border-neutral-900 shadow-inner relative z-10">
           <button
             type="button"
-            onClick={() => setDisplayCurrency('USD')}
+            onClick={() => setMarket('india')}
             className={`px-5 py-2.5 rounded-lg text-xs font-black transition-all duration-200 ${
-              displayCurrency === 'USD'
+              market === 'india'
                 ? 'bg-gradient-to-r from-[#00DF89] to-[#00D1FF] text-neutral-950 shadow-md'
                 : 'text-neutral-500 hover:text-neutral-300'
             }`}
           >
-            🌐 Global Market ($ USD)
+            🇮🇳 India (INR ₹)
           </button>
           <button
             type="button"
-            onClick={() => setDisplayCurrency('INR')}
+            onClick={() => setMarket('global')}
             className={`px-5 py-2.5 rounded-lg text-xs font-black transition-all duration-200 ${
-              displayCurrency === 'INR'
+              market === 'global'
                 ? 'bg-gradient-to-r from-[#00DF89] to-[#00D1FF] text-neutral-950 shadow-md'
                 : 'text-neutral-500 hover:text-neutral-300'
             }`}
           >
-            🇮🇳 Indian View (₹ INR Equivalent)
+            🌐 Global (USD $)
           </button>
         </div>
 
-        {/* 📊 3-COLUMN INTERACTIVE PRICING MATRIX */}
+        {/* 📊 3-COLUMN CARDS GRID */}
         <div className="w-full max-w-6xl grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch pt-4 text-left">
-          {globalPlans.map((plan) => (
+          {activePlans.map((plan) => (
             <div
               key={plan.id}
               className={`border rounded-3xl p-6 flex flex-col justify-between space-y-8 relative group transition-all duration-300 ${plan.accent}`}
@@ -123,16 +160,12 @@ export default function PricingTable() {
                 </div>
 
                 <div className="pt-1">
-                  <p className="text-4xl font-mono font-black text-white">
-                    {displayCurrency === 'USD' ? plan.priceUSD : plan.equivalentINR}
+                  <p className="text-3xl font-mono font-black text-white">
+                    {plan.price}
                     <span className="text-xs font-normal text-neutral-500 font-sans">{plan.cadence}</span>
-                  </p>
-                  <p className="text-[10px] text-neutral-500 font-bold mt-1">
-                    * {displayCurrency === 'USD' ? `Approx ${plan.equivalentINR} for Indian buyers` : `Base target rate: ${plan.priceUSD}`}
                   </p>
                 </div>
 
-                {/* Features Checklist */}
                 <ul className="space-y-2.5 pt-4 text-xs font-bold text-neutral-300 border-t border-neutral-900/60">
                   {plan.features.map((feat, idx) => (
                     <li key={idx} className="flex items-start gap-2">
@@ -143,7 +176,7 @@ export default function PricingTable() {
                 </ul>
               </div>
 
-              {/* Smart Redirect Button Element */}
+              {/* 🎯 External Redirect: Standard HTML standard anchor for zero routing interception */}
               <a
                 href={plan.checkoutUrl}
                 target="_blank"
