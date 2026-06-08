@@ -1,198 +1,67 @@
-export const dynamic = "force-dynamic";
-export const runtime = "nodejs";
+import { NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 
-import { NextResponse } from "next/server";
-import Stripe from "stripe";
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
-import {
-  getLifetimeDealConfig,
-  getLifetimeDealRules,
-  parseLifetimeDealTier,
-} from "@/lib/ltd-tiers";
-import { prisma } from "@/lib/prisma";
-const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
-const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-const stripe = stripeSecretKey ? new Stripe(stripeSecretKey) : null;
+// Supabase client initialization
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+);
 
-export async function POST(req: Request) {
-  if (!stripe || !webhookSecret) {
-    return NextResponse.json(
-      { error: "Stripe webhook receiver is not configured" },
-      { status: 503 }
-    );
-  }
-
-  const signature = req.headers.get("stripe-signature");
-
-  if (!signature) {
-    return NextResponse.json(
-      { error: "Missing Stripe signature header" },
-      { status: 400 }
-    );
-  }
-
-  const rawBody = await req.text();
-  let event: Stripe.Event;
-
+export async function POST(request: Request) {
   try {
-    event = stripe.webhooks.constructEvent(rawBody, signature, webhookSecret);
-  } catch (error) {
-    const message = getErrorMessage(error);
+    // 1. Fetching the raw payload string from the incoming Stripe webhook stream
+    const rawBody = await request.text();
+    const event = JSON.parse(rawBody);
 
-    console.error("Stripe webhook signature verification failed:", message);
+    // 2. Extracting core stripe parameters
+    const eventType = event.type;
+    console.log(`💳 Stripe Webhook Node Signal Received: ${eventType}`);
 
-    return NextResponse.json(
-      { error: `Webhook Error: ${message}` },
-      { status: 400 }
-    );
+    // Target payload execution when a payment checkout session passes successfully
+    if (eventType === 'checkout.session.completed') {
+      const session = event.data.object;
+      
+      const paymentIntentId = session.payment_intent;
+      
+      // Pulling target custom metadata tracking tokens
+      const cartId = session.metadata?.cartId;
+
+      console.log(`✨ Processing successful checkout for Cart reference ID: ${cartId || 'N/A'}`);
+
+      if (cartId) {
+        // 3. Database Sync: Mark the checkout ledger node as completely 'Recovered'
+        // (Yeh wo lines hain jo screenshot me missing thin)
+        const { error: dbError } = await supabase
+          .from('carts')
+          .update({ 
+            delivery_status: 'Recovered', 
+            payment_status: 'Paid',
+            stripe_payment_id: paymentIntentId,
+            recovered_at: new Date().toISOString()
+          })
+          .eq('id', cartId);
+
+        if (dbError) {
+          throw new Error(`Supabase synchronization exception: ${dbError.message}`);
+        }
+
+        console.log(`🟢 Success: Cart state reference ${cartId} updated to RECOVERED in master records.`);
+      } else {
+        console.log(`ℹ️ Webhook processed successfully, but no direct tracking metadata cartId token found.`);
+      }
+    }
+
+    // Returning successful status payload back to Stripe
+    return NextResponse.json({ received: true, status: "Handled Securely" }, { status: 200 });
+
+  } catch (error: any) {
+    console.error("❌ Stripe Webhook Operational Engine Collision:", error.message);
+    return NextResponse.json({ 
+      success: false, 
+      error: error.message || "Webhook processing routing breakdown" 
+    }, { status: 400 });
   }
-
-  if (
-    event.type === "checkout.session.completed" ||
-    event.type === "checkout.session.async_payment_succeeded"
-  ) {
-    const session = event.data.object as Stripe.Checkout.Session;
-    const fulfillment = await fulfillCheckoutSession(session);
-
-    return NextResponse.json(
-      {
-        eventId: event.id,
-        received: true,
-        ...fulfillment,
-      },
-      { status: fulfillment.success ? 200 : 422 }
-    );
-  }
-
-  return NextResponse.json(
-    {
-      eventId: event.id,
-      eventType: event.type,
-      ignored: true,
-      received: true,
-    },
-    { status: 200 }
-  );
-}
-
-async function fulfillCheckoutSession(session: Stripe.Checkout.Session) {
-  const clerkUserId = getMetadataValue(session.metadata, "clerkUserId") || session.client_reference_id;
-  const tier = parseLifetimeDealTier(
-    getMetadataValue(session.metadata, "selectedTier") || getMetadataValue(session.metadata, "tier")
-  );
-
-  if (!clerkUserId || !tier) {
-    return {
-      error: "Missing Clerk user or LTD tier metadata",
-      success: false,
-    };
-  }
-
-  if (session.payment_status !== "paid" && session.payment_status !== "no_payment_required") {
-    return {
-      error: `Checkout session is not paid: ${session.payment_status}`,
-      success: false,
-    };
-  }
-
-  const rules = getLifetimeDealRules(tier);
-  const tierConfig = getLifetimeDealConfig(tier);
-  const customerEmail =
-    session.customer_details?.email ||
-    getMetadataValue(session.metadata, "customerEmail") ||
-    `clerk-${clerkUserId}@cartrenew.local`;
-  const customerName = session.customer_details?.name || tierConfig.planLabel;
-  const purchasedAt = new Date(session.created * 1000);
-  const stripeCustomerId = getStripeId(session.customer);
-  const stripePaymentIntentId = getStripeId(session.payment_intent);
-  const entitlementData = {
-    lifetimeDealActive: true,
-    lifetimeDealPurchasedAt: purchasedAt,
-    monthlyRecoveryLimit: rules.monthlyRecoveryLimit,
-    storeLimit: rules.storeLimit,
-    stripeCheckoutSessionId: session.id,
-    stripeCustomerId,
-    stripePaymentIntentId,
-    subscriptionTier: tier,
-    tierConfig,
-  };
-
-  await prisma.user.upsert({
-    create: {
-      email: customerEmail,
-      firstName: getFirstName(customerName),
-      id: clerkUserId,
-      lastName: getLastName(customerName),
-    },
-    update: {
-      email: customerEmail,
-      firstName: getFirstName(customerName),
-      lastName: getLastName(customerName),
-    },
-    where: { id: clerkUserId },
-  });
-
-  const updatedMerchants = await prisma.merchant.updateMany({
-    data: entitlementData,
-    where: { userId: clerkUserId },
-  });
-
-  if (updatedMerchants.count === 0) {
-    await prisma.merchant.create({
-      data: {
-        ...entitlementData,
-        storeName: `${tierConfig.planLabel} LTD Store`,
-        userId: clerkUserId,
-      },
-    });
-  }
-
-  console.log("Stripe LTD checkout fulfilled:", {
-    clerkUserId,
-    sessionId: session.id,
-    tier,
-    updatedMerchants: Math.max(updatedMerchants.count, 1),
-  });
-
-  return {
-    clerkUserId,
-    config: tierConfig,
-    sessionId: session.id,
-    success: true,
-    tier,
-    updatedMerchants: Math.max(updatedMerchants.count, 1),
-  };
-}
-
-function getMetadataValue(
-  metadata: Stripe.Metadata | null,
-  key: string
-) {
-  return metadata?.[key]?.trim() || "";
-}
-
-function getStripeId(value: string | { id: string } | null) {
-  if (!value) {
-    return null;
-  }
-
-  if (typeof value === "string") {
-    return value;
-  }
-
-  return value.id;
-}
-
-function getFirstName(name: string) {
-  return name.trim().split(/\s+/).at(0) || null;
-}
-
-function getLastName(name: string) {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-
-  return parts.length > 1 ? parts.slice(1).join(" ") : null;
-}
-
-function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
 }

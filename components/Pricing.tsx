@@ -1,175 +1,213 @@
 "use client";
 
+import React, { useState } from 'react';
 import { ArrowUpRight, Check, ShieldCheck } from "lucide-react";
 
+// 🎯 1. Strict Typing from your original architecture
 type LifetimeDealTier = "SINGLE" | "DOUBLE" | "MULTIPLE";
 
 type PricingTier = {
   accentClass: string;
   audience: string;
-  checkoutUrl: string;
   cta: string;
   description: string;
   features: string[];
   highlighted: boolean;
   key: LifetimeDealTier;
   name: string;
-  price: string;
+  priceINR: string;
+  priceUSD: string;
   tag: string;
 };
 
+// 💳 2. Your Exact Live Razorpay Links from dashboard data
 const RAZORPAY_CHECKOUT_URLS: Record<LifetimeDealTier, string> = {
-  SINGLE: "https://rzp.io/rzp/6LhjxROW",     // Starter LTD ($99)
-  DOUBLE: "https://rzp.io/rzp/pU7Y7xTj",   // Growth LTD ($199)
-  MULTIPLE: "https://rzp.io/rzp/emdA9Lmk", // Agency LTD ($399)
+  SINGLE: "https://rzp.io/rzp/6LhjxROW",   // Starter LTD -> ₹9,400
+  DOUBLE: "https://rzp.io/rzp/pU7Y7xTj",   // Growth LTD -> ₹18,895
+  MULTIPLE: "https://rzp.io/rzp/emdA9Lmk", // Agency LTD -> ₹37,885
 };
 
+// 🌐 3. Matching International Stripe Links Mapping
+const STRIPE_CHECKOUT_URLS: Record<LifetimeDealTier, string> = {
+  SINGLE: "https://buy.stripe.com/test_starter_ltd",
+  DOUBLE: "https://buy.stripe.com/test_growth_ltd",
+  MULTIPLE: "https://buy.stripe.com/test_agency_ltd"
+};
+
+// 📊 4. Full 3-Card Array configured with your real prices
 const pricingTiers: PricingTier[] = [
   {
-    accentClass: "border-emerald-200 bg-emerald-50 text-emerald-700",
-    audience: "Solo operators",
-    checkoutUrl: RAZORPAY_CHECKOUT_URLS.SINGLE,
-    cta: "Claim Single LTD",
-    description: "A focused launch tier for one store with core recovery automation.",
-    features: [
-      "1 connected store",
-      "500 recovery events per month",
-      "WhatsApp and email recovery flows",
-      "AI recovery message generation",
-    ],
-    highlighted: false,
     key: "SINGLE",
-    name: "Single",
-    price: "$59",
-    tag: "Starter",
-  },
-  {
-    accentClass: "border-indigo-200 bg-indigo-50 text-indigo-700",
-    audience: "Growing merchants",
-    checkoutUrl: RAZORPAY_CHECKOUT_URLS.DOUBLE,
-    cta: "Claim Double LTD",
-    description: "The best fit for teams scaling recovery across multiple stores.",
-    features: [
-      "3 connected stores",
-      "2,000 recovery events per month",
-      "WhatsApp, email, and SMS channels",
-      "Advanced AI personalization controls",
-    ],
-    highlighted: true,
-    key: "DOUBLE",
-    name: "Double",
-    price: "$118",
-    tag: "Most Popular",
-  },
-  {
-    accentClass: "border-slate-300 bg-slate-100 text-slate-800",
-    audience: "Agencies and portfolios",
-    checkoutUrl: RAZORPAY_CHECKOUT_URLS.MULTIPLE,
-    cta: "Claim Multiple LTD",
-    description: "Portfolio-grade access for teams managing many storefronts.",
-    features: [
-      "Unlimited connected stores",
-      "Unlimited recovery events",
-      "All recovery channels unlocked",
-      "Priority implementation support",
-    ],
+    name: "Starter LTD",
+    audience: "For early stage e-commerce setups",
+    priceINR: "₹9,400",
+    priceUSD: "$99",
+    description: "Core autonomous cart recovery system with native features.",
+    cta: "Start 14-Day Free Trial",
+    accentClass: "border-neutral-900 bg-neutral-950/40",
     highlighted: false,
-    key: "MULTIPLE",
-    name: "Multiple",
-    price: "$177",
-    tag: "Best Value",
+    tag: "LAUNCH DEAL",
+    features: [
+      "0% Meta Conversation Markup Tax",
+      "Standard Abandoned Cart Tracking",
+      "Native Multilingual Shifting (Hinglish/Hindi)",
+      "Real-Time Shopify Webhook Sync",
+      "Standard Email Support Response"
+    ]
   },
+  {
+    key: "DOUBLE",
+    name: "Growth LTD",
+    audience: "Most popular for scaling stores",
+    priceINR: "₹18,895",
+    priceUSD: "$199",
+    description: "Advanced automation nodes with cross-channel failover fallback.",
+    cta: "Secure Lifetime Access",
+    accentClass: "border-emerald-500/30 bg-neutral-950/60 shadow-2xl shadow-emerald-500/[0.02]",
+    highlighted: true,
+    tag: "MOST POPULAR",
+    features: [
+      "Everything in the Starter LTD Plan",
+      "Intelligent Multi-Channel SMS Fallback",
+      "Priority Beta Access to AI Automation Factory",
+      "Dedicated Whatsapp Account Manager",
+      "Custom Webhook Integration Assistance"
+    ]
+  },
+  {
+    key: "MULTIPLE",
+    name: "Agency LTD",
+    audience: "For multi-brand operators & agencies",
+    priceINR: "₹37,885",
+    priceUSD: "$399",
+    description: "Full white-label workspace matrix for aggregate reseller client ops.",
+    cta: "Deploy Agency Infrastructure",
+    accentClass: "border-neutral-900 bg-neutral-950/40",
+    highlighted: false,
+    tag: "UNLIMITED",
+    features: [
+      "Everything in the Growth LTD Plan",
+      "White-label Client Workspace Matrix",
+      "Separate Brands & Permissions Management",
+      "Aggregate Reporting Views for Resellers",
+      "24/7 Priority SLA VIP Support Node"
+    ]
+  }
 ];
 
 export default function Pricing() {
+  const [currency, setCurrency] = useState<'INR' | 'USD'>('INR');
+
+  const handleCheckout = (tierKey: LifetimeDealTier) => {
+    const targetUrl = currency === 'INR' 
+      ? RAZORPAY_CHECKOUT_URLS[tierKey] 
+      : STRIPE_CHECKOUT_URLS[tierKey];
+      
+    if (targetUrl) {
+      window.open(targetUrl, '_blank');
+    }
+  };
+
   return (
-    <section className="bg-slate-50 py-20">
-      <div className="mx-auto max-w-7xl px-6 lg:px-8">
-        <div className="mx-auto max-w-3xl text-center">
-          <span className="inline-flex rounded-lg border border-slate-200 bg-white px-3 py-1 text-sm font-semibold text-slate-700 shadow-sm">
-            Lifetime launch pricing
-          </span>
-          <h2 className="mt-5 text-4xl font-bold text-slate-950 sm:text-5xl">
-            Choose your CartRenew LTD tier
+    // 🎯 Scroll Fixed: Connected layout IDs so landing page anchors snap straight here
+    <section id="trial" className="w-full bg-[#0B0F17] text-white py-20 px-4 sm:px-6 lg:px-8 border-t border-neutral-900/60 relative">
+      <div id="pricing" className="absolute -top-20" /> 
+      
+      <div className="max-w-7xl mx-auto flex flex-col items-center space-y-12 text-center">
+        
+        {/* Header Typography */}
+        <div className="max-w-3xl space-y-4">
+          <h2 className="text-3xl sm:text-4xl font-black tracking-tight leading-tight">
+            Predictable tiers. <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#00DF89] to-[#00D1FF]">Zero Variable Markup Surprises</span>.
           </h2>
-          <p className="mt-4 text-lg text-slate-600">
-            Direct Razorpay Payment Links for the launch offer, mapped by tier.
+          <p className="text-xs sm:text-sm text-neutral-400 max-w-2xl mx-auto">
+            Choose the operational architecture that scales your store volume. All plans directly tunnel Meta's base cloud conversation charges without adding commissions.
           </p>
         </div>
 
-        <div className="mt-12 grid grid-cols-1 gap-6 lg:grid-cols-3">
-          {pricingTiers.map((tier) => {
-            const isConfigured = tier.checkoutUrl.length > 0;
+        {/* 🌐 Currency Switcher Toggle */}
+        <div className="inline-flex items-center gap-1.5 p-1 rounded-xl bg-neutral-950 border border-neutral-900 shadow-inner relative z-10">
+          <button
+            type="button"
+            onClick={() => setCurrency('INR')}
+            className={`px-4 py-2 rounded-lg text-xs font-black transition-all duration-200 ${
+              currency === 'INR' 
+                ? 'bg-gradient-to-r from-[#00DF89] to-[#00D1FF] text-neutral-950 shadow-md' 
+                : 'text-neutral-500 hover:text-neutral-300'
+            }`}
+          >
+            🇮🇳 India (INR ₹)
+          </button>
+          <button
+            type="button"
+            onClick={() => setCurrency('USD')}
+            className={`px-4 py-2 rounded-lg text-xs font-black transition-all duration-200 ${
+              currency === 'USD' 
+                ? 'bg-gradient-to-r from-[#00DF89] to-[#00D1FF] text-neutral-950 shadow-md' 
+                : 'text-neutral-500 hover:text-neutral-300'
+            }`}
+          >
+            🌐 International (USD $)
+          </button>
+        </div>
 
-            return (
-              <article
-                className={`relative flex min-h-full flex-col rounded-lg border bg-white p-6 shadow-sm transition ${
-                  tier.highlighted
-                    ? "border-indigo-500 shadow-indigo-100 ring-1 ring-indigo-500"
-                    : "border-slate-200 hover:border-slate-300 hover:shadow-md"
-                }`}
-                key={tier.key}
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <span
-                      className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold ${tier.accentClass}`}
-                    >
-                      {tier.tag}
+        {/* 📊 3-Column Responsive Grid Layout */}
+        <div className="w-full max-w-7xl grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch pt-4 text-left">
+          {pricingTiers.map((tier) => (
+            <div 
+              key={tier.key}
+              className={`border rounded-3xl p-6 flex flex-col justify-between space-y-8 relative group transition-all duration-300 ${tier.accentClass}`}
+            >
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs uppercase font-black tracking-widest text-neutral-500">{tier.name}</span>
+                  <span className={`text-[9px] font-black tracking-wider uppercase px-2.5 py-0.5 rounded border ${
+                    tier.highlighted 
+                      ? 'bg-emerald-950/60 text-[#00DF89] border-emerald-500/20' 
+                      : 'bg-neutral-900 text-neutral-400 border-neutral-800'
+                  }`}>
+                    {tier.tag}
+                  </span>
+                </div>
+                
+                <div className="pt-2">
+                  <p className={`text-2xl sm:text-3xl font-mono font-black ${tier.highlighted ? 'text-[#00DF89]' : 'text-white'}`}>
+                    {currency === 'INR' ? tier.priceINR : tier.priceUSD}
+                    <span className="text-xs font-normal text-neutral-500 font-sans">
+                      {tier.key === 'SINGLE' ? '/month' : '/one-time'}
                     </span>
-                    <h3 className="mt-4 text-2xl font-bold text-slate-950">{tier.name}</h3>
-                    <p className="mt-2 text-sm font-medium text-slate-500">{tier.audience}</p>
-                  </div>
-                  {tier.highlighted ? (
-                    <span className="rounded-md bg-indigo-600 px-2.5 py-1 text-xs font-semibold text-white">
-                      Popular
-                    </span>
-                  ) : null}
+                  </p>
+                  <p className="text-[11px] text-neutral-400 mt-1">{tier.audience}</p>
+                  <p className="text-xs text-neutral-500 mt-2 leading-relaxed">{tier.description}</p>
                 </div>
 
-                <div className="mt-6 flex items-end gap-2">
-                  <span className="text-5xl font-bold text-slate-950">{tier.price}</span>
-                  <span className="pb-2 text-sm font-semibold text-slate-500">one time</span>
-                </div>
-
-                <p className="mt-5 min-h-12 text-sm leading-6 text-slate-600">{tier.description}</p>
-
-                <ul className="mt-6 space-y-3">
-                  {tier.features.map((feature) => (
-                    <li className="flex gap-3 text-sm text-slate-700" key={feature}>
-                      <Check aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-                      <span>{feature}</span>
+                {/* Checklist Content */}
+                <ul className="space-y-3 pt-4 text-xs font-bold text-neutral-300 border-t border-neutral-900/60">
+                  {tier.features.map((feature, idx) => (
+                    <li key={idx} className="flex items-start gap-2.5">
+                      <Check className="w-4 h-4 text-[#00DF89] shrink-0 mt-0.5" />
+                      <span className="leading-tight">{feature}</span>
                     </li>
                   ))}
                 </ul>
+              </div>
 
-                <div className="mt-8 flex flex-1 flex-col justify-end">
-                  <a
-                    aria-disabled={!isConfigured}
-                    className={`inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-bold transition ${
-                      isConfigured
-                        ? tier.highlighted
-                          ? "bg-indigo-600 text-white hover:bg-indigo-700"
-                          : "bg-slate-950 text-white hover:bg-slate-800"
-                        : "pointer-events-none bg-slate-200 text-slate-500"
-                    }`}
-                    href={isConfigured ? tier.checkoutUrl : "#"}
-                    rel="noopener noreferrer"
-                    target="_blank"
-                  >
-                    {isConfigured ? tier.cta : "Payment link pending"}
-                    <ArrowUpRight aria-hidden="true" className="h-4 w-4" />
-                  </a>
-                </div>
-              </article>
-            );
-          })}
+              {/* 🎯 5. Click Action perfectly mapped to active function callbacks */}
+              <button
+                type="button"
+                onClick={() => handleCheckout(tier.key)}
+                className={`w-full py-3.5 text-center text-xs font-black rounded-xl transition-all active:scale-[0.98] ${
+                  tier.highlighted 
+                    ? 'bg-gradient-to-r from-[#00DF89] to-[#00D1FF] text-neutral-950 hover:opacity-95 shadow-md shadow-emerald-500/10' 
+                    : 'border border-neutral-800 bg-neutral-900/40 hover:bg-neutral-900 hover:text-white'
+                }`}
+              >
+                {tier.cta}
+              </button>
+            </div>
+          ))}
         </div>
 
-        <div className="mx-auto mt-8 flex max-w-3xl items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-600 shadow-sm">
-          <ShieldCheck aria-hidden="true" className="h-4 w-4 text-emerald-600" />
-          Secure checkout is handled on Razorpay-hosted payment pages.
-        </div>
       </div>
     </section>
   );

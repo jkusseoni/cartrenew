@@ -16,6 +16,7 @@ const tiers = [
     buttonText: 'Get Lifetime Access',
     popular: false,
     checkoutUrl: "https://rzp.io/rzp/6LhjxROW",
+    paypalUrl: "https://www.paypal.com/paypalme/yourprofile/99USD",
   },
   {
     name: 'Growth LTD',
@@ -32,6 +33,7 @@ const tiers = [
     buttonText: 'Get Growth Access',
     popular: true,
     checkoutUrl: "https://rzp.io/rzp/pU7Y7xTj",
+    paypalUrl: "https://www.paypal.com/paypalme/yourprofile/199USD",
   },
   {
     name: 'Agency LTD',
