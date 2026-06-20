@@ -1,11 +1,38 @@
 "use client";
 
-import React, { useState } from 'react';
-import Link from 'next/link';
+import React, { useEffect, useState } from 'react';
+import { Link } from '@/i18n/routing';
+
+// Rotating CartAssist Bot preview samples for the hero chat widget.
+const CART_ASSIST_SAMPLES = [
+  { name: 'Aman', product: 'Premium Hoodie', verb: 'is', url: 'cartrenew.ai/r/x9b2' },
+  { name: 'Priya', product: 'Wireless Earbuds', verb: 'are', url: 'cartrenew.ai/r/p4k1' },
+  { name: 'Rajesh', product: 'Mechanical Keyboard', verb: 'is', url: 'cartrenew.ai/r/k7m3' },
+  { name: 'Sneha', product: 'Skincare Set', verb: 'is', url: 'cartrenew.ai/r/s5d8' },
+] as const;
 
 export default function Hero() {
   // Video Modal Control State
   const [isVideoOpen, setIsVideoOpen] = useState(false);
+
+  // CartAssist Bot live preview cycling state
+  const [activeSample, setActiveSample] = useState(0);
+  const [sampleVisible, setSampleVisible] = useState(true);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      // Fade out, swap content, then fade back in for a smooth transition.
+      setSampleVisible(false);
+      window.setTimeout(() => {
+        setActiveSample((prev) => (prev + 1) % CART_ASSIST_SAMPLES.length);
+        setSampleVisible(true);
+      }, 280);
+    }, 3000);
+
+    return () => window.clearInterval(interval);
+  }, []);
+
+  const sample = CART_ASSIST_SAMPLES[activeSample];
 
   return (
     <div className="w-full bg-[#0B0F17] relative overflow-hidden min-h-screen flex flex-col justify-between pb-12">
@@ -14,38 +41,7 @@ export default function Hero() {
       <div className="absolute top-[-10%] left-[-10%] w-[600px] h-[600px] bg-gradient-to-br from-emerald-500/[0.04] to-cyan-500/[0.01] blur-[120px] rounded-full pointer-events-none -z-10" />
       <div className="absolute top-[40%] right-[-10%] w-[600px] h-[600px] bg-indigo-500/[0.03] blur-[150px] rounded-full pointer-events-none -z-10" />
 
-      {/* 🌐 1. TOP HEADER NAVIGATION BAR */}
-      <header className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 flex items-center justify-between relative z-20">
-        <div className="flex items-center gap-2">
-          <span className="text-2xl font-black tracking-tight text-white">
-            Cart<span className="text-transparent bg-clip-text bg-gradient-to-r from-[#00DF89] to-[#00D1FF]">Renew</span>
-          </span>
-        </div>
-
-        <nav className="hidden md:flex items-center gap-8 text-sm font-semibold text-neutral-400">
-          <Link href="#pricing" className="hover:text-white transition-colors">Pricing</Link>
-          <Link href="#comparison" className="hover:text-white transition-colors">Comparison</Link>
-          <Link href="#dashboard" className="hover:text-white transition-colors">Dashboard</Link>
-          <Link href="#docs" className="hover:text-white transition-colors">Docs</Link>
-        </nav>
-
-        <div className="flex items-center gap-4">
-          <Link 
-            href="/dashboard" 
-            className="hidden sm:inline-block text-xs font-bold text-neutral-300 border border-neutral-800/80 bg-neutral-900/30 px-5 py-2.5 rounded-xl hover:bg-neutral-900 hover:text-white transition-all"
-          >
-            View Dashboard
-          </Link>
-          <Link 
-            href="/sign-up" 
-            className="text-xs font-black tracking-tight text-neutral-950 bg-gradient-to-r from-[#00DF89] to-[#00D1FF] px-5 py-2.5 rounded-xl hover:opacity-90 transition-all"
-          >
-            Start Free Trial
-          </Link>
-        </div>
-      </header>
-
-      {/* 🚀 2. HERO CONTENT CONTAINER */}
+      {/* 🚀 HERO CONTENT CONTAINER */}
       <main className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col gap-16 pt-12 md:pt-16 relative z-10">
         
         {/* Top Typography Copy Block */}
@@ -68,7 +64,7 @@ export default function Hero() {
           </h1>
 
           <p className="text-neutral-400 text-base sm:text-lg max-w-3xl leading-relaxed">
-            Stop paying hefty agent platform fees. CartRenew connects directly to your Shopify store setup to trigger autonomous, multilingual recovery workflows straight to your customer's WhatsApp device.
+            Stop paying hefty agent platform fees. CartRenew connects directly to your Shopify store setup to trigger autonomous, multilingual recovery workflows straight to your customer&apos;s WhatsApp device.
           </p>
 
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 pt-2">
@@ -144,13 +140,18 @@ export default function Hero() {
               </div>
             </div>
 
-            <div className="flex-1 flex flex-col gap-3 py-4 overflow-y-auto justify-end">
+            <div
+              className={`flex-1 flex flex-col gap-3 py-4 overflow-y-auto justify-end transition-opacity duration-300 ease-in-out ${
+                sampleVisible ? 'opacity-100' : 'opacity-0'
+              }`}
+              aria-live="polite"
+            >
               <div className="bg-neutral-900/80 text-neutral-300 border border-neutral-800/40 p-3 rounded-xl rounded-tl-none text-xs max-w-[85%] self-start leading-relaxed">
-                Hey <span className="text-indigo-400 font-mono">[Customer]</span>, don't miss out! Your cart items are waiting.
+                Hey <span className="text-indigo-400 font-mono">{sample.name}</span>, don&apos;t miss out! Your {sample.product} {sample.verb} waiting...
               </div>
               <div className="bg-neutral-900/80 text-neutral-300 border border-neutral-800/40 p-3 rounded-xl rounded-tl-none text-xs max-w-[85%] self-start leading-relaxed">
                 Complete your order now and get an instant <span className="text-[#00DF89] font-bold">10% OFF</span>!
-                <p className="text-indigo-400 mt-1 underline font-mono truncate">[Shortened Checkout URL]</p>
+                <p className="text-indigo-400 mt-1 underline font-mono truncate">{sample.url}</p>
               </div>
             </div>
 
@@ -162,7 +163,7 @@ export default function Hero() {
 
         {/* 🤝 4. INTEGRATIONS LOGO STRIP */}
         <div className="w-full pt-8 border-t border-neutral-900/40 text-center space-y-6">
-          <p className="text-[10px] tracking-[0.25em] text-neutral-500 font-mono uppercase font-black">Seamless Integrations With Industry Leaders</p>
+          <p className="text-lg md:text-xl font-bold tracking-wider text-center uppercase text-neutral-300 mb-8">Seamless Integrations With Industry Leaders</p>
           <div className="flex flex-wrap items-center justify-center gap-x-12 gap-y-6 text-sm font-semibold text-neutral-400">
             <div className="flex items-center gap-2.5 group cursor-pointer">
               <div className="w-7 h-7 rounded-md bg-neutral-900 border border-emerald-500/30 flex items-center justify-center text-xs text-[#00DF89]">S</div>
@@ -244,7 +245,7 @@ export default function Hero() {
                 </div>
                 <div className="text-left">
                   <h4 className="text-xs sm:text-sm font-bold text-white tracking-tight">Shopify Cart Abandonment Trigger</h4>
-                  <p className="text-xs text-neutral-400 mt-1 leading-relaxed">Our zero-latency webhook instantly logs the shopper's details and dropped items without putting any load on your storefront theme speed.</p>
+                  <p className="text-xs text-neutral-400 mt-1 leading-relaxed">Our zero-latency webhook instantly logs the shopper&apos;s details and dropped items without putting any load on your storefront theme speed.</p>
                 </div>
               </div>
 
@@ -266,7 +267,7 @@ export default function Hero() {
                 </div>
                 <div className="text-left">
                   <h4 className="text-xs sm:text-sm font-bold text-white tracking-tight">Stripe Sync & Automation Stop</h4>
-                  <p className="text-xs text-neutral-400 mt-1 leading-relaxed">As soon as the user completes the payment, our Stripe webhook triggers to mark the cart as 'Recovered', update dashboard logs, and halt any future follow-up reminders instantly.</p>
+                  <p className="text-xs text-neutral-400 mt-1 leading-relaxed">As soon as the user completes the payment, our Stripe webhook triggers to mark the cart as &apos;Recovered&apos;, update dashboard logs, and halt any future follow-up reminders instantly.</p>
                 </div>
               </div>
 

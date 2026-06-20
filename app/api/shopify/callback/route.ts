@@ -3,85 +3,14 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
-
-const SHOPIFY_API_KEY = process.env.NEXT_PUBLIC_SHOPIFY_APP_API_KEY || ''
-const SHOPIFY_API_SECRET = process.env.SHOPIFY_APP_API_SECRET || ''
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || ''
-const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || '2024-10'
-
-function verifyHmac(query: URLSearchParams): boolean {
-  const hmac = query.get('hmac') || ''
-  const params = new URLSearchParams(Array.from(query.entries()).filter(([k]) => k !== 'hmac' && k !== 'signature'))
-  const message = params.toString()
-  const generated = crypto
-    .createHmac('sha256', SHOPIFY_API_SECRET)
-    .update(message)
-    .digest('hex')
-
-  return crypto.timingSafeEqual(Buffer.from(generated), Buffer.from(hmac))
-}
-
-import crypto from 'crypto'
-
-async function registerWebhooks(shop: string, accessToken: string) {
-  const topics = [
-    'carts/create',
-    'carts/update',
-    'checkouts/create',
-    'checkouts/update',
-    'orders/create',
-  ]
-
-  const address = `${APP_URL.replace(/\/$/, '')}/api/webhooks/shopify`
-  try {
-    // Fetch existing webhooks for this shop
-    const listRes = await fetch(`https://${shop}/admin/api/${SHOPIFY_API_VERSION}/webhooks.json`, {
-      method: 'GET',
-      headers: {
-        'X-Shopify-Access-Token': accessToken,
-        'Content-Type': 'application/json',
-      },
-    })
-
-    const existing = listRes.ok ? await listRes.json().then((j) => j.webhooks || []) : []
-
-    const collected: Array<{ id: string | number; topic: string; address: string }> = []
-
-    for (const topic of topics) {
-      const match = existing.find((w: any) => w.topic === topic && String(w.address).replace(/\/$/, '') === address.replace(/\/$/, ''))
-      if (match) {
-        collected.push({ id: match.id, topic: match.topic, address: match.address })
-        console.log(`Webhook for ${topic} already registered on ${shop}, skipping`)
-        continue
-      }
-
-      // Create webhook if not present
-      const res = await fetch(`https://${shop}/admin/api/${SHOPIFY_API_VERSION}/webhooks.json`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Shopify-Access-Token': accessToken,
-        },
-        body: JSON.stringify({ webhook: { topic, address, format: 'json' } }),
-      })
-
-      if (!res.ok) {
-        const body = await res.text()
-        console.warn(`Failed to register webhook ${topic} for ${shop}: ${res.status} ${body}`)
-      } else {
-        const body = await res.json()
-        const created = body.webhook
-        collected.push({ id: created.id, topic: created.topic, address: created.address })
-        console.log(`Registered webhook ${topic} for ${shop}`)
-      }
-    }
-
-    return collected
-  } catch (err) {
-    console.error('Error registering webhooks for shop', shop, err)
-    return []
-  }
-}
+import {
+  getShopifyAppUrl,
+  getShopifyClientId,
+  getShopifyClientSecret,
+  isValidShopDomain,
+  verifyOAuthHmac,
+} from '@/lib/shopify/config'
+import { registerShopifyWebhooks } from '@/lib/shopify/webhooks'
 
 // OAuth callback: exchanges code for access token and registers webhooks
 export async function GET(req: NextRequest) {
@@ -93,12 +22,12 @@ export async function GET(req: NextRequest) {
     const code = q.get('code')
     const state = q.get('state')
 
-    if (!shop || !code) {
-      return NextResponse.json({ error: 'Missing shop or code' }, { status: 400 })
+    if (!isValidShopDomain(shop) || !code) {
+      return NextResponse.json({ error: 'Missing or invalid shop/code' }, { status: 400 })
     }
 
     // verify hmac
-    if (!verifyHmac(q)) {
+    if (!verifyOAuthHmac(q)) {
       return NextResponse.json({ error: 'HMAC validation failed' }, { status: 401 })
     }
 
@@ -106,7 +35,11 @@ export async function GET(req: NextRequest) {
     const tokenRes = await fetch(`https://${shop}/admin/oauth/access_token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ client_id: SHOPIFY_API_KEY, client_secret: SHOPIFY_API_SECRET, code }),
+      body: JSON.stringify({
+        client_id: getShopifyClientId(),
+        client_secret: getShopifyClientSecret(),
+        code,
+      }),
     })
 
     if (!tokenRes.ok) {
@@ -155,7 +88,7 @@ export async function GET(req: NextRequest) {
     const storeId = fetchedStore?.id
 
     // Register webhooks for this shop and save webhook IDs to the store
-    const registered = await registerWebhooks(shop, accessToken)
+    const registered = await registerShopifyWebhooks(shop, accessToken)
 
     if (storeId && registered && registered.length > 0) {
       await supabaseAdmin
@@ -165,7 +98,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Redirect back to settings
-    const redirectTo = `${APP_URL.replace(/\/$/, '')}/settings`
+    const redirectTo = `${getShopifyAppUrl()}/settings`
     return NextResponse.redirect(redirectTo)
   } catch (error) {
     console.error('Shopify OAuth callback error', error)

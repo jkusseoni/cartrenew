@@ -1,38 +1,24 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
-import MetaCheckoutTracker from "@/components/MetaCheckoutTracker";
-import { HandshakeProvider } from "@/context/HandshakeContext"; 
-import AppProviders from "./providers";
-import { Suspense } from "react";
+import { DM_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+import { LanguageProvider } from "@/context/LanguageContext";
+import AppProviders from "./providers";
 
-const inter = Inter({ subsets: ["latin"] });
+const dmSans = DM_Sans({ subsets: ["latin"], variable: "--font-dm-sans" });
+const jetBrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains" });
 
 export const metadata: Metadata = {
-  title: "CartRenew - AI WhatsApp Cart Recovery",
-  description: "Recover abandoned carts with AI-powered WhatsApp messages",
+  title: "CartRenew — WhatsApp Cart Recovery",
+  description: "AI-powered WhatsApp cart recovery for Shopify & WooCommerce",
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="scroll-smooth">
-      <body className={`${inter.className} bg-neutral-950 antialiased`}>
-        <AppProviders>
-          <HandshakeProvider>
-            <div className="flex min-h-screen flex-col bg-neutral-950">
-              <div className="flex-1 bg-neutral-950">
-                <Suspense fallback={null}>
-                  <MetaCheckoutTracker />
-                </Suspense>
-                {children}
-              </div>
-            </div>
-          </HandshakeProvider>
-        </AppProviders>
+    <html lang="en">
+      <body className={`${dmSans.variable} ${jetBrainsMono.variable} antialiased`}>
+        <LanguageProvider>
+          <AppProviders>{children}</AppProviders>
+        </LanguageProvider>
       </body>
     </html>
   );

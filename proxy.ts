@@ -1,43 +1,102 @@
-import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
+import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import createIntlMiddleware from "next-intl/middleware";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 
-const publicRoutes = createRouteMatcher([
-  '/',
-  '/sign-in(.*)',
-  '/sign-up(.*)',
-  '/terms(.*)',
-  '/privacy(.*)',
-  '/refund(.*)',
-  '/marketing-hub(.*)',
-  '/api/webhooks(.*)',
-  '/api/webhook(.*)',
-  '/api/meta-capi(.*)',
-  '/api/cart/automate(.*)',
-  '/api/orders/webhook(.*)',
-  '/api/shopify/callback(.*)',
-  '/api/cron(.*)',
+import { locales, routing } from "./i18n/routing";
+import {
+  isMerchantRole,
+  MERCHANT_DASHBOARD_PATH,
+  STANDARD_DASHBOARD_PATH,
+} from "./lib/roles";
+
+const intlMiddleware = createIntlMiddleware(routing);
+
+const localePublicRoutes = locales.flatMap((locale) => [
+  `/${locale}`,
+  `/${locale}/sign-in(.*)`,
+  `/${locale}/sign-up(.*)`,
+  `/${locale}/terms(.*)`,
+  `/${locale}/privacy(.*)`,
+  `/${locale}/refund(.*)`,
+  `/${locale}/marketing-hub(.*)`,
 ]);
 
-// Next.js Edge Runtime compatibility ke liye in-memory local tracking map use karenge
+const isPublicRoute = createRouteMatcher([
+  "/",
+  "/sign-in(.*)",
+  "/sign-up(.*)",
+  "/terms(.*)",
+  "/privacy(.*)",
+  "/refund(.*)",
+  "/marketing-hub(.*)",
+  ...localePublicRoutes,
+  "/__clerk/(.*)",
+  "/api/merchant/handshake(.*)",
+  "/api/webhooks(.*)",
+  "/api/webhook(.*)",
+  "/api/meta-capi(.*)",
+  "/api/cart/automate(.*)",
+  "/api/orders/webhook(.*)",
+  "/api/shopify/callback(.*)",
+  "/api/shopify/webhook(.*)",
+  "/api/auth/shopify(.*)",
+  "/api/cron(.*)",
+  "/shopify(.*)",
+]);
+
+// Standalone Shopify console: bypasses both next-intl locale routing and Clerk.
+const isShopifyEntry = (pathname: string) =>
+  pathname === "/shopify" || pathname.startsWith("/shopify/");
+
+const isAuthRoute = createRouteMatcher([
+  "/sign-in(.*)",
+  "/sign-up(.*)",
+  ...locales.flatMap((locale) => [
+    `/${locale}/sign-in(.*)`,
+    `/${locale}/sign-up(.*)`,
+  ]),
+]);
+
+const isMerchantRoute = createRouteMatcher(["/merchant(.*)"]);
+
+const isStandardAppRoute = createRouteMatcher([
+  "/dashboard(.*)",
+  "/analytics(.*)",
+  "/settings(.*)",
+  "/admin(.*)",
+  ...locales.flatMap((locale) => [
+    `/${locale}/dashboard(.*)`,
+    `/${locale}/analytics(.*)`,
+    `/${locale}/settings(.*)`,
+    `/${locale}/admin(.*)`,
+  ]),
+]);
+
 const ipCache = new Map<string, { count: number; resetTime: number }>();
 const skipClerk =
-  process.env.NODE_ENV === 'development' ||
-  process.env.SKIP_CLERK === 'true' ||
-  process.env.NEXT_PUBLIC_SKIP_CLERK === 'true';
+  process.env.NODE_ENV === "development" ||
+  process.env.SKIP_CLERK === "true" ||
+  process.env.NEXT_PUBLIC_SKIP_CLERK === "true";
 
-// Simple rate limiter helper function IP requests limits track karne ke liye
+function getLocaleFromPath(pathname: string): string {
+  const segment = pathname.split("/").filter(Boolean)[0];
+  return locales.includes(segment as (typeof locales)[number])
+    ? segment
+    : routing.defaultLocale;
+}
+
+function localizedPath(locale: string, path: string): string {
+  // localePrefix is 'always': prefix every locale (including the default).
+  const normalized = path.startsWith("/") ? path.slice(1) : path;
+  return `/${locale}/${normalized}`;
+}
+
 function isRateLimited(ip: string, limit: number, windowMs: number): boolean {
   const now = Date.now();
   const userData = ipCache.get(ip);
 
-  if (!userData) {
-    ipCache.set(ip, { count: 1, resetTime: now + windowMs });
-    return false;
-  }
-
-  if (now > userData.resetTime) {
-    // Window expire ho chuki hai, isliye reset karenge
+  if (!userData || now > userData.resetTime) {
     ipCache.set(ip, { count: 1, resetTime: now + windowMs });
     return false;
   }
@@ -46,99 +105,209 @@ function isRateLimited(ip: string, limit: number, windowMs: number): boolean {
   return userData.count > limit;
 }
 
-function handleProxy(request: NextRequest) {
-  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || '127.0.0.1';
-  const { pathname } = request.nextUrl;
+function applySecurityHeaders(response: NextResponse) {
+  response.headers.set("X-Frame-Options", "DENY");
+  response.headers.set("X-Content-Type-Options", "nosniff");
+  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
 
-  // =======================================================
-  // 1. IP-Based Rate Limiting (Sirf API routes ke liye)
-  // =======================================================
-  if (pathname.startsWith('/api')) {
-    const LIMIT = 60; // Har IP ko 1 minute me max 60 requests allowed hain
-    const WINDOW_MS = 60 * 1000; // 1 minute window (60000ms)
-
-    const limitTriggered = isRateLimited(ip, LIMIT, WINDOW_MS);
-
-    if (limitTriggered) {
-      console.warn(`ðŸ›‘ [Rate Limiter] Blocked Request from IP: ${ip} on route: ${pathname}`);
-      return new NextResponse(
-        JSON.stringify({
-          success: false,
-          error: 'Too many requests, slow down bhai! Limit is 60 requests per minute.',
-        }),
-        {
-          status: 429,
-          headers: {
-            'Content-Type': 'application/json',
-            'Retry-After': '60',
-          },
-        }
-      );
-    }
+  if (process.env.NODE_ENV === "production") {
+    response.headers.set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
   }
 
-  // =======================================================
-  // 2. Security Headers Injection (Global protection)
-  // =======================================================
-  const response = NextResponse.next();
-
-  // A. Clickjacking Protection (Hume koi external site iframe me inject nahi kar payegi)
-  response.headers.set('X-Frame-Options', 'DENY');
-
-  // B. MIME Sniffing Protection (Browser ko force karega strictly defined content types render karne ke liye)
-  response.headers.set('X-Content-Type-Options', 'nosniff');
-
-  // C. Referrer Policy (Redirects ke waqt data privacy control karne ke liye)
-  response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
-
-  // D. Strict Transport Security (HSTS - Production scale par sirf HTTPS forces ke liye)
-  if (process.env.NODE_ENV === 'production') {
-    response.headers.set(
-      'Strict-Transport-Security',
-      'max-age=63072000; includeSubDomains; preload'
-    );
-  }
-
-  // E. Content Security Policy (CSP - Unauthorized script aur style injection se protection)
-  // Humne isme Clerk, Facebook Pixel aur standard resources ko safely allow list me rakha hai
   const clerkSources = [
-    'https://clerk.cartrenew.com',
-    'https://*.clerk.accounts.dev',
-    'https://*.clerk.com',
-  ].join(' ');
+    "https://clerk.cartrenew.com",
+    "https://*.clerk.accounts.dev",
+    "https://*.clerk.com",
+  ].join(" ");
 
   const cspHeader = [
     "default-src 'self';",
     `script-src 'self' 'unsafe-eval' 'unsafe-inline' https://va.vercel-scripts.com https://challenges.cloudflare.com ${clerkSources};`,
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;",
     "font-src 'self' https://fonts.gstatic.com data:;",
-    `img-src 'self' data: https://images.unsplash.com https://img.clerk.com https://graph.facebook.com ${clerkSources};`,
+    `img-src 'self' data: blob: https://images.unsplash.com https://img.clerk.com https://graph.facebook.com ${clerkSources};`,
     `connect-src 'self' https://generativelanguage.googleapis.com https://graph.facebook.com ${clerkSources};`,
     `frame-src 'self' https://challenges.cloudflare.com ${clerkSources};`,
-  ].join(' ');
+    "worker-src 'self' blob:;",
+    "child-src 'self' blob:;",
+  ].join(" ");
 
-  response.headers.set('Content-Security-Policy', cspHeader);
+  if (process.env.NODE_ENV === "production") {
+    response.headers.set("Content-Security-Policy", cspHeader);
+  }
 
   return response;
 }
 
-export default skipClerk
-  ? handleProxy
-  : clerkMiddleware(async (auth, request: NextRequest) => {
-      if (!publicRoutes(request)) {
-        await auth.protect();
+function handleApiRequest(request: NextRequest) {
+  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "127.0.1";
+  const limitTriggered = isRateLimited(ip, 60, 60 * 1000);
+
+  if (limitTriggered) {
+    return new NextResponse(
+      JSON.stringify({
+        success: false,
+        error: "Too many requests, slow down bhai! Limit is 60 requests per minute.",
+      }),
+      {
+        status: 429,
+        headers: {
+          "Content-Type": "application/json",
+          "Retry-After": "60",
+        },
+      }
+    );
+  }
+
+  return NextResponse.next();
+}
+
+function runIntlMiddleware(request: NextRequest) {
+  return intlMiddleware(request);
+}
+
+function isIntlRedirect(response: NextResponse) {
+  const location = response.headers.get("location");
+  return Boolean(location && response.status >= 300 && response.status < 400);
+}
+
+/** Clerk path routing can leak nested URLs like /sign-in/dashboard — rewrite to real routes. */
+function resolveClerkPathLeak(pathname: string): string | null {
+  for (const locale of locales) {
+    const prefix = `/${locale}/sign-in/`;
+    if (pathname.startsWith(prefix)) {
+      const rest = pathname.slice(prefix.length);
+      if (rest === "sign-in") return `/${locale}/sign-in`;
+      if (rest === "sign-up") return `/${locale}/sign-up`;
+      if (rest.startsWith("dashboard")) return `/${locale}/${rest}`;
+    }
+
+    const signUpPrefix = `/${locale}/sign-up/`;
+    if (pathname.startsWith(signUpPrefix)) {
+      const rest = pathname.slice(signUpPrefix.length);
+      if (rest === "sign-in") return `/${locale}/sign-in`;
+      if (rest === "sign-up") return `/${locale}/sign-up`;
+      if (rest.startsWith("dashboard")) return `/${locale}/${rest}`;
+    }
+  }
+
+  if (pathname.startsWith("/sign-in/")) {
+    const rest = pathname.slice("/sign-in/".length);
+    if (rest === "sign-in") return "/sign-in";
+    if (rest === "sign-up") return "/sign-up";
+    if (rest.startsWith("dashboard")) return `/${rest}`;
+  }
+
+  if (pathname.startsWith("/sign-up/")) {
+    const rest = pathname.slice("/sign-up/".length);
+    if (rest === "sign-in") return "/sign-in";
+    if (rest === "sign-up") return "/sign-up";
+    if (rest.startsWith("dashboard")) return `/${rest}`;
+  }
+
+  return null;
+}
+
+function resolveRoleBasedRedirect(
+  request: NextRequest,
+  sessionClaims: CustomJwtSessionClaims | null | undefined,
+  userId: string | null | undefined
+) {
+  const merchant = isMerchantRole(sessionClaims);
+  const locale = getLocaleFromPath(request.nextUrl.pathname);
+
+  if (isMerchantRoute(request)) {
+    if (!merchant) {
+      if (userId) {
+        return NextResponse.redirect(
+          new URL(localizedPath(locale, STANDARD_DASHBOARD_PATH), request.url)
+        );
       }
 
-      return handleProxy(request);
+      return null;
+    }
+
+    return null;
+  }
+
+  if (merchant && (isStandardAppRoute(request) || isAuthRoute(request))) {
+    return NextResponse.redirect(new URL(MERCHANT_DASHBOARD_PATH, request.url));
+  }
+
+  return null;
+}
+
+async function handlePageRequest(request: NextRequest) {
+  const intlResponse = runIntlMiddleware(request);
+
+  if (isIntlRedirect(intlResponse)) {
+    return applySecurityHeaders(intlResponse);
+  }
+
+  return applySecurityHeaders(intlResponse);
+}
+
+export default skipClerk
+  ? async (request: NextRequest) => {
+      if (request.nextUrl.pathname.startsWith("/api")) {
+        return applySecurityHeaders(handleApiRequest(request));
+      }
+
+      if (isShopifyEntry(request.nextUrl.pathname)) {
+        return applySecurityHeaders(NextResponse.next());
+      }
+
+      const leakedPath = resolveClerkPathLeak(request.nextUrl.pathname);
+      if (leakedPath) {
+        return applySecurityHeaders(
+          NextResponse.redirect(new URL(leakedPath, request.url))
+        );
+      }
+
+      return handlePageRequest(request);
+    }
+  : clerkMiddleware(async (auth, request: NextRequest) => {
+      if (request.nextUrl.pathname.startsWith("/api")) {
+        return applySecurityHeaders(handleApiRequest(request));
+      }
+
+      if (isShopifyEntry(request.nextUrl.pathname)) {
+        return applySecurityHeaders(NextResponse.next());
+      }
+
+      const leakedPath = resolveClerkPathLeak(request.nextUrl.pathname);
+      if (leakedPath) {
+        return applySecurityHeaders(
+          NextResponse.redirect(new URL(leakedPath, request.url))
+        );
+      }
+
+      const intlResponse = runIntlMiddleware(request);
+
+      if (isIntlRedirect(intlResponse)) {
+        return applySecurityHeaders(intlResponse);
+      }
+
+      const { sessionClaims, userId } = await auth();
+      const roleRedirect = resolveRoleBasedRedirect(request, sessionClaims, userId);
+
+      if (roleRedirect) {
+        return applySecurityHeaders(roleRedirect);
+      }
+
+      if (!isPublicRoute(request)) {
+        const locale = getLocaleFromPath(request.nextUrl.pathname);
+        const signInUrl = localizedPath(locale, "/sign-in");
+        await auth.protect({ unauthenticatedUrl: signInUrl });
+      }
+
+      return applySecurityHeaders(intlResponse);
     });
 
-// Global matcher parameters Next.js execution cycle optimize karne ke liye
 export const config = {
   matcher: [
-    /*
-     * Ye filters lagaye hain taaki static files (images, CSS, JS, favicons) par
-     * à¤«à¤¾à¤²à¤¤à¥‚ me middleware execute na ho aur server fast chale.
-     */
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/(api|trpc)(.*)",
+    "/__clerk/(.*)",
   ],
 };

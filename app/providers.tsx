@@ -4,7 +4,13 @@ import { ClerkProvider } from '@clerk/nextjs'
 
 export default function AppProviders({ children }: { children: React.ReactNode }) {
   return (
-    <ClerkProvider afterSignOutUrl="/" signInUrl="/sign-in" signUpUrl="/sign-up">
+    <ClerkProvider
+      signInUrl="/en/sign-in"
+      signUpUrl="/en/sign-up"
+      signInForceRedirectUrl="/en/dashboard"
+      signUpForceRedirectUrl="/en/dashboard"
+      afterSignOutUrl="/en"
+    >
       {children}
     </ClerkProvider>
   )

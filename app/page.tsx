@@ -1,24 +1,27 @@
-import Hero from '@/components/sections/Hero';
-import PricingTable from '@/components/PricingTable';
-import PricingGrid from '@/components/PricingGrid';
-import AdvancedFeatures from '@/components/AdvancedFeatures';
-import CompetitorComparison from '@/components/sections/CompetitorComparison';
-import RevenueProjections from '@/components/sections/RevenueProjections';
-import LaunchTimeline from '@/components/sections/LaunchTimeline';
-import Footer from '@/components/sections/Footer'; 
+import { redirect } from "next/navigation";
 
-export default function Home() {
-  return (
-    // Fixed: Wrapper se max-w limit hatayi taaki background pure screen par stretch ho sake
-    <main className="min-h-screen bg-[#0B0F17] text-white overflow-x-hidden w-full">
-      <Hero />
-      <PricingTable />
-      <PricingGrid />
-      <AdvancedFeatures />
-      <CompetitorComparison />
-      <RevenueProjections />
-      <LaunchTimeline />
-      <Footer />
-    </main>
-  );
+import { routing } from "@/i18n/routing";
+
+type SearchParams = Record<string, string | string[] | undefined>;
+
+export default async function RootPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
+  const params = await searchParams;
+
+  // Shopify opens the app URL with a `shop` param — route those visits to the
+  // standalone Shopify console instead of the marketing landing page.
+  const shop = typeof params.shop === "string" ? params.shop : undefined;
+  if (shop) {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (typeof value === "string") query.set(key, value);
+      else if (Array.isArray(value) && value[0] != null) query.set(key, value[0]);
+    }
+    redirect(`/shopify?${query.toString()}`);
+  }
+
+  redirect(`/${routing.defaultLocale}`);
 }

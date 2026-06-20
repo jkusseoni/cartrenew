@@ -1,0 +1,26 @@
+# Shopify app configuration consumed by the Shopify CLI.
+# Docs: https://shopify.dev/docs/apps/tools/cli/configuration
+name = "CartRenew"
+client_id = "d0ac869a78129eb4f715276aa28916cb"
+
+# Standalone (non-embedded) Next.js app. During `shopify app dev` the CLI
+# overrides the application_url host with the live tunnel hostname.
+# Points at the standalone Shopify console (not the marketing landing page).
+application_url = "http://localhost:3000/shopify"
+embedded = false
+
+[access_scopes]
+# Scopes requested by lib/shopify/config.ts (read_orders, write_orders, read_checkouts).
+scopes = "read_orders,write_orders,read_checkouts"
+
+[auth]
+redirect_urls = [
+  "http://localhost:3000/api/auth/shopify/callback",
+  "http://localhost:3000/api/shopify/callback"
+]
+
+[webhooks]
+api_version = "2024-10"
+
+[pos]
+embedded = false

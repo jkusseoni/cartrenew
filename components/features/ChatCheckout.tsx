@@ -1,10 +1,48 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ShoppingBag } from "lucide-react";
 
 export default function ChatCheckout() {
   const [step, setStep] = useState(1);
+  const [isTyping, setIsTyping] = useState(false);
+  const [isCompleted, setIsCompleted] = useState(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Clear any pending typing timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
+
+  const handleSimulateReply = () => {
+    setStep(2);
+    setIsCompleted(false);
+    setIsTyping(true);
+
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+
+    timeoutRef.current = setTimeout(() => {
+      setIsTyping(false);
+      setIsCompleted(true);
+      timeoutRef.current = null;
+    }, 2000);
+  };
+
+  const handleReset = () => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    setStep(1);
+    setIsTyping(false);
+    setIsCompleted(false);
+  };
 
   return (
     <div className="bg-neutral-950/40 border border-neutral-800 p-8 rounded-2xl backdrop-blur-sm">
@@ -28,7 +66,7 @@ export default function ChatCheckout() {
           <div className="h-2 w-2 rounded-full bg-emerald-400" />
           <span className="text-xs font-bold text-neutral-200">CartRenew WhatsApp Node</span>
         </div>
-        
+
         <div className="p-4 space-y-3">
           <div className="bg-neutral-800 text-xs text-neutral-300 p-2.5 rounded-lg rounded-tl-none max-w-[85%]">
             📦 Your Shopify Cart has 1 Product waiting. Would you like to check out natively?
@@ -49,20 +87,40 @@ export default function ChatCheckout() {
               </div>
             </div>
           )}
+
+          {/* Bot is typing... indicator */}
+          {isTyping && (
+            <div className="bg-neutral-800 p-2.5 rounded-lg rounded-tl-none w-fit flex items-center gap-1.5">
+              <span className="sr-only">Bot is typing</span>
+              <span className="h-1.5 w-1.5 rounded-full bg-neutral-400 animate-bounce [animation-delay:-0.3s]" />
+              <span className="h-1.5 w-1.5 rounded-full bg-neutral-400 animate-bounce [animation-delay:-0.15s]" />
+              <span className="h-1.5 w-1.5 rounded-full bg-neutral-400 animate-bounce" />
+            </div>
+          )}
+
+          {/* Automated merchant response after typing completes */}
+          {isCompleted && (
+            <div className="bg-emerald-950/50 text-xs text-emerald-200 p-2.5 rounded-lg rounded-tl-none max-w-[90%] border border-emerald-500/30">
+              ✅ Order completed via native WhatsApp gateway! Secure payload logged.
+            </div>
+          )}
         </div>
 
         <div className="p-2.5 bg-neutral-950 border-t border-neutral-800 flex justify-end">
           {step === 1 ? (
-            <button 
-              onClick={() => setStep(2)}
-              className="bg-emerald-600 text-white font-semibold text-[11px] px-3 py-1.5 rounded"
+            <button
+              type="button"
+              onClick={handleSimulateReply}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-[11px] px-3 py-1.5 rounded transition-colors"
             >
               Simulate Reply
             </button>
           ) : (
-            <button 
-              onClick={() => setStep(1)}
-              className="text-neutral-500 font-semibold text-[11px] px-3 py-1.5 rounded hover:text-neutral-400"
+            <button
+              type="button"
+              onClick={handleReset}
+              disabled={isTyping}
+              className="text-neutral-500 font-semibold text-[11px] px-3 py-1.5 rounded hover:text-neutral-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               Reset Simulation
             </button>

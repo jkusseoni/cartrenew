@@ -4,28 +4,10 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import { queueRecoveryMessageForCart } from '@/lib/services/messaging'
-import crypto from 'crypto'
+import { verifyWebhookHmac } from '@/lib/shopify/config'
 
-const SHOPIFY_WEBHOOK_SECRET = process.env.SHOPIFY_APP_API_SECRET || ''
 const SHOPIFY_WEBHOOK_VERIFY = process.env.SHOPIFY_WEBHOOK_VERIFY !== 'false'
 const SHOPIFY_WEBHOOK_BYPASS = process.env.SHOPIFY_WEBHOOK_BYPASS === 'true'
-const SHOPIFY_WEBHOOK_HEADER_BYPASS = process.env.SHOPIFY_WEBHOOK_HEADER_BYPASS === 'true'
-
-function verifyWebhook(body: string, hmac: string): boolean {
-  if (!SHOPIFY_WEBHOOK_SECRET || !hmac) {
-    console.warn('Shopify webhook verification skipped due to missing secret or signature')
-    return false
-  }
-
-  const generatedHmac = crypto
-    .createHmac('sha256', SHOPIFY_WEBHOOK_SECRET)
-    .update(body, 'utf8')
-    .digest('base64')
-  return crypto.timingSafeEqual(
-    Buffer.from(generatedHmac),
-    Buffer.from(hmac)
-  )
-}
 
 function shouldSkipVerification(req: NextRequest): boolean {
   if (!SHOPIFY_WEBHOOK_VERIFY) {
@@ -60,7 +42,7 @@ export async function POST(req: NextRequest) {
     const body = await req.text()
     
     // Verify webhook unless bypass is enabled for local/staging testing.
-    if (!shouldSkipVerification(req) && !verifyWebhook(body, hmac)) {
+    if (!shouldSkipVerification(req) && !verifyWebhookHmac(body, hmac)) {
       return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
     }
     

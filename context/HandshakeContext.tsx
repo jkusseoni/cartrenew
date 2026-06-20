@@ -133,7 +133,8 @@ export function HandshakeProvider({ children }: { children: ReactNode }) {
       persistTrackingParams(payload.trackingParams);
       setHandshakeStatus("synced");
     } catch (error) {
-      console.warn("Merchant handshake sync failed:", error);
+      const message = error instanceof Error ? error.message : "Unknown handshake error";
+      console.warn("Merchant handshake sync failed:", message);
       setHandshakeStatus("error");
     } finally {
       setIsSyncing(false);
