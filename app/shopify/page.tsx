@@ -7,6 +7,25 @@ import { isValidShopDomain, verifyOAuthHmac } from "@/lib/shopify/config";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
+type CartRow = {
+  id: string;
+  customer_name: string | null;
+  customer_phone: string | null;
+  cart_value: number;
+  status: string;
+  created_at: string;
+};
+
+// Development-only sample data so the console renders before a real OAuth
+// install populates the `stores` / `abandoned_carts` tables.
+const MOCK_CARTS: CartRow[] = [
+  { id: "mock-1", customer_name: "Aman Sharma", customer_phone: "+91 98xxxxxx01", cart_value: 6499, status: "recovered", created_at: new Date().toISOString() },
+  { id: "mock-2", customer_name: "Priya Patel", customer_phone: "+91 98xxxxxx02", cart_value: 2199, status: "pending", created_at: new Date().toISOString() },
+  { id: "mock-3", customer_name: "Rajesh Kumar", customer_phone: "+91 98xxxxxx03", cart_value: 4850, status: "pending", created_at: new Date().toISOString() },
+  { id: "mock-4", customer_name: "Sneha Reddy", customer_phone: "+91 98xxxxxx04", cart_value: 8200, status: "recovered", created_at: new Date().toISOString() },
+  { id: "mock-5", customer_name: "Guest", customer_phone: null, cart_value: 1500, status: "lost", created_at: new Date().toISOString() },
+];
+
 function toQueryString(params: SearchParams): URLSearchParams {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
@@ -83,6 +102,8 @@ export default async function ShopifyEntryPage({
     );
   }
 
+  const isDev = process.env.NODE_ENV !== "production";
+
   // Resolve the installed store (created during the HMAC-verified OAuth callback).
   const { data: store, error } = await supabaseAdmin
     .from("stores")
@@ -90,30 +111,42 @@ export default async function ShopifyEntryPage({
     .eq("shopify_domain", shop)
     .maybeSingle();
 
-  if (error) {
-    console.error("Shopify entry: store lookup failed", error);
-    return (
-      <Notice
-        title="Something went wrong"
-        body="We couldn't load your store right now. Please try again in a moment."
-      />
-    );
+  // In development the local DB may not have the sandbox store yet (no OAuth
+  // install / migrations). Fall back to a mock store + carts so the console
+  // renders instead of erroring. Production keeps strict behavior.
+  let resolvedStore = store as { id: string; shopify_domain: string } | null;
+  let rows: CartRow[] = [];
+  let usingMock = false;
+
+  if (!resolvedStore || error) {
+    if (isDev) {
+      usingMock = true;
+      resolvedStore = { id: "dev-mock-store", shopify_domain: shop };
+      rows = MOCK_CARTS;
+    } else if (error) {
+      console.error("Shopify entry: store lookup failed", error);
+      return (
+        <Notice
+          title="Something went wrong"
+          body="We couldn't load your store right now. Please try again in a moment."
+        />
+      );
+    } else {
+      // Not installed yet → start the OAuth handshake.
+      redirect(`/api/auth/shopify?shop=${encodeURIComponent(shop)}`);
+    }
+  } else {
+    // Load this store's real recovery data.
+    const { data: carts } = await supabaseAdmin
+      .from("abandoned_carts")
+      .select("id, customer_name, customer_phone, cart_value, status, created_at")
+      .eq("store_id", resolvedStore.id)
+      .order("created_at", { ascending: false })
+      .limit(20);
+
+    rows = (carts ?? []) as CartRow[];
   }
 
-  // Not installed yet → start the OAuth handshake.
-  if (!store) {
-    redirect(`/api/auth/shopify?shop=${encodeURIComponent(shop)}`);
-  }
-
-  // Load this store's real recovery data.
-  const { data: carts } = await supabaseAdmin
-    .from("abandoned_carts")
-    .select("id, customer_name, customer_phone, cart_value, status, created_at")
-    .eq("store_id", store.id)
-    .order("created_at", { ascending: false })
-    .limit(20);
-
-  const rows = carts ?? [];
   const recovered = rows.filter((c) => c.status === "recovered");
   const pending = rows.filter((c) => c.status === "pending");
   const recoveredRevenue = recovered.reduce((sum, c) => sum + (Number(c.cart_value) || 0), 0);
@@ -123,8 +156,13 @@ export default async function ShopifyEntryPage({
       <div className="border-b border-neutral-900/60 pb-6 mb-8">
         <h1 className="text-2xl sm:text-3xl font-black tracking-tight">Cart Recovery Console</h1>
         <p className="text-xs sm:text-sm text-neutral-400 mt-1">
-          Connected store: <span className="text-[#00DF89] font-mono">{store.shopify_domain}</span>
+          Connected store: <span className="text-[#00DF89] font-mono">{resolvedStore.shopify_domain}</span>
         </p>
+        {usingMock && (
+          <p className="mt-2 inline-flex items-center gap-2 rounded-md border border-amber-900/40 bg-amber-950/30 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-400">
+            Dev mode · showing mock data (store not yet installed)
+          </p>
+        )}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">

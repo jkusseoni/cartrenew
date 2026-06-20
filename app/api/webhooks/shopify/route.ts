@@ -48,6 +48,8 @@ export async function POST(req: NextRequest) {
     
     const payload = JSON.parse(body)
 
+    console.log("🔥 LIVE WEBHOOK RECEIVED:", { topic, shop: shopDomain, payload })
+
     if (!shopDomain) {
       return NextResponse.json({ error: 'Missing X-Shopify-Shop-Domain header' }, { status: 400 })
     }
