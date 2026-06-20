@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 import { redirect } from "next/navigation";
 
 import { supabaseAdmin } from "@/lib/supabase";
-import { isValidShopDomain, verifyOAuthHmac } from "@/lib/shopify/config";
+import { getShopifyClientId, isValidShopDomain, verifyOAuthHmac } from "@/lib/shopify/config";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -36,8 +36,17 @@ function toQueryString(params: SearchParams): URLSearchParams {
 }
 
 function Shell({ children }: { children: React.ReactNode }) {
+  const apiKey = getShopifyClientId();
   return (
     <main className="min-h-screen bg-[#0B0F17] text-white flex flex-col">
+      {/* App Bridge must load as an early <script> for embedded apps. React 19
+          hoists this into <head>. App Bridge reads the `host` query param itself. */}
+      {apiKey ? (
+        <script
+          src="https://cdn.shopify.com/shopifycloud/app-bridge.js"
+          data-api-key={apiKey}
+        />
+      ) : null}
       <header className="border-b border-neutral-900 px-6 py-4 flex items-center gap-2">
         <span className="text-lg font-black tracking-tight">
           Cart<span className="text-transparent bg-clip-text bg-gradient-to-r from-[#00DF89] to-[#00D1FF]">Renew</span>

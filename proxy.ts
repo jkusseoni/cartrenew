@@ -139,6 +139,27 @@ function applySecurityHeaders(response: NextResponse) {
   return response;
 }
 
+/**
+ * Headers for the embedded Shopify console. Unlike `applySecurityHeaders`, this
+ * MUST NOT send `X-Frame-Options: DENY` (that blocks the Admin iframe entirely).
+ * Embedding is scoped via CSP `frame-ancestors` to Shopify Admin + storefronts.
+ */
+function applyShopifyEmbedHeaders(response: NextResponse) {
+  response.headers.set("X-Content-Type-Options", "nosniff");
+  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  response.headers.delete("X-Frame-Options");
+  response.headers.set(
+    "Content-Security-Policy",
+    "frame-ancestors https://admin.shopify.com https://*.myshopify.com https://cartrenew-sandbox-store.myshopify.com;"
+  );
+
+  if (process.env.NODE_ENV === "production") {
+    response.headers.set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
+  }
+
+  return response;
+}
+
 function handleApiRequest(request: NextRequest) {
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "127.0.1";
   const limitTriggered = isRateLimited(ip, 60, 60 * 1000);
@@ -254,7 +275,7 @@ export default skipClerk
       }
 
       if (isShopifyEntry(request.nextUrl.pathname)) {
-        return applySecurityHeaders(NextResponse.next());
+        return applyShopifyEmbedHeaders(NextResponse.next());
       }
 
       const leakedPath = resolveClerkPathLeak(request.nextUrl.pathname);
@@ -272,7 +293,7 @@ export default skipClerk
       }
 
       if (isShopifyEntry(request.nextUrl.pathname)) {
-        return applySecurityHeaders(NextResponse.next());
+        return applyShopifyEmbedHeaders(NextResponse.next());
       }
 
       const leakedPath = resolveClerkPathLeak(request.nextUrl.pathname);
