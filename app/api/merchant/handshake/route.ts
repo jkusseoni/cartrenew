@@ -67,6 +67,12 @@ const skipClerk =
   process.env.SKIP_CLERK === "true" ||
   process.env.NEXT_PUBLIC_SKIP_CLERK === "true";
 
+const skipDatabase =
+  skipClerk ||
+  process.env.SKIP_DATABASE === "true" ||
+  process.env.CODESPACES === "true" ||
+  !process.env.DATABASE_URL?.trim();
+
 export async function POST(req: Request) {
   try {
     const authContext = await getHandshakeAuthContext();
@@ -76,8 +82,20 @@ export async function POST(req: Request) {
     }
 
     const payload = await parseHandshakePayload(req);
-    const userContext = await getHandshakeUserContext(authContext, payload);
     const syncedAt = new Date().toISOString();
+
+    if (skipDatabase || isCodespacesRequest(req)) {
+      return NextResponse.json({
+        activeTier: payload.activeTier,
+        handshakeToken: authContext.userId,
+        merchantId: "local-dev-merchant",
+        success: true,
+        syncedAt,
+        trackingParams: payload.trackingParams,
+      });
+    }
+
+    const userContext = await getHandshakeUserContext(authContext, payload);
 
     await prisma.user.upsert({
       create: {
@@ -361,4 +379,17 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isCodespacesRequest(req: Request) {
+  const host = req.headers.get("host")?.toLowerCase() ?? "";
+  const origin = req.headers.get("origin")?.toLowerCase() ?? "";
+  const referer = req.headers.get("referer")?.toLowerCase() ?? "";
+
+  return (
+    host.includes(".github.dev") ||
+    host.includes(".app.github.dev") ||
+    origin.includes(".github.dev") ||
+    referer.includes(".github.dev")
+  );
 }

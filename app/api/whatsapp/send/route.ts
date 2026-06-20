@@ -18,7 +18,7 @@ export async function POST(request: Request) {
     }
 
     // 2. Fetch Twilio environment variables from secure local storage
-    const accountSid = process.env.TWILIO_ACCOUNT_STD;
+    const accountSid = process.env.TWILIO_ACCOUNT_SID;
     const authToken = process.env.TWILIO_AUTH_TOKEN;
     const fromWhatsApp = process.env.TWILIO_WHATSAPP_NUMBER || 'whatsapp:+14155238886';
 

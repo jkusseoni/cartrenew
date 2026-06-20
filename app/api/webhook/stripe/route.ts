@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 
-// Check if env vars exist
 const stripeSecret = process.env.STRIPE_SECRET_KEY;
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
@@ -12,7 +11,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Stripe not configured" }, { status: 500 });
     }
 
-    const stripe = new Stripe(stripeSecret, { apiVersion: "2024-06-20" });
+    const stripe = new Stripe(stripeSecret);
+
     const payload = await req.text();
     const signature = req.headers.get("stripe-signature");
 
