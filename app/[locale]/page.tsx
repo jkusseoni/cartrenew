@@ -1,5 +1,5 @@
 import AdvancedFeatures from "@/components/AdvancedFeatures";
-import PricingTable from "@/components/PricingTable";
+import PricingTable from "@/components/Pricingtable";
 import CompetitorComparison from "@/components/sections/CompetitorComparison";
 import Footer from "@/components/sections/Footer";
 import Hero from "@/components/sections/Hero";
