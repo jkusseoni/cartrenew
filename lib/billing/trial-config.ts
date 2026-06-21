@@ -2,6 +2,15 @@ export const TRIAL_DURATION_DAYS = 14;
 
 export type SubscriptionStatus = "TRIAL" | "PAID" | "EXPIRED";
 
+export type PlanType = "trial" | "starter" | "growth" | "scale";
+
+export const PLAN_LABELS: Record<PlanType, string> = {
+  trial: "14-Day Free Trial",
+  starter: "Starter Plan",
+  growth: "Growth Plan",
+  scale: "Scale Plan",
+};
+
 /** Global $12/mo Starter tier — shared with PricingTable checkout routing. */
 export const STARTER_TIER = {
   id: "gl-starter",

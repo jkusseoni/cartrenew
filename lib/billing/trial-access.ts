@@ -1,8 +1,9 @@
-import { TRIAL_DURATION_DAYS, type SubscriptionStatus } from "@/lib/billing/trial-config";
+import { TRIAL_DURATION_DAYS, type PlanType, type SubscriptionStatus, PLAN_LABELS } from "@/lib/billing/trial-config";
 
 export type TrialBillingSnapshot = {
   trialStartedAt: string;
   subscriptionStatus: SubscriptionStatus;
+  plan_type?: PlanType;
 };
 
 export type TrialAccessResult = {
@@ -13,7 +14,21 @@ export type TrialAccessResult = {
   isWorkspaceBlocked: boolean;
   trialStartedAt: Date;
   trialEndsAt: Date;
+  planType: PlanType;
+  planLabel: string;
 };
+
+export function normalizePlanType(snapshot: TrialBillingSnapshot): PlanType {
+  if (snapshot.plan_type) {
+    return snapshot.plan_type;
+  }
+
+  if (snapshot.subscriptionStatus === "PAID") {
+    return "starter";
+  }
+
+  return "trial";
+}
 
 export function getTrialEndsAt(trialStartedAt: Date): Date {
   const endsAt = new Date(trialStartedAt);
@@ -34,9 +49,10 @@ export function evaluateTrialAccess(
   const trialStartedAt = new Date(snapshot.trialStartedAt);
   const trialEndsAt = getTrialEndsAt(trialStartedAt);
   const daysRemaining = getDaysRemaining(trialStartedAt, now);
-  const isPaid = snapshot.subscriptionStatus === "PAID";
-  const isTrialExpired = now.getTime() > trialEndsAt.getTime();
-  const isTrialActive = !isPaid && !isTrialExpired;
+  const planType = normalizePlanType(snapshot);
+  const isPaid = planType !== "trial";
+  const isTrialExpired = planType === "trial" && now.getTime() > trialEndsAt.getTime();
+  const isTrialActive = planType === "trial" && !isTrialExpired;
   const isWorkspaceBlocked = isTrialExpired && !isPaid;
 
   return {
@@ -47,6 +63,8 @@ export function evaluateTrialAccess(
     isWorkspaceBlocked,
     trialStartedAt,
     trialEndsAt,
+    planType,
+    planLabel: PLAN_LABELS[planType],
   };
 }
 

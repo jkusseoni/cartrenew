@@ -40,8 +40,13 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-[#0B0F17] text-white flex flex-col">
-      {ready && access && !access.isPaid && (
-        <TrialBanner daysRemaining={access.daysRemaining} locale={locale} />
+      {ready && access && (
+        <TrialBanner
+          planType={access.planType}
+          planLabel={access.planLabel}
+          daysRemaining={access.daysRemaining}
+          locale={locale}
+        />
       )}
 
       <div className="flex flex-1 flex-col lg:flex-row min-h-0">

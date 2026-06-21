@@ -1,5 +1,5 @@
 import type { TrialBillingSnapshot } from "@/lib/billing/trial-access";
-import type { SubscriptionStatus } from "@/lib/billing/trial-config";
+import type { PlanType, SubscriptionStatus } from "@/lib/billing/trial-config";
 import { TRIAL_DURATION_DAYS } from "@/lib/billing/trial-config";
 
 const STORAGE_PREFIX = "cartrenew_billing";
@@ -33,19 +33,21 @@ export function ensureMockTrialStarted(userId: string): TrialBillingSnapshot {
   const snapshot: TrialBillingSnapshot = {
     trialStartedAt: new Date().toISOString(),
     subscriptionStatus: "TRIAL",
+    plan_type: "trial",
   };
 
   writeMockBillingSnapshot(userId, snapshot);
   return snapshot;
 }
 
-export function markMockSubscriptionPaid(userId: string) {
+export function markMockSubscriptionPaid(userId: string, planType: PlanType = "starter") {
   const current = readMockBillingSnapshot(userId);
   if (!current) return;
 
   writeMockBillingSnapshot(userId, {
     ...current,
     subscriptionStatus: "PAID",
+    plan_type: planType,
   });
 }
 
@@ -57,6 +59,7 @@ export function mockExpiredTrial(userId: string) {
   writeMockBillingSnapshot(userId, {
     trialStartedAt: started.toISOString(),
     subscriptionStatus: "TRIAL",
+    plan_type: "trial",
   });
 }
 
