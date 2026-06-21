@@ -1,16 +1,17 @@
 -- ============================================================================
 -- CartRenew core Shopify schema (Supabase / Postgres)
 -- ----------------------------------------------------------------------------
--- Run this ONCE in the Supabase SQL editor of a live project, then set
--- NEXT_PUBLIC_SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY in .env.local to point
--- at that project and run `npm run seed:shopify`.
+-- RUN ORDER (Supabase SQL Editor → New query → paste entire file → Run):
+--   1. This file (creates all webhook + dashboard tables)
+--   2. npm run seed:shopify -- --shop=cartrenew-sandbox-store.myshopify.com
+--   3. npm run dev  +  npm run shopify app dev
 --
--- Source of truth: lib/database.types.ts, reconciled with the runtime code in
--- app/api/webhooks/shopify/route.ts. Two deliberate reconciliations:
---   * Table is named `analytics_daily` (what the webhook handler queries),
---     not `analytics` (the older name in database.types.ts).
---   * `abandoned_carts.scheduled_message_at` is included (the handler inserts
---     it, though it is absent from database.types.ts).
+-- After migration, webhook handler writes to:
+--   stores, abandoned_carts, analytics_daily, messages
+--
+-- Set in .env.local (project xolermujthasddrenoyx):
+--   NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY,
+--   SUPABASE_SERVICE_ROLE_KEY, SHOPIFY_CLIENT_SECRET, REDIS_URL
 -- ============================================================================
 
 create extension if not exists "pgcrypto";
@@ -66,6 +67,8 @@ create table if not exists abandoned_carts (
   message_delivered_at timestamptz,
   message_read_at      timestamptz,
   recovery_completed_at timestamptz,
+  attempts              integer not null default 0,
+  processing_started_at timestamptz,
   created_at           timestamptz not null default now(),
   updated_at           timestamptz not null default now(),
   unique (store_id, shopify_cart_token)
@@ -169,3 +172,25 @@ create table if not exists cart_delivery_metrics (
 
 create index if not exists idx_cart_delivery_metrics_merchant on cart_delivery_metrics (merchant_id);
 create index if not exists idx_cart_delivery_metrics_created on cart_delivery_metrics (created_at);
+
+-- ----------------------------------------------------------------------------
+-- alerts (lightweight ops monitoring — optional, from legacy migration)
+-- ----------------------------------------------------------------------------
+create table if not exists alerts (
+  id         uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  level      text not null,
+  source     text,
+  event_type text,
+  payload    jsonb
+);
+
+create index if not exists alerts_event_type_idx on alerts (event_type);
+create index if not exists alerts_created_at_idx on alerts (created_at);
+
+-- ----------------------------------------------------------------------------
+-- Realtime (enable in Supabase Dashboard → Database → Publications if needed)
+-- Uncomment after first migration if live dashboard subscriptions are required:
+--   alter publication supabase_realtime add table public.abandoned_carts;
+--   alter publication supabase_realtime add table public.analytics_daily;
+-- ----------------------------------------------------------------------------

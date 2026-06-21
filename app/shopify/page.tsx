@@ -2,6 +2,8 @@ export const dynamic = "force-dynamic";
 
 import { redirect } from "next/navigation";
 
+import { AppBridgeHead } from "@/components/shopify/AppBridgeHead";
+import { ShopifyEmbedGuard } from "@/components/shopify/ShopifyEmbedGuard";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getShopifyClientId, isValidShopDomain, verifyOAuthHmac } from "@/lib/shopify/config";
 
@@ -16,15 +18,137 @@ type CartRow = {
   created_at: string;
 };
 
-// Development-only sample data so the console renders before a real OAuth
-// install populates the `stores` / `abandoned_carts` tables.
-const MOCK_CARTS: CartRow[] = [
-  { id: "mock-1", customer_name: "Aman Sharma", customer_phone: "+91 98xxxxxx01", cart_value: 6499, status: "recovered", created_at: new Date().toISOString() },
-  { id: "mock-2", customer_name: "Priya Patel", customer_phone: "+91 98xxxxxx02", cart_value: 2199, status: "pending", created_at: new Date().toISOString() },
-  { id: "mock-3", customer_name: "Rajesh Kumar", customer_phone: "+91 98xxxxxx03", cart_value: 4850, status: "pending", created_at: new Date().toISOString() },
-  { id: "mock-4", customer_name: "Sneha Reddy", customer_phone: "+91 98xxxxxx04", cart_value: 8200, status: "recovered", created_at: new Date().toISOString() },
-  { id: "mock-5", customer_name: "Guest", customer_phone: null, cart_value: 1500, status: "lost", created_at: new Date().toISOString() },
-];
+type StoreRow = { id: string; shopify_domain: string };
+
+type DashboardMetrics = {
+  trackedCarts: number;
+  recovered: number;
+  recoveredValue: number;
+};
+
+type DashboardData = {
+  store: StoreRow | null;
+  carts: CartRow[];
+  metrics: DashboardMetrics;
+};
+
+function describeSupabaseError(error: unknown): string {
+  if (!error) return "";
+  if (error instanceof Error) return error.message;
+  if (typeof error === "object") {
+    const row = error as Record<string, unknown>;
+    return [row.message, row.code, row.details, row.hint]
+      .filter((value): value is string => typeof value === "string" && value.length > 0)
+      .join(" · ");
+  }
+  return String(error);
+}
+
+async function ensureDevStore(shop: string): Promise<StoreRow | null> {
+  const { data, error } = await supabaseAdmin
+    .from("stores")
+    .upsert(
+      {
+        shopify_domain: shop,
+        shopify_access_token: "dev-offline-token-placeholder",
+        clerk_user_id: `sandbox_${shop.replace(/[^a-z0-9]/gi, "_")}`,
+      },
+      { onConflict: "shopify_domain" }
+    )
+    .select("id, shopify_domain")
+    .maybeSingle();
+
+  if (error) {
+    const message = describeSupabaseError(error);
+    if (message) {
+      console.warn(`[CartRenew] Could not auto-provision store for ${shop}: ${message}`);
+    }
+    return null;
+  }
+
+  return (data as StoreRow | null) ?? null;
+}
+
+async function loadStoreDashboard(shop: string, options?: { autoProvision?: boolean }): Promise<DashboardData> {
+  const empty: DashboardData = {
+    store: null,
+    carts: [],
+    metrics: { trackedCarts: 0, recovered: 0, recoveredValue: 0 },
+  };
+
+  try {
+    let { data: store, error: storeError } = await supabaseAdmin
+      .from("stores")
+      .select("id, shopify_domain")
+      .eq("shopify_domain", shop)
+      .maybeSingle();
+
+    if (storeError) {
+      const message = describeSupabaseError(storeError);
+      if (message) {
+        console.warn(`[CartRenew] Supabase store lookup failed for ${shop}: ${message}`);
+      }
+      return empty;
+    }
+
+    if (!store && options?.autoProvision) {
+      store = await ensureDevStore(shop);
+    }
+
+    if (!store) {
+      return empty;
+    }
+
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - 30);
+    const startDateStr = startDate.toISOString().split("T")[0];
+
+    const [cartsRes, analyticsRes] = await Promise.all([
+      supabaseAdmin
+        .from("abandoned_carts")
+        .select("id, customer_name, customer_phone, cart_value, status, created_at")
+        .eq("store_id", store.id)
+        .order("created_at", { ascending: false })
+        .limit(20),
+      supabaseAdmin
+        .from("analytics_daily")
+        .select("carts_created, carts_recovered, revenue_recovered")
+        .eq("store_id", store.id)
+        .gte("date", startDateStr),
+    ]);
+
+    const carts = (cartsRes.data ?? []) as CartRow[];
+    const analytics = analyticsRes.data ?? [];
+
+    const metrics = analytics.reduce<DashboardMetrics>(
+      (acc, row) => ({
+        trackedCarts: acc.trackedCarts + (row.carts_created ?? 0),
+        recovered: acc.recovered + (row.carts_recovered ?? 0),
+        recoveredValue: acc.recoveredValue + Number(row.revenue_recovered ?? 0),
+      }),
+      { trackedCarts: 0, recovered: 0, recoveredValue: 0 }
+    );
+
+    // Fall back to live cart rows when analytics_daily has not been populated yet.
+    if (metrics.trackedCarts === 0 && carts.length > 0) {
+      const recoveredCarts = carts.filter((c) => c.status === "recovered");
+      metrics.trackedCarts = carts.length;
+      metrics.recovered = recoveredCarts.length;
+      metrics.recoveredValue = recoveredCarts.reduce(
+        (sum, c) => sum + (Number(c.cart_value) || 0),
+        0
+      );
+    }
+
+    return { store: store as StoreRow, carts, metrics };
+  } catch (err) {
+    const message = describeSupabaseError(err);
+    if (message) {
+      console.warn(`[CartRenew] Dashboard load failed for ${shop}: ${message}`);
+    }
+    return empty;
+  }
+}
 
 function toQueryString(params: SearchParams): URLSearchParams {
   const search = new URLSearchParams();
@@ -35,18 +159,20 @@ function toQueryString(params: SearchParams): URLSearchParams {
   return search;
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
+function Shell({
+  children,
+  host,
+  embedded,
+}: {
+  children: React.ReactNode;
+  host?: string;
+  embedded: boolean;
+}) {
   const apiKey = getShopifyClientId();
   return (
     <main className="min-h-screen bg-[#0B0F17] text-white flex flex-col">
-      {/* App Bridge must load as an early <script> for embedded apps. React 19
-          hoists this into <head>. App Bridge reads the `host` query param itself. */}
-      {apiKey ? (
-        <script
-          src="https://cdn.shopify.com/shopifycloud/app-bridge.js"
-          data-api-key={apiKey}
-        />
-      ) : null}
+      <ShopifyEmbedGuard embedded={embedded} />
+      <AppBridgeHead apiKey={apiKey} host={host} embedded={embedded} />
       <header className="border-b border-neutral-900 px-6 py-4 flex items-center gap-2">
         <span className="text-lg font-black tracking-tight">
           Cart<span className="text-transparent bg-clip-text bg-gradient-to-r from-[#00DF89] to-[#00D1FF]">Renew</span>
@@ -54,15 +180,30 @@ function Shell({ children }: { children: React.ReactNode }) {
         <span className="text-[9px] font-mono font-black uppercase px-1.5 py-0.5 rounded bg-neutral-900 border border-neutral-800 text-neutral-400">
           Shopify
         </span>
+        {!embedded && (
+          <span className="text-[9px] font-mono font-bold uppercase px-1.5 py-0.5 rounded bg-amber-950/40 border border-amber-900/30 text-amber-400">
+            Standalone
+          </span>
+        )}
       </header>
       <div className="flex-1 p-6 lg:p-10 max-w-6xl w-full mx-auto">{children}</div>
     </main>
   );
 }
 
-function Notice({ title, body }: { title: string; body: string }) {
+function Notice({
+  title,
+  body,
+  host,
+  embedded,
+}: {
+  title: string;
+  body: string;
+  host?: string;
+  embedded: boolean;
+}) {
   return (
-    <Shell>
+    <Shell host={host} embedded={embedded}>
       <div className="max-w-md mx-auto mt-20 rounded-2xl border border-neutral-800 bg-neutral-950/40 p-8 text-center">
         <h1 className="text-xl font-black text-white">{title}</h1>
         <p className="mt-3 text-sm text-neutral-400 leading-relaxed">{body}</p>
@@ -71,122 +212,44 @@ function Notice({ title, body }: { title: string; body: string }) {
   );
 }
 
-export default async function ShopifyEntryPage({
-  searchParams,
+function Console({
+  store,
+  rows,
+  metrics,
+  host,
+  embedded,
 }: {
-  searchParams: Promise<SearchParams>;
+  store: StoreRow;
+  rows: CartRow[];
+  metrics: DashboardMetrics;
+  host?: string;
+  embedded: boolean;
 }) {
-  const params = await searchParams;
-  const shop = typeof params.shop === "string" ? params.shop : undefined;
-
-  if (!isValidShopDomain(shop)) {
-    return (
-      <Notice
-        title="Open from Shopify"
-        body="Launch CartRenew from your Shopify Admin (Apps → CartRenew). A valid shop context is required to load your dashboard."
-      />
-    );
-  }
-
-  // Standalone session check: when Shopify opens the app URL it appends an HMAC
-  // over the query string. Verify it when present; require it in production.
-  const query = toQueryString(params);
-  const hasHmac = query.has("hmac");
-
-  if (hasHmac && !verifyOAuthHmac(query)) {
-    return (
-      <Notice
-        title="Verification failed"
-        body="The request signature from Shopify could not be verified. Please reopen the app from your Shopify Admin."
-      />
-    );
-  }
-
-  if (!hasHmac && process.env.NODE_ENV === "production") {
-    return (
-      <Notice
-        title="Open from Shopify"
-        body="This page must be opened from your Shopify Admin so we can securely verify your store session."
-      />
-    );
-  }
-
-  const isDev = process.env.NODE_ENV !== "production";
-
-  // Resolve the installed store (created during the HMAC-verified OAuth callback).
-  const { data: store, error } = await supabaseAdmin
-    .from("stores")
-    .select("id, shopify_domain, created_at")
-    .eq("shopify_domain", shop)
-    .maybeSingle();
-
-  // In development the local DB may not have the sandbox store yet (no OAuth
-  // install / migrations). Fall back to a mock store + carts so the console
-  // renders instead of erroring. Production keeps strict behavior.
-  let resolvedStore = store as { id: string; shopify_domain: string } | null;
-  let rows: CartRow[] = [];
-  let usingMock = false;
-
-  if (!resolvedStore || error) {
-    if (isDev) {
-      usingMock = true;
-      resolvedStore = { id: "dev-mock-store", shopify_domain: shop };
-      rows = MOCK_CARTS;
-    } else if (error) {
-      console.error("Shopify entry: store lookup failed", error);
-      return (
-        <Notice
-          title="Something went wrong"
-          body="We couldn't load your store right now. Please try again in a moment."
-        />
-      );
-    } else {
-      // Not installed yet → start the OAuth handshake.
-      redirect(`/api/auth/shopify?shop=${encodeURIComponent(shop)}`);
-    }
-  } else {
-    // Load this store's real recovery data.
-    const { data: carts } = await supabaseAdmin
-      .from("abandoned_carts")
-      .select("id, customer_name, customer_phone, cart_value, status, created_at")
-      .eq("store_id", resolvedStore.id)
-      .order("created_at", { ascending: false })
-      .limit(20);
-
-    rows = (carts ?? []) as CartRow[];
-  }
-
-  const recovered = rows.filter((c) => c.status === "recovered");
   const pending = rows.filter((c) => c.status === "pending");
-  const recoveredRevenue = recovered.reduce((sum, c) => sum + (Number(c.cart_value) || 0), 0);
+  const recoveredRows = rows.filter((c) => c.status === "recovered");
 
   return (
-    <Shell>
+    <Shell host={host} embedded={embedded}>
       <div className="border-b border-neutral-900/60 pb-6 mb-8">
         <h1 className="text-2xl sm:text-3xl font-black tracking-tight">Cart Recovery Console</h1>
         <p className="text-xs sm:text-sm text-neutral-400 mt-1">
-          Connected store: <span className="text-[#00DF89] font-mono">{resolvedStore.shopify_domain}</span>
+          Connected store: <span className="text-[#00DF89] font-mono">{store.shopify_domain}</span>
         </p>
-        {usingMock && (
-          <p className="mt-2 inline-flex items-center gap-2 rounded-md border border-amber-900/40 bg-amber-950/30 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-400">
-            Dev mode · showing mock data (store not yet installed)
-          </p>
-        )}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
         <div className="bg-neutral-950/40 border border-neutral-900 p-5 rounded-2xl">
           <p className="text-[10px] uppercase font-bold tracking-wider text-neutral-500">Tracked Carts</p>
-          <p className="text-2xl font-mono font-black text-white mt-2">{rows.length}</p>
+          <p className="text-2xl font-mono font-black text-white mt-2">{metrics.trackedCarts}</p>
         </div>
         <div className="bg-neutral-950/40 border border-neutral-900 p-5 rounded-2xl">
           <p className="text-[10px] uppercase font-bold tracking-wider text-neutral-500">Recovered</p>
-          <p className="text-2xl font-mono font-black text-[#00DF89] mt-2">{recovered.length}</p>
+          <p className="text-2xl font-mono font-black text-[#00DF89] mt-2">{metrics.recovered}</p>
         </div>
         <div className="bg-neutral-950/40 border border-neutral-900 p-5 rounded-2xl">
           <p className="text-[10px] uppercase font-bold tracking-wider text-neutral-500">Recovered Value</p>
           <p className="text-2xl font-mono font-black text-[#00D1FF] mt-2">
-            {recoveredRevenue.toLocaleString()}
+            {metrics.recoveredValue.toLocaleString()}
           </p>
         </div>
       </div>
@@ -238,8 +301,117 @@ export default async function ShopifyEntryPage({
       </div>
 
       <p className="mt-6 text-[11px] text-neutral-600">
-        {pending.length} pending · {recovered.length} recovered · showing latest {rows.length}
+        {pending.length} pending · {recoveredRows.length} recovered · showing latest {rows.length}
       </p>
     </Shell>
+  );
+}
+
+export default async function ShopifyEntryPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
+  const params = await searchParams;
+  const shop = typeof params.shop === "string" ? params.shop : undefined;
+  const host = typeof params.host === "string" ? params.host : undefined;
+  const embedded = Boolean(host && host.length > 0);
+  const isDev = process.env.NODE_ENV !== "production";
+
+  if (!isValidShopDomain(shop)) {
+    return (
+      <Notice
+        title="Open from Shopify"
+        body="Launch CartRenew from your Shopify Admin (Apps → CartRenew), or append ?shop=your-store.myshopify.com for local dev."
+        host={host}
+        embedded={embedded}
+      />
+    );
+  }
+
+  // Local dev: bypass HMAC, host, OAuth, and iframe gates — load live Supabase data.
+  if (isDev) {
+    const dashboard = await loadStoreDashboard(shop, { autoProvision: true });
+
+    return (
+      <Console
+        store={dashboard.store ?? { id: "pending", shopify_domain: shop }}
+        rows={dashboard.carts}
+        metrics={dashboard.metrics}
+        host={host}
+        embedded={embedded}
+      />
+    );
+  }
+
+  // Production: enforce embedded + HMAC verification.
+  const query = toQueryString(params);
+  const hasHmac = query.has("hmac");
+
+  if (!embedded) {
+    return (
+      <Notice
+        title="Open from Shopify Admin"
+        body="This app must be opened from your Shopify Admin panel so App Bridge can establish a secure session."
+        host={host}
+        embedded={embedded}
+      />
+    );
+  }
+
+  if (hasHmac && !verifyOAuthHmac(query)) {
+    return (
+      <Notice
+        title="Verification failed"
+        body="The request signature from Shopify could not be verified. Please reopen the app from your Shopify Admin."
+        host={host}
+        embedded={embedded}
+      />
+    );
+  }
+
+  if (!hasHmac) {
+    return (
+      <Notice
+        title="Open from Shopify"
+        body="This page must be opened from your Shopify Admin so we can securely verify your store session."
+        host={host}
+        embedded={embedded}
+      />
+    );
+  }
+
+  const { data: store, error } = await supabaseAdmin
+    .from("stores")
+    .select("id, shopify_domain, created_at")
+    .eq("shopify_domain", shop)
+    .maybeSingle();
+
+  if (error) {
+    console.error("Shopify entry: store lookup failed", error);
+    return (
+      <Notice
+        title="Something went wrong"
+        body="We couldn't load your store right now. Please try again in a moment."
+        host={host}
+        embedded={embedded}
+      />
+    );
+  }
+
+  if (!store) {
+    redirect(`/api/auth/shopify?shop=${encodeURIComponent(shop)}`);
+  }
+
+  const dashboard = await loadStoreDashboard(shop);
+
+  return (
+    <Console
+      store={dashboard.store ?? (store as StoreRow)}
+      rows={dashboard.carts}
+      metrics={dashboard.metrics}
+      host={host}
+      embedded={embedded}
+    />
   );
 }

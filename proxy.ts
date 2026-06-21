@@ -43,11 +43,47 @@ const isPublicRoute = createRouteMatcher([
   "/api/auth/shopify(.*)",
   "/api/cron(.*)",
   "/shopify(.*)",
+  "/r/(.*)",
 ]);
 
 // Standalone Shopify console: bypasses both next-intl locale routing and Clerk.
 const isShopifyEntry = (pathname: string) =>
   pathname === "/shopify" || pathname.startsWith("/shopify/");
+
+const isRecoveryRedirect = (pathname: string) =>
+  pathname === "/r" || pathname.startsWith("/r/");
+
+const SHOPIFY_SHOP_RE = /^[a-zA-Z0-9][a-zA-Z0-9-]*\.myshopify\.com$/;
+
+const isDev =
+  process.env.NODE_ENV === "development" ||
+  process.env.NODE_ENV === "test";
+
+const SHOPIFY_FRAME_ANCESTORS =
+  "frame-ancestors https://admin.shopify.com https://*.myshopify.com;";
+
+/** Strip legacy framing blockers that override CSP frame-ancestors. */
+function stripFramingHeaders(response: NextResponse) {
+  response.headers.delete("X-Frame-Options");
+  return response;
+}
+
+/** True when Shopify Admin is loading the app inside its iframe. */
+function isShopifyEmbeddedRequest(request: NextRequest): boolean {
+  const host = request.nextUrl.searchParams.get("host");
+  return Boolean(host && host.length > 0);
+}
+
+/** Embedded apps land on `/` or `/shopify` with `?shop=&host=&hmac=`. */
+function isShopifyLaunchRequest(request: NextRequest): boolean {
+  const shop = request.nextUrl.searchParams.get("shop");
+  const hasShop = Boolean(shop && SHOPIFY_SHOP_RE.test(shop));
+  return hasShop || isShopifyEmbeddedRequest(request);
+}
+
+function shouldBypassAuthForShopify(request: NextRequest): boolean {
+  return isShopifyEntry(request.nextUrl.pathname) || isShopifyLaunchRequest(request);
+}
 
 const isAuthRoute = createRouteMatcher([
   "/sign-in(.*)",
@@ -106,33 +142,35 @@ function isRateLimited(ip: string, limit: number, windowMs: number): boolean {
 }
 
 function applySecurityHeaders(response: NextResponse) {
-  response.headers.set("X-Frame-Options", "DENY");
+  if (isDev) {
+    stripFramingHeaders(response);
+  } else {
+    response.headers.set("X-Frame-Options", "DENY");
+  }
   response.headers.set("X-Content-Type-Options", "nosniff");
   response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
 
-  if (process.env.NODE_ENV === "production") {
+  if (!isDev) {
     response.headers.set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
-  }
 
-  const clerkSources = [
-    "https://clerk.cartrenew.com",
-    "https://*.clerk.accounts.dev",
-    "https://*.clerk.com",
-  ].join(" ");
+    const clerkSources = [
+      "https://clerk.cartrenew.com",
+      "https://*.clerk.accounts.dev",
+      "https://*.clerk.com",
+    ].join(" ");
 
-  const cspHeader = [
-    "default-src 'self';",
-    `script-src 'self' 'unsafe-eval' 'unsafe-inline' https://va.vercel-scripts.com https://challenges.cloudflare.com ${clerkSources};`,
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;",
-    "font-src 'self' https://fonts.gstatic.com data:;",
-    `img-src 'self' data: blob: https://images.unsplash.com https://img.clerk.com https://graph.facebook.com ${clerkSources};`,
-    `connect-src 'self' https://generativelanguage.googleapis.com https://graph.facebook.com ${clerkSources};`,
-    `frame-src 'self' https://challenges.cloudflare.com ${clerkSources};`,
-    "worker-src 'self' blob:;",
-    "child-src 'self' blob:;",
-  ].join(" ");
+    const cspHeader = [
+      "default-src 'self';",
+      `script-src 'self' 'unsafe-eval' 'unsafe-inline' https://va.vercel-scripts.com https://challenges.cloudflare.com ${clerkSources};`,
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;",
+      "font-src 'self' https://fonts.gstatic.com data:;",
+      `img-src 'self' data: blob: https://images.unsplash.com https://img.clerk.com https://graph.facebook.com ${clerkSources};`,
+      `connect-src 'self' https://generativelanguage.googleapis.com https://graph.facebook.com ${clerkSources};`,
+      `frame-src 'self' https://challenges.cloudflare.com ${clerkSources};`,
+      "worker-src 'self' blob:;",
+      "child-src 'self' blob:;",
+    ].join(" ");
 
-  if (process.env.NODE_ENV === "production") {
     response.headers.set("Content-Security-Policy", cspHeader);
   }
 
@@ -140,24 +178,50 @@ function applySecurityHeaders(response: NextResponse) {
 }
 
 /**
- * Headers for the embedded Shopify console. Unlike `applySecurityHeaders`, this
- * MUST NOT send `X-Frame-Options: DENY` (that blocks the Admin iframe entirely).
- * Embedding is scoped via CSP `frame-ancestors` to Shopify Admin + storefronts.
+ * Headers for the embedded Shopify console.
+ * Dev: strip all framing headers so Admin iframe + standalone tab both work.
+ * Prod: scoped frame-ancestors only — never X-Frame-Options.
  */
 function applyShopifyEmbedHeaders(response: NextResponse) {
-  response.headers.set("X-Content-Type-Options", "nosniff");
-  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
-  response.headers.delete("X-Frame-Options");
-  response.headers.set(
-    "Content-Security-Policy",
-    "frame-ancestors https://admin.shopify.com https://*.myshopify.com https://cartrenew-sandbox-store.myshopify.com;"
-  );
+  stripFramingHeaders(response);
 
-  if (process.env.NODE_ENV === "production") {
-    response.headers.set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
+  if (isDev) {
+    response.headers.delete("Content-Security-Policy");
+    return response;
   }
 
+  response.headers.set("Content-Security-Policy", SHOPIFY_FRAME_ANCESTORS);
+  response.headers.set("X-Content-Type-Options", "nosniff");
+  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  response.headers.set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
+
   return response;
+}
+
+/** Bypass locale/Clerk and apply embed-friendly headers for Shopify routes. */
+function handleShopifyRequest(request: NextRequest): NextResponse | null {
+  const { pathname } = request.nextUrl;
+
+  if (isShopifyEntry(pathname)) {
+    return applyShopifyEmbedHeaders(NextResponse.next());
+  }
+
+  if (pathname === "/" && isShopifyLaunchRequest(request)) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/shopify";
+    return applyShopifyEmbedHeaders(NextResponse.redirect(url));
+  }
+
+  return null;
+}
+
+/** Customer recovery links must bypass locale prefixing and auth. */
+function handleRecoveryRedirectRequest(request: NextRequest): NextResponse | null {
+  if (isRecoveryRedirect(request.nextUrl.pathname)) {
+    return NextResponse.next();
+  }
+
+  return null;
 }
 
 function handleApiRequest(request: NextRequest) {
@@ -274,9 +338,11 @@ export default skipClerk
         return applySecurityHeaders(handleApiRequest(request));
       }
 
-      if (isShopifyEntry(request.nextUrl.pathname)) {
-        return applyShopifyEmbedHeaders(NextResponse.next());
-      }
+      const shopifyResponse = handleShopifyRequest(request);
+      if (shopifyResponse) return shopifyResponse;
+
+      const recoveryResponse = handleRecoveryRedirectRequest(request);
+      if (recoveryResponse) return recoveryResponse;
 
       const leakedPath = resolveClerkPathLeak(request.nextUrl.pathname);
       if (leakedPath) {
@@ -292,9 +358,11 @@ export default skipClerk
         return applySecurityHeaders(handleApiRequest(request));
       }
 
-      if (isShopifyEntry(request.nextUrl.pathname)) {
-        return applyShopifyEmbedHeaders(NextResponse.next());
-      }
+      const shopifyResponse = handleShopifyRequest(request);
+      if (shopifyResponse) return shopifyResponse;
+
+      const recoveryResponse = handleRecoveryRedirectRequest(request);
+      if (recoveryResponse) return recoveryResponse;
 
       const leakedPath = resolveClerkPathLeak(request.nextUrl.pathname);
       if (leakedPath) {
@@ -307,6 +375,12 @@ export default skipClerk
 
       if (isIntlRedirect(intlResponse)) {
         return applySecurityHeaders(intlResponse);
+      }
+
+      // Dev: never run Clerk session/role gates on Shopify embed launches —
+      // they break App Bridge session tokens inside the Admin iframe.
+      if (isDev && shouldBypassAuthForShopify(request)) {
+        return applyShopifyEmbedHeaders(intlResponse);
       }
 
       const { sessionClaims, userId } = await auth();

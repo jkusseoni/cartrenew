@@ -1,4 +1,10 @@
 import { supabaseAdmin } from '@/lib/supabase'
+import {
+  hasTwilioWhatsAppCredentials,
+  sendTwilioWhatsAppMessage,
+} from '@/lib/services/twilio-whatsapp'
+import { sendMessage } from '@/lib/services/provider'
+import { getTrackedRecoveryUrl } from '@/lib/recovery-link'
 
 export type RecoveryMessageContext = {
   customer_name: string
@@ -12,10 +18,18 @@ export type RecoveryMessageContext = {
   cart_token?: string
 }
 
+export type WhatsAppRecoveryResult = {
+  queued: boolean
+  sent: boolean
+  mocked?: boolean
+  messageId?: string | null
+  error?: string | null
+}
+
 export function compileRecoveryMessage(template: string, context: RecoveryMessageContext) {
   return template.replace(/{{\s*([^}\s]+)\s*}}/g, (_match, key: string) => {
     const normalizedKey = key.trim()
-    return String((context as any)[normalizedKey] ?? '')
+    return String((context as Record<string, string | undefined>)[normalizedKey] ?? '')
   })
 }
 
@@ -23,7 +37,65 @@ export function getDefaultRecoveryTemplate() {
   return `Hi {{customer_name}}! 👋\n\nYou left something in your cart:\n\n{{item_list}}\n\nTotal: {{cart_value}}\n\nComplete your order: {{checkout_url}}\n\nNeed help? Just reply to this message.`
 }
 
-export async function queueRecoveryMessageForCart({
+function buildRecoveryMessageBody({
+  storeId,
+  customerName,
+  checkoutUrl,
+  cartValue,
+  items,
+  customerEmail,
+  customerPhone,
+  cartToken,
+}: {
+  storeId: string
+  customerName?: string | null
+  checkoutUrl?: string | null
+  cartValue?: number
+  items?: unknown[]
+  customerEmail?: string | null
+  customerPhone?: string | null
+  cartToken?: string | null
+}) {
+  return supabaseAdmin
+    .from('message_templates')
+    .select('*')
+    .eq('store_id', storeId)
+    .eq('is_active', true)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+    .then(({ data: template }) => {
+      const templateBody = template?.body || getDefaultRecoveryTemplate()
+      const templateName = template?.name || 'cart_recovery_default'
+      const itemList = Array.isArray(items)
+        ? items
+            .map((item: { title?: string; quantity?: number }) =>
+              `• ${item.title || 'item'} (x${item.quantity || 1})`
+            )
+            .join('\n')
+        : ''
+
+      const messageBody = compileRecoveryMessage(templateBody, {
+        customer_name: customerName || 'there',
+        customer_first_name: customerName?.split(' ')[0] || '',
+        customer_last_name: customerName?.split(' ').slice(1).join(' ') || '',
+        checkout_url: checkoutUrl || '',
+        cart_value: cartValue != null ? `₹${cartValue}` : '',
+        item_list: itemList,
+        customer_email: customerEmail || '',
+        customer_phone: customerPhone || '',
+        cart_token: cartToken || '',
+      })
+
+      return { messageBody, templateName }
+    })
+}
+
+/**
+ * After a pending abandoned cart is saved, compile the template, persist a
+ * messages row, and dispatch via Meta/Twilio WhatsApp gateway.
+ */
+export async function triggerWhatsAppRecoveryForCart({
   storeId,
   cartId,
   customerPhone,
@@ -40,57 +112,116 @@ export async function queueRecoveryMessageForCart({
   customerName?: string | null
   checkoutUrl?: string | null
   cartValue?: number
-  items?: any[]
+  items?: unknown[]
   customerEmail?: string | null
   cartToken?: string | null
-}) {
+}): Promise<WhatsAppRecoveryResult> {
   if (!customerPhone) {
-    console.warn(`Queue recovery message skipped: missing phone for cart ${cartId}`)
-    return false
+    console.warn(`WhatsApp recovery skipped: missing phone for cart ${cartId}`)
+    return { queued: false, sent: false, error: 'missing_phone' }
   }
 
   try {
-    const { data: template } = await supabaseAdmin
-      .from('message_templates')
-      .select('*')
-      .eq('store_id', storeId)
-      .eq('is_active', true)
-      .order('created_at', { ascending: true })
-      .limit(1)
-      .maybeSingle()
-
-    const templateBody = template?.body || getDefaultRecoveryTemplate()
-    const templateName = template?.name || 'default'
-    const itemList = Array.isArray(items)
-      ? items.map((item: any) => `• ${item.title || 'item'} (x${item.quantity || 1})`).join('\n')
-      : ''
-
-    const messageBody = compileRecoveryMessage(templateBody, {
-      customer_name: customerName || 'there',
-      customer_first_name: customerName?.split(' ')[0] || '',
-      customer_last_name: customerName?.split(' ').slice(1).join(' ') || '',
-      checkout_url: checkoutUrl || '',
-      cart_value: cartValue != null ? `₹${cartValue}` : '',
-      item_list: itemList,
-      customer_email: customerEmail || '',
-      customer_phone: customerPhone,
-      cart_token: cartToken || '',
+    const { messageBody, templateName } = await buildRecoveryMessageBody({
+      storeId,
+      customerName,
+      checkoutUrl: getTrackedRecoveryUrl(cartId),
+      cartValue,
+      items,
+      customerEmail,
+      customerPhone,
+      cartToken,
     })
 
-    await supabaseAdmin.from('messages').insert({
-      cart_id: cartId,
-      store_id: storeId,
-      phone: customerPhone,
-      template_name: templateName,
-      body: messageBody,
-      status: 'pending' as any,
-      attempt_count: 0,
-      next_retry_at: null,
-    })
+    const { data: messageRow, error: insertError } = await supabaseAdmin
+      .from('messages')
+      .insert({
+        cart_id: cartId,
+        store_id: storeId,
+        phone: customerPhone,
+        template_name: templateName,
+        body: messageBody,
+        status: 'queued',
+        attempt_count: 0,
+        next_retry_at: null,
+      })
+      .select('id')
+      .single()
 
-    return true
+    if (insertError || !messageRow?.id) {
+      console.error('Failed to insert recovery message row:', insertError)
+      return { queued: false, sent: false, error: insertError?.message || 'insert_failed' }
+    }
+
+    const dispatch = hasTwilioWhatsAppCredentials()
+      ? await sendTwilioWhatsAppMessage(customerPhone, messageBody).then((result) => ({
+          success: result.success,
+          providerId: result.messageSid,
+          error: result.error,
+          provider: 'twilio_whatsapp' as const,
+        }))
+      : await sendMessage({
+          id: messageRow.id,
+          to: customerPhone,
+          body: messageBody,
+          templateName,
+        })
+
+    if (dispatch.success) {
+      await supabaseAdmin
+        .from('messages')
+        .update({
+          status: 'sent',
+          whatsapp_message_id: dispatch.providerId || null,
+          sent_at: new Date().toISOString(),
+          attempt_count: 1,
+          error_message: null,
+        })
+        .eq('id', messageRow.id)
+
+      await supabaseAdmin
+        .from('abandoned_carts')
+        .update({
+          status: 'messaged',
+          message_sent_at: new Date().toISOString(),
+        })
+        .eq('id', cartId)
+        .eq('status', 'pending')
+
+      console.log(
+        `✅ WhatsApp recovery sent for cart ${cartId} via ${dispatch.provider ?? 'provider'}`
+      )
+
+      return { queued: true, sent: true, messageId: dispatch.providerId }
+    }
+
+    await supabaseAdmin
+      .from('messages')
+      .update({
+        status: 'pending',
+        error_message: dispatch.error || 'send_failed',
+        attempt_count: 1,
+        next_retry_at: new Date(Date.now() + 5 * 60_000).toISOString(),
+      })
+      .eq('id', messageRow.id)
+
+    console.warn(`WhatsApp recovery dispatch failed for cart ${cartId}:`, dispatch.error)
+
+    return { queued: true, sent: false, error: dispatch.error }
   } catch (error) {
-    console.error('Failed to queue recovery message:', error)
-    return false
+    console.error('Failed to trigger WhatsApp recovery:', error)
+    return {
+      queued: false,
+      sent: false,
+      error: error instanceof Error ? error.message : String(error),
+    }
   }
+}
+
+/** @deprecated Use triggerWhatsAppRecoveryForCart — kept for backward compatibility. */
+export async function queueRecoveryMessageForCart(
+  params: Parameters<typeof triggerWhatsAppRecoveryForCart>[0]
+) {
+  const result = await triggerWhatsAppRecoveryForCart(params)
+  return result.queued
 }

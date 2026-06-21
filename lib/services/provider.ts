@@ -1,70 +1,178 @@
 /**
- * Messaging provider interface and Twilio/WhatsApp implementation scaffold.
- *
- * Environment placeholders (add to your .env.*):
- * TWILIO_ACCOUNT_SID=
- * TWILIO_AUTH_TOKEN=
- * TWILIO_WHATSAPP_FROM=  (E.164, without whatsapp: prefix, e.g. +1415xxxxxxx)
- *
- * The implementation below is intentionally minimal and resilient: if Twilio
- * credentials are not present the provider will return a clear error instead
- * of throwing so the queue processor can record failures safely.
+ * Messaging provider router: Meta WhatsApp Cloud API → Twilio → mock (no fetch).
  */
 
 export type ProviderSendResult = {
   success: boolean
   providerId?: string | null
   error?: string | null
+  provider?: 'meta_whatsapp' | 'twilio_whatsapp' | 'mock_whatsapp'
+  mocked?: boolean
 }
 
 export type ProviderMessage = {
   id: string
   to: string
   body: string
-  metadata?: Record<string, any>
+  templateName?: string
+  metadata?: Record<string, unknown>
+}
+
+const PLACEHOLDER_PATTERNS = [
+  /^\[.*\]$/,
+  /\[PASTE/i,
+  /your_/i,
+  /placeholder/i,
+  /^AC_your/i,
+  /\.\.\./,
+  /^123456789012345$/,
+  /aapka_/i,
+  /^EAAd\.\.\./i,
+  /^sk_your/i,
+  /^AC_your_twilio/i,
+]
+
+function cleanEnv(value?: string | null): string {
+  return (value ?? '').replace(/['"]/g, '').trim()
+}
+
+export function isPlaceholderCredential(value?: string | null): boolean {
+  const normalized = cleanEnv(value)
+  if (!normalized) return true
+  return PLACEHOLDER_PATTERNS.some((pattern) => pattern.test(normalized))
+}
+
+export function hasMetaWhatsAppCredentials(): boolean {
+  const accessToken = cleanEnv(process.env.WHATSAPP_ACCESS_TOKEN)
+  const phoneNumberId = cleanEnv(process.env.WHATSAPP_PHONE_NUMBER_ID)
+  return !isPlaceholderCredential(accessToken) && !isPlaceholderCredential(phoneNumberId)
+}
+
+export function hasTwilioWhatsAppCredentials(): boolean {
+  const accountSid = cleanEnv(process.env.TWILIO_ACCOUNT_SID)
+  const authToken = cleanEnv(process.env.TWILIO_AUTH_TOKEN)
+  const fromNumber = cleanEnv(process.env.TWILIO_WHATSAPP_NUMBER)
+  return (
+    !isPlaceholderCredential(accountSid) &&
+    !isPlaceholderCredential(authToken) &&
+    !isPlaceholderCredential(fromNumber)
+  )
+}
+
+export function shouldUseMockWhatsAppSend(): boolean {
+  return !hasMetaWhatsAppCredentials() && !hasTwilioWhatsAppCredentials()
+}
+
+function sanitizePhoneNumber(phone: string): string {
+  let cleaned = phone.replace(/\D/g, '')
+  if (cleaned.length === 10) {
+    cleaned = `91${cleaned}`
+  }
+  return cleaned
+}
+
+export async function sendMessageViaMetaWhatsApp(msg: ProviderMessage): Promise<ProviderSendResult> {
+  if (!hasMetaWhatsAppCredentials()) {
+    return { success: false, error: 'Meta WhatsApp credentials missing or placeholder' }
+  }
+
+  const accessToken = cleanEnv(process.env.WHATSAPP_ACCESS_TOKEN)
+  const phoneNumberId = cleanEnv(process.env.WHATSAPP_PHONE_NUMBER_ID)
+  const templateName = msg.templateName || cleanEnv(process.env.WHATSAPP_TEMPLATE_NAME)
+
+  try {
+    const to = sanitizePhoneNumber(msg.to)
+    const metaUrl = `https://graph.facebook.com/v20.0/${phoneNumberId}/messages`
+
+    const whatsappPayload = templateName && !isPlaceholderCredential(templateName)
+      ? {
+          messaging_product: 'whatsapp',
+          to,
+          type: 'template',
+          template: {
+            name: templateName,
+            language: { code: process.env.WHATSAPP_TEMPLATE_LANG || 'en' },
+            components: [
+              {
+                type: 'body',
+                parameters: [{ type: 'text', text: msg.body.slice(0, 1024) }],
+              },
+            ],
+          },
+        }
+      : {
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to,
+          type: 'text',
+          text: { preview_url: true, body: msg.body },
+        }
+
+    const response = await fetch(metaUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(whatsappPayload),
+    })
+
+    const result = await response.json()
+    if (!response.ok) {
+      return {
+        success: false,
+        error: result.error?.message || JSON.stringify(result),
+        provider: 'meta_whatsapp',
+      }
+    }
+
+    return {
+      success: true,
+      providerId: result.messages?.[0]?.id ?? null,
+      provider: 'meta_whatsapp',
+    }
+  } catch (err: unknown) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+      provider: 'meta_whatsapp',
+    }
+  }
 }
 
 export async function sendMessageViaTwilio(msg: ProviderMessage): Promise<ProviderSendResult> {
-  const accountSid = process.env.TWILIO_ACCOUNT_SID
-  const authToken = process.env.TWILIO_AUTH_TOKEN
-  const fromNumber = process.env.TWILIO_WHATSAPP_FROM
+  const { sendTwilioWhatsAppMessage } = await import('@/lib/services/twilio-whatsapp')
+  const result = await sendTwilioWhatsAppMessage(msg.to, msg.body)
 
-  if (!accountSid || !authToken || !fromNumber) {
-    return { success: false, error: 'Twilio credentials not configured' }
+  if (result.success) {
+    return {
+      success: true,
+      providerId: result.messageSid ?? null,
+      provider: 'twilio_whatsapp',
+    }
   }
 
-  try {
-    const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`
-    const body = new URLSearchParams()
-    body.append('From', `whatsapp:${fromNumber}`)
-    body.append('To', `whatsapp:${msg.to}`)
-    body.append('Body', msg.body)
-
-    const basic = Buffer.from(`${accountSid}:${authToken}`).toString('base64')
-
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Basic ${basic}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: body.toString(),
-    })
-
-    const json = await res.json()
-    if (!res.ok) {
-      return { success: false, error: json.message || JSON.stringify(json) }
-    }
-
-    return { success: true, providerId: json.sid }
-  } catch (err: any) {
-    return { success: false, error: err?.message || String(err) }
+  return {
+    success: false,
+    error: result.error || 'Twilio send failed',
+    provider: 'twilio_whatsapp',
   }
 }
 
-// Top-level provider function. If you add multiple providers (e.g., Meta Cloud API)
-// detect them via env flags and route accordingly here.
 export async function sendMessage(msg: ProviderMessage): Promise<ProviderSendResult> {
-  // For now, always try Twilio. Add provider selection logic here later.
-  return sendMessageViaTwilio(msg)
+  if (hasTwilioWhatsAppCredentials()) {
+    const twilioResult = await sendMessageViaTwilio(msg)
+    if (twilioResult.success) return twilioResult
+  }
+
+  const metaResult = await sendMessageViaMetaWhatsApp(msg)
+  if (metaResult.success) return metaResult
+
+  return {
+    success: false,
+    error:
+      metaResult.error ||
+      (hasTwilioWhatsAppCredentials() ? undefined : 'Twilio credentials missing or placeholder') ||
+      'No WhatsApp provider available',
+  }
 }
