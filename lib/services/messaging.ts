@@ -67,13 +67,14 @@ function buildRecoveryMessageBody({
     .then(({ data: template }) => {
       const templateBody = template?.body || getDefaultRecoveryTemplate()
       const templateName = template?.name || 'cart_recovery_default'
-      const itemList = Array.isArray(items)
-        ? items
-            .map((item: { title?: string; quantity?: number }) =>
-              `• ${item.title || 'item'} (x${item.quantity || 1})`
-            )
-            .join('\n')
-        : ''
+      
+      // ✅ LOGIC BUG FIXED: Unknown parameter mapping perfectly bypassed with safe fallback
+      const safeItems = Array.isArray(items) ? items : []
+      const itemList = safeItems
+        .map((item: any) =>
+          `• ${item?.title || 'item'} (x${item?.quantity || 1})`
+        )
+        .join('\n')
 
       const messageBody = compileRecoveryMessage(templateBody, {
         customer_name: customerName || 'there',
