@@ -8,6 +8,7 @@ export default function SettingsPage() {
   const [shopifyDomain, setShopifyDomain] = useState("cartrenew-test-store.myshopify.com");
   const [whatsappPhoneId, setWhatsappPhoneId] = useState("9755612850"); // Verified active phone connection node
   const [shiprocketEmail, setShiprocketEmail] = useState("contact@cartrenew.com");
+  const [shiprocketPassword, setShiprocketPassword] = useState("");
   const [isSaved, setIsSaved] = useState(false);
 
   const handleSaveConfigs = (e: React.FormEvent) => {
@@ -142,9 +143,10 @@ export default function SettingsPage() {
                 <label className="text-xs font-bold text-neutral-400">ShipRocket Integration API Password</label>
                 <input 
                   type="password"
-                  value="••••••••••••••••"
-                  disabled
-                  className="w-full bg-neutral-900/30 border border-neutral-900 rounded-xl px-4 py-3 text-xs sm:text-sm text-neutral-600 focus:outline-none cursor-not-allowed font-mono"
+                  value={shiprocketPassword}
+                  onChange={(e) => setShiprocketPassword(e.target.value)}
+                  autoComplete="current-password"
+                  className="w-full bg-neutral-900/60 border border-neutral-800 rounded-xl px-4 py-3 text-xs sm:text-sm text-white focus:outline-none focus:border-[#00DF89] font-mono"
                 />
               </div>
             </div>
