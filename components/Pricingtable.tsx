@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useParams } from "next/navigation";
 import React, { useMemo, useState } from "react";
 import { Check } from "lucide-react";
@@ -40,7 +39,7 @@ export default function PricingTable() {
   const [billing, setBilling] = useState<BillingCycle>("monthly");
   const params = useParams();
   const locale = typeof params?.locale === "string" ? params.locale : "en";
-  const signUpHref = `/${locale}/sign-up`;
+  const dashboardHref = `/${locale}/dashboard`;
 
   const plans = useMemo(() => {
     return {
@@ -121,7 +120,7 @@ export default function PricingTable() {
             name: "Starter LTD",
             price: "₹9,400",
             cadence: "/one-time",
-            checkoutUrl: "https://rzp.io/rzp/Vb031St",
+            checkoutUrl: "https://rzp.io/rzp/6LhjxROW",
             cta: "Get Lifetime Access",
             accent: "border-neutral-800 bg-neutral-900/40",
             features: ["1 Storefront integration", "Up to 500 automated recovery sessions/mo", "Dynamic multi-lingual routing", "Vercel & Supabase edge latency handling", "Email support via contact@cartrenew.com"],
@@ -131,7 +130,7 @@ export default function PricingTable() {
             name: "Growth LTD",
             price: "₹18,896",
             cadence: "/one-time",
-            checkoutUrl: "https://rzp.io/rzp/nhwzQWQd",
+            checkoutUrl: "https://rzp.io/rzp/pU7Y7xTj",
             cta: "Secure Lifetime Access",
             accent: "border-emerald-500/50 bg-neutral-950/60 shadow-2xl",
             highlight: "MOST_POPULAR" as const,
@@ -142,7 +141,7 @@ export default function PricingTable() {
             name: "Agency LTD",
             price: "₹37,885",
             cadence: "/one-time",
-            checkoutUrl: "https://rzp.io/rzp/soM2kxu",
+            checkoutUrl: "https://rzp.io/rzp/emdA9Lmk",
             cta: "Deploy Agency Infrastructure",
             accent: "border-neutral-800 bg-neutral-900/40",
             highlight: "BEST_VALUE" as const,
@@ -189,6 +188,15 @@ export default function PricingTable() {
 
   const market: Market = currency === "INR" ? "india" : "global";
   const activePlans = plans[billing][market];
+
+  const handlePlanCheckout = (plan: Plan) => {
+    if (!plan.checkoutUrl) {
+      window.location.href = dashboardHref;
+      return;
+    }
+
+    window.open(plan.checkoutUrl, "_blank", "noopener,noreferrer");
+  };
 
   const ctaClassName = (highlight?: Plan["highlight"]) =>
     `w-full py-3.5 text-center text-xs font-black rounded-xl transition-all block active:scale-[0.98] ${
@@ -256,11 +264,7 @@ export default function PricingTable() {
 
         {/* CONSOLIDATED MATRIX GRID */}
         <div className="w-full max-w-7xl grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch pt-4 text-left">
-          {activePlans.map((plan) => {
-            const isTrialPlan =
-              billing === "monthly" && /(?:starter|growth)$/.test(plan.id);
-
-            return (
+          {activePlans.map((plan) => (
             <div key={plan.id} className={`border rounded-3xl p-6 flex flex-col justify-between space-y-8 relative group transition-all duration-300 ${plan.accent}`}>
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
@@ -287,24 +291,15 @@ export default function PricingTable() {
                 </ul>
               </div>
 
-              {/* Trial CTAs route to the localized sign-up; paid tiers go to checkout. */}
-              {isTrialPlan ? (
-                <Link href={signUpHref} className={ctaClassName(plan.highlight)}>
-                  {plan.cta}
-                </Link>
-              ) : (
-                <a
-                  href={plan.checkoutUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={ctaClassName(plan.highlight)}
-                >
-                  {plan.cta}
-                </a>
-              )}
+              <button
+                type="button"
+                onClick={() => handlePlanCheckout(plan)}
+                className={ctaClassName(plan.highlight)}
+              >
+                {plan.cta}
+              </button>
             </div>
-            );
-          })}
+          ))}
         </div>
       </div>
     </section>
