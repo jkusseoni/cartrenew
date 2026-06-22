@@ -51,7 +51,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@playwright/test": "^1.51.1",
+    "@playwright/test": "^1.61.0",
     "@shopify/cli": "^4.2.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20.19.41",
