@@ -29,36 +29,13 @@ jobs:
       - name: Run Playwright tests
         run: npm run test:e2e
         env:
-          CI: true
-
-          # Clerk — required for Next.js dev server + auth E2E specs
+          NODE_ENV: test
+          E2E_TEST_EMAIL: ${{ secrets.E2E_TEST_EMAIL }}
+          E2E_TEST_PASSWORD: ${{ secrets.E2E_TEST_PASSWORD }}
           NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           NEXT_PUBLIC_CLERK_SIGN_IN_URL: /sign-in
           NEXT_PUBLIC_CLERK_SIGN_UP_URL: /sign-up
-          CLERK_BETA_DISABLE_SATELLITE: "true"
-
-          # Supabase / Postgres — Prisma + dashboard APIs
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-
-          # Shopify app (localhost during CI webServer)
-          NEXT_PUBLIC_SHOPIFY_CLIENT_ID: ${{ secrets.NEXT_PUBLIC_SHOPIFY_CLIENT_ID }}
-          SHOPIFY_CLIENT_SECRET: ${{ secrets.SHOPIFY_CLIENT_SECRET }}
-          SHOPIFY_APP_URL: http://localhost:3000
-          SHOPIFY_WEBHOOK_BYPASS: "true"
-
-          # Auth E2E (`tests/e2e/auth.spec.ts`)
-          E2E_TEST_EMAIL: ${{ secrets.E2E_TEST_EMAIL }}
-          E2E_TEST_PASSWORD: ${{ secrets.E2E_TEST_PASSWORD }}
-
-          # Optional integrations — only needed if future specs hit these paths
-          TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
-          TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
-          TWILIO_WHATSAPP_NUMBER: ${{ secrets.TWILIO_WHATSAPP_NUMBER }}
-          REDIS_URL: ${{ secrets.REDIS_URL }}
 
       - name: Upload Playwright HTML report
         uses: actions/upload-artifact@v4
