@@ -3,7 +3,7 @@
 client_id = "3a632368d9d04c568e96c5a73960be3a"
 # `shopify app dev` overrides the host with the live tunnel; the /shopify path is
 # the embedded console entry point that App Bridge frames inside the Admin.
-application_url = "http://localhost:3000/shopify"
+application_url = "https://cartrenew.com/shopify"
 embedded = true
 name = "CartRenew"
 
@@ -16,10 +16,9 @@ scopes = "read_checkouts,read_orders,write_orders"
 
 [auth]
 redirect_urls = [
-  "http://localhost:3000/api/auth/shopify/callback",
-  "http://localhost:3000/api/shopify/callback"
+  "https://cartrenew.com/api/auth/shopify/callback",
+  "https://cartrenew.com/api/shopify/callback"
 ]
 
 [build]
-include_config_on_deploy = true
 automatically_update_urls_on_dev = true

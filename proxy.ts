@@ -59,12 +59,22 @@ const isDev =
   process.env.NODE_ENV === "development" ||
   process.env.NODE_ENV === "test";
 
-const SHOPIFY_FRAME_ANCESTORS =
+const SHOPIFY_FRAME_ANCESTORS_FALLBACK =
   "frame-ancestors https://admin.shopify.com https://*.myshopify.com;";
+
+/** Shopify requires a shop-specific frame-ancestors directive when embedded in Admin. */
+function buildShopifyEmbedCsp(request: NextRequest): string {
+  const shop = request.nextUrl.searchParams.get("shop");
+  if (shop && SHOPIFY_SHOP_RE.test(shop)) {
+    return `frame-ancestors https://${shop} https://admin.shopify.com;`;
+  }
+  return SHOPIFY_FRAME_ANCESTORS_FALLBACK;
+}
 
 /** Strip legacy framing blockers that override CSP frame-ancestors. */
 function stripFramingHeaders(response: NextResponse) {
   response.headers.delete("X-Frame-Options");
+  response.headers.delete("Content-Security-Policy");
   return response;
 }
 
@@ -179,18 +189,17 @@ function applySecurityHeaders(response: NextResponse) {
 
 /**
  * Headers for the embedded Shopify console.
- * Dev: strip all framing headers so Admin iframe + standalone tab both work.
- * Prod: scoped frame-ancestors only — never X-Frame-Options.
+ * Dev: strip framing/CSP so Admin iframe + local tab both work.
+ * Prod: shop-scoped frame-ancestors — never X-Frame-Options.
  */
-function applyShopifyEmbedHeaders(response: NextResponse) {
+function applyShopifyEmbedHeaders(response: NextResponse, request: NextRequest) {
   stripFramingHeaders(response);
 
   if (isDev) {
-    response.headers.delete("Content-Security-Policy");
     return response;
   }
 
-  response.headers.set("Content-Security-Policy", SHOPIFY_FRAME_ANCESTORS);
+  response.headers.set("Content-Security-Policy", buildShopifyEmbedCsp(request));
   response.headers.set("X-Content-Type-Options", "nosniff");
   response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   response.headers.set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
@@ -203,13 +212,13 @@ function handleShopifyRequest(request: NextRequest): NextResponse | null {
   const { pathname } = request.nextUrl;
 
   if (isShopifyEntry(pathname)) {
-    return applyShopifyEmbedHeaders(NextResponse.next());
+    return applyShopifyEmbedHeaders(NextResponse.next(), request);
   }
 
   if (pathname === "/" && isShopifyLaunchRequest(request)) {
     const url = request.nextUrl.clone();
     url.pathname = "/shopify";
-    return applyShopifyEmbedHeaders(NextResponse.redirect(url));
+    return applyShopifyEmbedHeaders(NextResponse.redirect(url), request);
   }
 
   return null;
@@ -377,10 +386,10 @@ export default skipClerk
         return applySecurityHeaders(intlResponse);
       }
 
-      // Dev: never run Clerk session/role gates on Shopify embed launches —
-      // they break App Bridge session tokens inside the Admin iframe.
-      if (isDev && shouldBypassAuthForShopify(request)) {
-        return applyShopifyEmbedHeaders(intlResponse);
+      // Never run Clerk session gates on Shopify embed launches — they break
+      // App Bridge session tokens inside the Admin iframe.
+      if (shouldBypassAuthForShopify(request)) {
+        return applyShopifyEmbedHeaders(intlResponse, request);
       }
 
       const { sessionClaims, userId } = await auth();

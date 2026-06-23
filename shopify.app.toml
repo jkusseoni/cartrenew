@@ -6,7 +6,7 @@ client_id = "d0ac869a78129eb4f715276aa28916cb"
 # Embedded app rendered inside the Shopify Admin iframe via App Bridge.
 # During `shopify app dev` the CLI overrides the application_url host with the
 # live tunnel hostname. Points at the Shopify console (not the marketing page).
-application_url = "http://localhost:3000/shopify"
+application_url = "https://cartrenew.com/shopify"
 embedded = true
 
 [access_scopes]
@@ -15,8 +15,8 @@ scopes = "read_orders,write_orders,read_checkouts"
 
 [auth]
 redirect_urls = [
-  "http://localhost:3000/api/auth/shopify/callback",
-  "http://localhost:3000/api/shopify/callback"
+  "https://cartrenew.com/api/auth/shopify/callback",
+  "https://cartrenew.com/api/shopify/callback"
 ]
 
 [webhooks]
