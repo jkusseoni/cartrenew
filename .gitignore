@@ -23,6 +23,7 @@
 # misc
 .DS_Store
 *.pem
+.shopify-init-temp/
 
 # debug
 npm-debug.log*

@@ -1,17 +1,16 @@
-# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+# CartRenew — Public distribution app (App Store listing enabled)
+# Learn more: https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "3a632368d9d04c568e96c5a73960be3a"
-# `shopify app dev` overrides the host with the live tunnel; the /shopify path is
-# the embedded console entry point that App Bridge frames inside the Admin.
+client_id = "e83ce0fc464ef74ff7216252543272a5"
+name = "CartRenew Public"
+# Embedded console entry inside Shopify Admin (App Bridge).
 application_url = "https://cartrenew.com/shopify"
 embedded = true
-name = "CartRenew"
 
 [webhooks]
 api_version = "2026-07"
 
 [access_scopes]
-# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
 scopes = "read_checkouts,read_orders,write_orders"
 
 [auth]

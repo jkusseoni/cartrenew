@@ -1,8 +1,8 @@
-# Default Shopify CLI config — synced with shopify.app.cartrenew.toml (Public app)
-# Docs: https://shopify.dev/docs/apps/tools/cli/configuration
+# Legacy Custom-distribution app (locked — sandbox only, do not deploy)
+# Previous client_id: 3a632368d9d04c568e96c5a73960be3a
 
-name = "CartRenew Public"
-client_id = "e83ce0fc464ef74ff7216252543272a5"
+client_id = "3a632368d9d04c568e96c5a73960be3a"
+name = "CartRenew"
 application_url = "https://cartrenew.com/shopify"
 embedded = true
 
@@ -17,9 +17,3 @@ redirect_urls = [
 
 [webhooks]
 api_version = "2026-07"
-
-[pos]
-embedded = false
-
-[build]
-automatically_update_urls_on_dev = true
