@@ -7,6 +7,7 @@ import * as Sentry from "@sentry/nextjs";
 import { NextResponse } from "next/server";
 
 import { generateAICartRecoveryMessage } from "@/lib/ai-agent";
+import { requireAutomationSecret } from "@/lib/api-auth";
 import {
   type DeliveryChannel,
   type DeliveryStatus,
@@ -86,6 +87,15 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  // Automation-secret gate: this route creates merchants/carts and sends
+  // messages, so unauthenticated public hits must be rejected. Cron systems
+  // pass ADMIN_PROCESS_SECRET via the x-admin-secret header, an
+  // Authorization: Bearer header, or the ?admin_secret= query param.
+  const unauthorized = await requireAutomationSecret(req);
+  if (unauthorized) {
+    return unauthorized;
+  }
+
   return Sentry.withScope(async (scope) => {
     scope.setTags({
       integrationType: "auto_pilot",

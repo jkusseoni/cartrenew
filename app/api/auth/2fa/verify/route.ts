@@ -4,11 +4,19 @@ export const runtime = "nodejs";
 export const fetchCache = "force-no-store";
 import { NextRequest, NextResponse } from 'next/server';
 import { verify2FAToken } from '@/lib/totp';
+import { requireAutomationSecret, safeParseBody } from '@/lib/api-auth';
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { merchantId, token } = body; // token user ka 6-digit dynamic authenticator code hoga
+    // Gate: enabling 2FA on arbitrary merchant accounts must not be public.
+    // Requires ADMIN_PROCESS_SECRET (header/query) or a Clerk session.
+    const unauthorized = await requireAutomationSecret(request);
+    if (unauthorized) {
+      return unauthorized;
+    }
+
+    const body = await safeParseBody<{ merchantId?: string; token?: string }>(request);
+    const { merchantId, token } = body ?? {}; // token user ka 6-digit dynamic authenticator code hoga
 
     // Validation: Input arguments check karein
     if (!merchantId || !token) {

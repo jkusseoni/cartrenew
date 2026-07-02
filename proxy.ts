@@ -37,6 +37,9 @@ const isPublicRoute = createRouteMatcher([
   "/api/webhook(.*)",
   "/api/meta-capi(.*)",
   "/api/cart/automate(.*)",
+  // Route handlers enforce ADMIN_PROCESS_SECRET themselves (requireAutomationSecret);
+  // bypassing Clerk here lets header/query-secret cron calls reach them.
+  "/api/auth/2fa(.*)",
   "/api/orders/webhook(.*)",
   "/api/shopify/callback(.*)",
   "/api/shopify/webhook(.*)",

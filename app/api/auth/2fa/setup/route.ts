@@ -4,11 +4,19 @@ export const runtime = "nodejs";
 export const fetchCache = "force-no-store";
 import { NextRequest, NextResponse } from 'next/server';
 import { generate2FASecret, getOTPAuthUrl } from '@/lib/totp';
+import { requireAutomationSecret, safeParseBody } from '@/lib/api-auth';
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { merchantId } = body;
+    // Gate: any caller with a merchantId could otherwise rotate a merchant's
+    // 2FA secret. Requires ADMIN_PROCESS_SECRET (header/query) or a Clerk session.
+    const unauthorized = await requireAutomationSecret(request);
+    if (unauthorized) {
+      return unauthorized;
+    }
+
+    const body = await safeParseBody<{ merchantId?: string }>(request);
+    const merchantId = body?.merchantId;
 
     // Validation: Check karein ki merchantId payload me hai ya nahi
     if (!merchantId) {
