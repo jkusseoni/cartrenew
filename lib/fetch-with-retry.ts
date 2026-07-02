@@ -36,8 +36,14 @@ export async function fetchWithRetry(
       }
       lastError = new Error(`HTTP ${response.status}`);
     } catch (error) {
-      // Browser reports network drops as TypeError; abort errors should not retry.
-      if (error instanceof DOMException && error.name === "AbortError") throw error;
+      // Browser reports network drops as TypeError; aborts/timeouts should not
+      // retry (their signal is already consumed, retrying would fail instantly).
+      if (
+        error instanceof DOMException &&
+        (error.name === "AbortError" || error.name === "TimeoutError")
+      ) {
+        throw error;
+      }
       lastError = error;
       if (attempt === retries) throw error;
     }

@@ -1,8 +1,29 @@
 "use client";
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSafeUser } from '@/lib/clerk'
 import { getSupabaseClient } from '@/lib/supabase-browser'
+
+/**
+ * Map low-level fetch failures to actionable messages. The browser reports any
+ * network-layer problem (offline, DNS, CORS, blocked request, paused Supabase
+ * project) as `TypeError: Failed to fetch`, which is useless to end users.
+ */
+function toFriendlyFetchError(error: unknown): string {
+  if (error instanceof DOMException && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
+    return 'The request timed out. The analytics service may be slow or unreachable — please retry.'
+  }
+  if (error instanceof TypeError) {
+    return 'Could not reach the analytics service. Check your internet connection and try again.'
+  }
+  if (error instanceof Error && error.message.includes('env vars are missing')) {
+    return 'Analytics is not configured for this deployment (missing Supabase settings). Contact support.'
+  }
+  if (error instanceof Error && error.message) {
+    return error.message
+  }
+  return 'Could not load analytics. Check your connection and try again.'
+}
 
 interface DailyAnalytics {
   date: string
@@ -20,16 +41,24 @@ export default function AnalyticsPage() {
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState<string | null>(null)
   const [dateRange, setDateRange] = useState(30) // days
+  // Monotonic id so a slow, stale response can't overwrite a newer one
+  // (e.g. when the user switches the date range mid-flight).
+  const requestIdRef = useRef(0)
 
   const fetchAnalytics = useCallback(async () => {
     if (!user) {
       return
     }
 
+    const requestId = ++requestIdRef.current
+    const isCurrent = () => requestId === requestIdRef.current
+
     try {
       setLoading(true)
       setFetchError(null)
 
+      // Throws early (and readably) if NEXT_PUBLIC_SUPABASE_URL / ANON_KEY are
+      // missing from the build — a common cause of "Failed to fetch"-style errors.
       const client = getSupabaseClient()
       // maybeSingle: a user without a store is a normal state, not an error.
       const { data: store, error: storeError } = await client
@@ -43,7 +72,8 @@ export default function AnalyticsPage() {
       }
 
       if (!store) {
-        setLoading(false)
+        // No store connected yet — show the "No data yet" empty state.
+        if (isCurrent()) setAnalytics([])
         return
       }
 
@@ -62,24 +92,23 @@ export default function AnalyticsPage() {
         throw new Error(analyticsError.message)
       }
 
-      setAnalytics(data || [])
+      if (isCurrent()) setAnalytics(data ?? [])
     } catch (error) {
       console.error('Error fetching analytics:', error)
-      // Surface the failure so the user can retry instead of seeing stale zeros.
-      setFetchError(
-        error instanceof Error && error.message
-          ? error.message
-          : 'Could not load analytics. Check your connection and try again.'
-      )
+      if (isCurrent()) setFetchError(toFriendlyFetchError(error))
     } finally {
-      setLoading(false)
+      if (isCurrent()) setLoading(false)
     }
   }, [dateRange, user])
 
   useEffect(() => {
-    if (isLoaded && user) {
-      void fetchAnalytics()
+    if (!isLoaded) return
+    if (!user) {
+      // Signed-out / no session: stop the spinner instead of hanging forever.
+      setLoading(false)
+      return
     }
+    void fetchAnalytics()
   }, [fetchAnalytics, isLoaded, user])
 
   // Calculate totals

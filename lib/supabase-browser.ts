@@ -1,5 +1,20 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
+import { fetchWithRetry } from '@/lib/fetch-with-retry'
+
+/** Overall budget per request, shared across retry attempts. */
+const REQUEST_TIMEOUT_MS = 15_000
+
+/**
+ * Fetch used by the Supabase client: retries transient network drops and
+ * 5xx/429 responses, and aborts requests that hang (dead connection, paused
+ * Supabase project) instead of spinning forever.
+ */
+function supabaseFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const signal = init?.signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+  return fetchWithRetry(input, { ...init, signal })
+}
+
 function normalizeEnvVar(value?: string): string {
   if (!value) return ''
   let trimmed = value.trim()
@@ -31,7 +46,9 @@ export function getSupabaseClient(): SupabaseClient {
   }
 
   if (!cachedClient) {
-    cachedClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+    cachedClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { fetch: supabaseFetch },
+    })
   }
 
   return cachedClient
