@@ -1,6 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
+
+import { fetchWithRetry, safeJson } from '@/lib/fetch-with-retry'
 
 type StoreRow = {
   id: string
@@ -19,16 +21,27 @@ export default function StoresTableClient({ initialStores }: { initialStores: St
   const [processing, setProcessing] = useState(false)
   const [processResult, setProcessResult] = useState<any | null>(null)
 
+  // Distinguish network drops from API errors so the UI can suggest the right fix.
+  function toUserError(e: unknown, fallback: string): string {
+    if (e instanceof TypeError) {
+      return 'Connection lost — check your network and try again.'
+    }
+    return e instanceof Error && e.message ? e.message : fallback
+  }
+
   async function fetchStores() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/admin/stores')
-      if (!res.ok) throw new Error('Failed to fetch stores')
-      const json = await res.json()
-      setStores(json.stores || [])
-    } catch (e: any) {
-      setError(e.message || 'Unknown error')
+      const res = await fetchWithRetry('/api/admin/stores', undefined, {
+        onRetry: () => setError('Connection issue, retrying…'),
+      })
+      const json = await safeJson<{ stores?: StoreRow[]; error?: string }>(res)
+      if (!res.ok) throw new Error(json?.error || 'Failed to fetch stores')
+      setStores(json?.stores || [])
+      setError(null)
+    } catch (e) {
+      setError(toUserError(e, 'Unknown error'))
     } finally {
       setLoading(false)
     }
@@ -39,36 +52,41 @@ export default function StoresTableClient({ initialStores }: { initialStores: St
     setProcessResult(null)
     setError(null)
     try {
-      const res = await fetch('/api/admin/messages/process-queue', { method: 'POST' })
-      const json = await res.json()
+      const res = await fetchWithRetry(
+        '/api/admin/messages/process-queue',
+        { method: 'POST' },
+        { onRetry: () => setError('Connection issue, retrying…') }
+      )
+      const json = await safeJson<{ error?: string }>(res)
       if (!res.ok) throw new Error(json?.error || 'Processing failed')
       setProcessResult(json)
       // refresh store list to reflect any status changes
       await fetchStores()
-    } catch (e: any) {
-      setError(e.message || 'Send failed')
+    } catch (e) {
+      setError(toUserError(e, 'Send failed'))
     } finally {
       setProcessing(false)
     }
   }
 
-  useEffect(() => {
-    // no-op; server provided initialStores
-  }, [])
-
   async function handleClear(storeId: string) {
     if (!confirm('Clear webhook metadata for this store? This cannot be undone.')) return
     setBusyId(storeId)
     try {
-      const res = await fetch('/api/admin/stores/clear-webhooks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ storeId }),
-      })
-      if (!res.ok) throw new Error('Failed to clear webhooks')
+      const res = await fetchWithRetry(
+        '/api/admin/stores/clear-webhooks',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ storeId }),
+        },
+        { onRetry: () => setError('Connection issue, retrying…') }
+      )
+      const json = await safeJson<{ error?: string }>(res)
+      if (!res.ok) throw new Error(json?.error || 'Failed to clear webhooks')
       await fetchStores()
-    } catch (e: any) {
-      setError(e.message || 'Clear failed')
+    } catch (e) {
+      setError(toUserError(e, 'Clear failed'))
     } finally {
       setBusyId(null)
     }

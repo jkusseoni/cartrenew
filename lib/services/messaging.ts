@@ -56,9 +56,10 @@ function buildRecoveryMessageBody({
   customerPhone?: string | null
   cartToken?: string | null
 }) {
+  // Only body/name are used below — avoid pulling the whole template row.
   return supabaseAdmin
     .from('message_templates')
-    .select('*')
+    .select('body, name')
     .eq('store_id', storeId)
     .eq('is_active', true)
     .order('created_at', { ascending: true })

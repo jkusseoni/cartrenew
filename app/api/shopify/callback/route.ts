@@ -48,16 +48,19 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Token exchange failed' }, { status: 500 })
     }
 
-    const tokenJson = await tokenRes.json()
-    const accessToken = tokenJson.access_token
+    // Defensive parse: a non-JSON body from Shopify should surface as a 502, not a 500.
+    const tokenJson = await tokenRes.json().catch(() => null)
+    const accessToken = tokenJson?.access_token
 
     if (!accessToken) {
-      return NextResponse.json({ error: 'Missing access token' }, { status: 500 })
+      return NextResponse.json({ error: 'Missing access token' }, { status: 502 })
     }
 
     // Save or update store and get its ID
     const clerkUserId = state || `webhook_${shop.replace(/[^a-z0-9]/gi, '_')}`
 
+    // Single round-trip: upsert and return the row id in one query
+    // (previously an upsert followed by a separate select).
     const upsertRes = await supabaseAdmin
       .from('stores')
       .upsert(
@@ -68,24 +71,15 @@ export async function GET(req: NextRequest) {
         },
         { onConflict: 'shopify_domain' }
       )
+      .select('id')
+      .maybeSingle()
 
     if (upsertRes.error) {
       console.error('Failed to upsert store', upsertRes.error)
       return NextResponse.json({ error: 'Failed to save store' }, { status: 500 })
     }
 
-    // Fetch store record to get id
-    const { data: fetchedStore, error: fetchErr } = await supabaseAdmin
-      .from('stores')
-      .select('id')
-      .eq('shopify_domain', shop)
-      .maybeSingle()
-
-    if (fetchErr) {
-      console.error('Failed to fetch store after upsert', fetchErr)
-    }
-
-    const storeId = fetchedStore?.id
+    const storeId = upsertRes.data?.id
 
     // Register webhooks for this shop and save webhook IDs to the store
     const registered = await registerShopifyWebhooks(shop, accessToken)

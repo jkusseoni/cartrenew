@@ -76,6 +76,12 @@ export async function POST(request: Request) {
       estimatedDeliveryDays: lowestRateOption.estimatedDeliveryDays,
     });
   } catch (error) {
+    // Bad input is the caller's problem — return 400 instead of masking it
+    // behind a successful fallback rate.
+    if (error instanceof RouteValidationError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 400 });
+    }
+
     console.warn("ShipRocket rates route fallback used:", getLoggableError(error));
 
     return fallbackRatesResponse();

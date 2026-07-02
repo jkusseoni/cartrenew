@@ -6,7 +6,12 @@ export const maxDuration = 60;
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-const ABANDONED_STATUS = "abandoned";
+// Must match the Prisma Cart.status default ("ABANDONED") — the previous
+// lowercase value meant the cron scanned zero carts in production.
+const ABANDONED_STATUS = "ABANDONED";
+
+// Cap per run so a large backlog cannot exceed the 60s function budget.
+const MAX_CARTS_PER_RUN = 25;
 
 type CartProcessResult = {
   cartId: string;
@@ -39,19 +44,25 @@ export async function GET(request: NextRequest) {
       orderBy: {
         updatedAt: "asc",
       },
+      // Only the id is needed here; full rows are re-checked atomically below.
+      select: { id: true },
+      take: MAX_CARTS_PER_RUN,
     });
 
     for (const cart of abandonedCarts) {
-      const latestCart = await prisma.cart.findUnique({
-        where: { id: cart.id },
-        select: {
-          id: true,
-          status: true,
-          notified: true,
+      // Atomic claim: updateMany with the status/notified condition replaces the
+      // old findUnique-then-update pattern (removes the N+1 read and the race
+      // window between check and update).
+      const claimed = await prisma.cart.updateMany({
+        where: {
+          id: cart.id,
+          status: ABANDONED_STATUS,
+          notified: false,
         },
+        data: { notified: true },
       });
 
-      if (!latestCart || latestCart.status !== ABANDONED_STATUS || latestCart.notified) {
+      if (claimed.count === 0) {
         results.push({
           cartId: cart.id,
           status: "skipped",
@@ -63,13 +74,6 @@ export async function GET(request: NextRequest) {
       try {
         const recovery = await generateCartRecoveryMessageForCartId(cart.id);
 
-        await prisma.cart.update({
-          where: { id: cart.id },
-          data: {
-            notified: true,
-          },
-        });
-
         results.push({
           cartId: cart.id,
           status: "processed",
@@ -78,6 +82,16 @@ export async function GET(request: NextRequest) {
         });
       } catch (error) {
         console.error(`Cron cart processing failed for cart ${cart.id}:`, error);
+
+        // Release the claim so the next cron run can retry this cart.
+        try {
+          await prisma.cart.update({
+            where: { id: cart.id },
+            data: { notified: false },
+          });
+        } catch (releaseError) {
+          console.error(`Failed to release claim for cart ${cart.id}:`, releaseError);
+        }
 
         results.push({
           cartId: cart.id,

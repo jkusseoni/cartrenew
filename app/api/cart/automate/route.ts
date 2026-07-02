@@ -97,7 +97,16 @@ export async function POST(req: Request) {
     });
 
     try {
-      const body = (await req.json()) as CartAutomatePayload;
+      // Malformed JSON is a caller error — return 400 rather than a 500.
+      let body: CartAutomatePayload;
+      try {
+        body = (await req.json()) as CartAutomatePayload;
+      } catch {
+        return NextResponse.json(
+          { error: "Request body must be valid JSON" },
+          { status: 400 }
+        );
+      }
       const customerPhone = getOptionalString(body.customerPhone);
       const customerEmail = getOptionalString(body.customerEmail);
       const customerName = getOptionalString(body.customerName) || "Customer";

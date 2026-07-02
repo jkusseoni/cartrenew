@@ -3,6 +3,29 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 
+import {
+  isValid,
+  validateEmail,
+  validateNumericId,
+  validateRequired,
+  validateShopifyDomain,
+  type FieldError,
+} from '@/lib/validation';
+
+type SettingsErrors = {
+  shopifyDomain: FieldError;
+  whatsappPhoneId: FieldError;
+  shiprocketEmail: FieldError;
+  shiprocketPassword: FieldError;
+};
+
+const NO_ERRORS: SettingsErrors = {
+  shopifyDomain: null,
+  whatsappPhoneId: null,
+  shiprocketEmail: null,
+  shiprocketPassword: null,
+};
+
 export default function SettingsPage() {
   // Mock states for key configuration parameters
   const [shopifyDomain, setShopifyDomain] = useState("cartrenew-test-store.myshopify.com");
@@ -10,12 +33,32 @@ export default function SettingsPage() {
   const [shiprocketEmail, setShiprocketEmail] = useState("contact@cartrenew.com");
   const [shiprocketPassword, setShiprocketPassword] = useState("");
   const [isSaved, setIsSaved] = useState(false);
+  const [errors, setErrors] = useState<SettingsErrors>(NO_ERRORS);
 
+  // Validate every field before "saving"; block submission on any error.
   const handleSaveConfigs = (e: React.FormEvent) => {
     e.preventDefault();
+
+    const nextErrors: SettingsErrors = {
+      shopifyDomain: validateShopifyDomain(shopifyDomain),
+      whatsappPhoneId: validateNumericId(whatsappPhoneId, "WhatsApp Phone Number ID"),
+      shiprocketEmail: validateEmail(shiprocketEmail),
+      shiprocketPassword: validateRequired(shiprocketPassword, "ShipRocket password"),
+    };
+
+    setErrors(nextErrors);
+    if (!isValid(nextErrors)) {
+      setIsSaved(false);
+      return;
+    }
+
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 3000);
   };
+
+  // Small helper to render an inline error message beneath a field.
+  const FieldErrorText = ({ error }: { error: FieldError }) =>
+    error ? <p className="text-[11px] font-bold text-red-400 mt-1">{error}</p> : null;
 
   return (
     <div className="min-h-screen bg-[#0B0F17] text-white flex flex-col lg:flex-row">
@@ -82,8 +125,10 @@ export default function SettingsPage() {
                   type="text"
                   value={shopifyDomain}
                   onChange={(e) => setShopifyDomain(e.target.value)}
-                  className="w-full bg-neutral-900/60 border border-neutral-800 rounded-xl px-4 py-3 text-xs sm:text-sm text-white focus:outline-none focus:border-[#00DF89] font-mono"
+                  aria-invalid={Boolean(errors.shopifyDomain)}
+                  className={`w-full bg-neutral-900/60 border rounded-xl px-4 py-3 text-xs sm:text-sm text-white focus:outline-none font-mono ${errors.shopifyDomain ? 'border-red-800 focus:border-red-500' : 'border-neutral-800 focus:border-[#00DF89]'}`}
                 />
+                <FieldErrorText error={errors.shopifyDomain} />
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-neutral-400">Admin GraphQL Access Token</label>
@@ -107,10 +152,13 @@ export default function SettingsPage() {
                 <label className="text-xs font-bold text-neutral-400">WhatsApp Phone Number ID</label>
                 <input 
                   type="text"
+                  inputMode="numeric"
                   value={whatsappPhoneId}
                   onChange={(e) => setWhatsappPhoneId(e.target.value)}
-                  className="w-full bg-neutral-900/60 border border-neutral-800 rounded-xl px-4 py-3 text-xs sm:text-sm text-white focus:outline-none focus:border-[#00DF89] font-mono"
+                  aria-invalid={Boolean(errors.whatsappPhoneId)}
+                  className={`w-full bg-neutral-900/60 border rounded-xl px-4 py-3 text-xs sm:text-sm text-white focus:outline-none font-mono ${errors.whatsappPhoneId ? 'border-red-800 focus:border-red-500' : 'border-neutral-800 focus:border-[#00DF89]'}`}
                 />
+                <FieldErrorText error={errors.whatsappPhoneId} />
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-neutral-400">Meta Permanent System User Token</label>
@@ -136,8 +184,10 @@ export default function SettingsPage() {
                   type="email"
                   value={shiprocketEmail}
                   onChange={(e) => setShiprocketEmail(e.target.value)}
-                  className="w-full bg-neutral-900/60 border border-neutral-800 rounded-xl px-4 py-3 text-xs sm:text-sm text-white focus:outline-none focus:border-[#00DF89] font-mono"
+                  aria-invalid={Boolean(errors.shiprocketEmail)}
+                  className={`w-full bg-neutral-900/60 border rounded-xl px-4 py-3 text-xs sm:text-sm text-white focus:outline-none font-mono ${errors.shiprocketEmail ? 'border-red-800 focus:border-red-500' : 'border-neutral-800 focus:border-[#00DF89]'}`}
                 />
+                <FieldErrorText error={errors.shiprocketEmail} />
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-neutral-400">ShipRocket Integration API Password</label>
@@ -146,8 +196,10 @@ export default function SettingsPage() {
                   value={shiprocketPassword}
                   onChange={(e) => setShiprocketPassword(e.target.value)}
                   autoComplete="current-password"
-                  className="w-full bg-neutral-900/60 border border-neutral-800 rounded-xl px-4 py-3 text-xs sm:text-sm text-white focus:outline-none focus:border-[#00DF89] font-mono"
+                  aria-invalid={Boolean(errors.shiprocketPassword)}
+                  className={`w-full bg-neutral-900/60 border rounded-xl px-4 py-3 text-xs sm:text-sm text-white focus:outline-none font-mono ${errors.shiprocketPassword ? 'border-red-800 focus:border-red-500' : 'border-neutral-800 focus:border-[#00DF89]'}`}
                 />
+                <FieldErrorText error={errors.shiprocketPassword} />
               </div>
             </div>
           </div>

@@ -4,13 +4,17 @@ export type AlertLevel = 'info' | 'warning' | 'error'
 
 export async function alertEvent(level: AlertLevel, source: string, eventType: string, payload: any) {
   try {
-    // write to alerts table
-    await supabaseAdmin.from('alerts').insert({
+    // write to alerts table — Supabase returns errors instead of throwing,
+    // so the result must be checked explicitly.
+    const { error } = await supabaseAdmin.from('alerts').insert({
       level,
       source,
       event_type: eventType,
       payload,
     })
+    if (error) {
+      console.error('monitoring.alertEvent write failed', error)
+    }
   } catch (e) {
     // best-effort — don't crash main flow
     console.error('monitoring.alertEvent write failed', e)

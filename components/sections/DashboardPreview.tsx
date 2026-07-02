@@ -4,6 +4,12 @@ import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { Send } from "lucide-react";
 import { trackMetaCapiEvent } from "@/lib/meta-capi-client";
+import {
+  validatePhone,
+  validatePositiveAmount,
+  validateRequired,
+  validateUrl,
+} from "@/lib/validation";
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -33,13 +39,22 @@ export default function DashboardPreview() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!customerName || !phoneNumber || !cartAmount) {
-      addLog("Error: Please fill all required fields", "error");
+
+    // Strict field validation before firing any tracking events.
+    const validationErrors = [
+      validateRequired(customerName, "Customer name"),
+      validatePhone(phoneNumber),
+      validatePositiveAmount(cartAmount, "Cart amount"),
+      validateUrl(cartUrl, { optional: true }),
+    ].filter((error): error is string => error !== null);
+
+    if (validationErrors.length > 0) {
+      validationErrors.forEach((error) => addLog(`Validation: ${error}`, "error"));
       return;
     }
 
     addLog(`Triggered recovery for ${customerName} (${phoneNumber})`, "info");
-    const cartValue = Number(cartAmount || 0);
+    const cartValue = Number(cartAmount);
     const trackingCartId = cartUrl || `manual-cart-${Date.now()}`;
 
     try {

@@ -19,7 +19,10 @@ type WebhookSubscriptionInput = {
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as SubscribeBody;
+    // Guard malformed JSON so it maps to a 400 rather than a generic 500.
+    const body = (await request.json().catch(() => {
+      throw new RouteValidationError("Request body must be valid JSON");
+    })) as SubscribeBody;
     const input = parseSubscribeBody(body);
     const secret = generateWebhookSecret();
     const subscription = await prisma.webhookSubscription.upsert({
@@ -63,6 +66,8 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const merchantId = parseRequiredString(searchParams.get("merchantId"), "merchantId");
+    // Never return `secret` in list responses — it is only shown once at
+    // subscription time so callers can store it for signature verification.
     const subscriptions = await prisma.webhookSubscription.findMany({
       where: {
         merchantId,
@@ -70,6 +75,16 @@ export async function GET(request: Request) {
       orderBy: {
         createdAt: "desc",
       },
+      select: {
+        id: true,
+        merchantId: true,
+        url: true,
+        eventType: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+      take: 100,
     });
 
     return NextResponse.json({

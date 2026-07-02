@@ -3,9 +3,14 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
+import { requireAdmin } from '@/lib/api-auth'
 
 export async function GET(req: NextRequest) {
   try {
+    // Admin-only: response contains customer phone numbers.
+    const unauthorized = await requireAdmin(req)
+    if (unauthorized) return unauthorized
+
     const { data, error } = await supabaseAdmin
       .from('messages')
       .select('id, cart_id, store_id, phone, template_name, status, attempt_count, next_retry_at, error_message, created_at, store:stores(id, shopify_domain)')

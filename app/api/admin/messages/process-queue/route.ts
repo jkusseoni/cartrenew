@@ -24,9 +24,11 @@ export async function POST(req: Request) {
     }
 
     const nowISO = new Date().toISOString()
+    // Narrow select: only the columns the send loop reads (was select('*')).
+    const MESSAGE_COLUMNS = 'id, phone, body, template_name, attempt_count'
     let messagesResponse = await supabaseAdmin
       .from('messages')
-      .select('*')
+      .select(MESSAGE_COLUMNS)
       .eq('status', 'pending')
       .or(`next_retry_at.is.null,next_retry_at.lte.${nowISO}`)
       .order('created_at', { ascending: true })
@@ -35,7 +37,7 @@ export async function POST(req: Request) {
     if (messagesResponse.error && messagesResponse.error.message?.includes('next_retry_at')) {
       messagesResponse = await supabaseAdmin
         .from('messages')
-        .select('*')
+        .select(MESSAGE_COLUMNS)
         .eq('status', 'pending')
         .order('created_at', { ascending: true })
         .limit(50)

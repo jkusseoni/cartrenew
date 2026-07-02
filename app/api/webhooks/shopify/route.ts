@@ -493,12 +493,15 @@ async function findAbandonedCartByContact(
 ) {
   if (!phone && !email) return null
 
+  // Cap the scan: only the most recent open carts are realistic matches, and an
+  // unbounded fetch on a busy store loads the whole table into memory.
   const { data: carts, error } = await supabaseAdmin
     .from('abandoned_carts')
     .select('id, cart_value, status, customer_phone, customer_email, created_at')
     .eq('store_id', storeId)
     .in('status', ['pending', 'messaged'])
     .order('created_at', { ascending: false })
+    .limit(100)
 
   if (error || !carts?.length) return null
 
@@ -587,12 +590,14 @@ async function incrementAnalytics(
 ) {
   const today = new Date().toISOString().split('T')[0]
   
+  // Fetch only the counters we mutate (was select('*')); maybeSingle avoids a
+  // thrown "0 rows" error on the first event of the day.
   const { data: existing } = await supabaseAdmin
     .from('analytics_daily')
-    .select('*')
+    .select('id, carts_created, carts_recovered, revenue_recovered')
     .eq('store_id', storeId)
     .eq('date', today)
-    .single()
+    .maybeSingle()
   
   if (existing) {
     const updates: any = {}

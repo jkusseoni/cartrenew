@@ -77,7 +77,12 @@ export default function CartRow({ cart }: CartRowProps) {
       );
     } catch (error) {
       console.error(error);
-      window.alert('Connection refused by local API Route pipeline.');
+      // TypeError from fetch = network drop; anything else is an app failure.
+      const message =
+        error instanceof TypeError
+          ? 'Connection lost — please check your network and retry.'
+          : 'Recovery request failed. Please try again.';
+      window.alert(message);
     } finally {
       setLoading(false);
     }

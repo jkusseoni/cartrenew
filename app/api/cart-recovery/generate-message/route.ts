@@ -8,21 +8,23 @@ import { getRazorpayClient } from "@/lib/razorpay";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-// Production Security Layer: Validation Schema matching your data types
+// Production Security Layer: structural validation schema. Semantic checks
+// (required-ness, trimming, defaults) happen in parseCartRecoveryBody below,
+// which returns 400 via RouteValidationError on violations.
 const generateMessageSchema = z.object({
-  merchantId: z.string().min(1, "Merchant ID required"),
+  merchantId: z.string().min(1, "Merchant ID required").optional().nullable(),
   customerName: z.string().optional().nullable(),
   customerEmail: z.string().email("Invalid email structure").optional().nullable(),
   phoneNumber: z.string().regex(/^\+?[1-9]\d{1,14}$/, "Strict E.164 phone format required"),
-  cartTotalAmount: z.number().nonnegative(),
+  cartTotalAmount: z.coerce.number().nonnegative(),
   cartUrl: z.string().url().optional().nullable(),
-  timeSpentOnCheckout: z.number().optional().nullable(),
+  timeSpentOnCheckout: z.coerce.number().optional().nullable(),
   userHistory: z.array(z.any()).optional(),
   deliveryPincode: z.string().optional().nullable(),
   pickupPincode: z.string().optional().nullable(),
   pickup_pincode: z.string().optional().nullable(),
-  weightInKg: z.number().optional().nullable(),
-  cartValue: z.number().positive(),
+  weightInKg: z.coerce.number().optional().nullable(),
+  cartValue: z.coerce.number().positive().optional().nullable(),
   checkoutStep: z.string().optional().nullable(),
   dropOffStep: z.string().optional().nullable(),
   trackingParams: z.any().optional(),
@@ -95,7 +97,34 @@ const ENDPOINTAI_TIMEOUT_MS = 10000;
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as GenerateMessageBody;
+    // Guard malformed JSON separately so it returns 400, not a generic 500.
+    let rawBody: unknown;
+    try {
+      rawBody = await request.json();
+    } catch {
+      return NextResponse.json(
+        { success: false, error: "Request body must be valid JSON" },
+        { status: 400 }
+      );
+    }
+
+    // Zod schema is the single source of truth for input shape (previously
+    // defined but never executed); manual parsers below add semantic checks.
+    const parsedBody = generateMessageSchema.safeParse(rawBody);
+    if (!parsedBody.success) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Invalid request payload",
+          details: parsedBody.error.issues.map(
+            (issue) => `${issue.path.join(".") || "body"}: ${issue.message}`
+          ),
+        },
+        { status: 400 }
+      );
+    }
+
+    const body = parsedBody.data;
     const cartDetails = parseCartRecoveryBody(body);
     const shippingRateContext = await getShippingRateContext(request, cartDetails);
 

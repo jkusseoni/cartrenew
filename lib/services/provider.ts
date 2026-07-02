@@ -117,11 +117,12 @@ export async function sendMessageViaMetaWhatsApp(msg: ProviderMessage): Promise<
       body: JSON.stringify(whatsappPayload),
     })
 
-    const result = await response.json()
+    // Meta occasionally returns non-JSON error bodies; never let parsing throw.
+    const result = await response.json().catch(() => ({} as Record<string, any>))
     if (!response.ok) {
       return {
         success: false,
-        error: result.error?.message || JSON.stringify(result),
+        error: result.error?.message || `Meta API responded with HTTP ${response.status}`,
         provider: 'meta_whatsapp',
       }
     }

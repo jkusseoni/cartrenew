@@ -3,10 +3,15 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
+import { requireAdmin, safeParseBody } from '@/lib/api-auth'
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json()
+    // Admin-only: destructive store mutation.
+    const unauthorized = await requireAdmin(req)
+    if (unauthorized) return unauthorized
+
+    const body = await safeParseBody<{ storeId?: string }>(req)
     const storeId = body?.storeId
 
     if (!storeId || typeof storeId !== 'string') {

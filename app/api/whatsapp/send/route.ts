@@ -57,10 +57,18 @@ export async function POST(request: Request) {
       }),
     });
 
-    const result = await response.json();
+    // Twilio can return non-JSON bodies on gateway errors — parse defensively.
+    const result = await response.json().catch(() => ({} as Record<string, unknown>));
 
     if (!response.ok) {
-      throw new Error(result.message || "Twilio gateway server rejected payload delivery sequence");
+      // 502: the upstream provider failed, not our server.
+      return NextResponse.json(
+        {
+          success: false,
+          error: (result as { message?: string }).message || "Twilio gateway rejected the message delivery request",
+        },
+        { status: 502 }
+      );
     }
 
     // 6. Return successful dispatch message log logs

@@ -97,11 +97,12 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify(metaPayload),
     });
 
-    const result = await response.json();
+    // Meta can return non-JSON error pages — parse defensively.
+    const result = await response.json().catch(() => null);
     if (!response.ok) {
       return NextResponse.json(
         { success: false, error: "Meta API rejected the event", details: result },
-        { status: response.status }
+        { status: 502 }
       );
     }
 

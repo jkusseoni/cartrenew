@@ -6,6 +6,7 @@ import { routing } from "@/i18n/routing";
 import { HandshakeProvider } from "@/context/HandshakeContext";
 import { MarketSettingsProvider } from "@/context/MarketSettingsContext";
 import MetaCheckoutTracker from "@/components/MetaCheckoutTracker";
+import OfflineBanner from "@/components/OfflineBanner";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -29,6 +30,8 @@ export default async function LocaleLayout({ children, params }: LayoutProps) {
               <Suspense fallback={null}>
                 <MetaCheckoutTracker />
               </Suspense>
+              {/* Global network-drop indicator (Phase 1 resilience) */}
+              <OfflineBanner />
               {children}
             </div>
           </div>

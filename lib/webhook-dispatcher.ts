@@ -17,34 +17,44 @@ export async function dispatchWebhookEvent(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   eventData: Record<string, any>
 ) {
-  const subscriptions = await prisma.webhookSubscription.findMany({
-    where: {
+  // Callers fire-and-forget this function (`void dispatchWebhookEvent(...)`),
+  // so a DB failure here must never surface as an unhandled promise rejection.
+  try {
+    const subscriptions = await prisma.webhookSubscription.findMany({
+      where: {
+        merchantId,
+        eventType,
+        isActive: true,
+      },
+      select: {
+        id: true,
+        url: true,
+        secret: true,
+      },
+    });
+
+    if (subscriptions.length === 0) {
+      return;
+    }
+
+    const payload: WebhookEventPayload = {
+      eventType,
+      timestamp: new Date().toISOString(),
+      eventData,
+    };
+    const serializedPayload = JSON.stringify(payload);
+
+    for (const subscription of subscriptions) {
+      const signature = createWebhookSignature(serializedPayload, subscription.secret);
+
+      void sendWebhookDelivery(subscription.id, subscription.url, serializedPayload, eventType, signature);
+    }
+  } catch (error) {
+    console.error("Webhook dispatch failed:", {
       merchantId,
       eventType,
-      isActive: true,
-    },
-    select: {
-      id: true,
-      url: true,
-      secret: true,
-    },
-  });
-
-  if (subscriptions.length === 0) {
-    return;
-  }
-
-  const payload: WebhookEventPayload = {
-    eventType,
-    timestamp: new Date().toISOString(),
-    eventData,
-  };
-  const serializedPayload = JSON.stringify(payload);
-
-  for (const subscription of subscriptions) {
-    const signature = createWebhookSignature(serializedPayload, subscription.secret);
-
-    void sendWebhookDelivery(subscription.id, subscription.url, serializedPayload, eventType, signature);
+      error: getLoggableError(error),
+    });
   }
 }
 

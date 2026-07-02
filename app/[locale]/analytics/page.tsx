@@ -18,6 +18,7 @@ export default function AnalyticsPage() {
   const { user, isLoaded } = useSafeUser()
   const [analytics, setAnalytics] = useState<DailyAnalytics[]>([])
   const [loading, setLoading] = useState(true)
+  const [fetchError, setFetchError] = useState<string | null>(null)
   const [dateRange, setDateRange] = useState(30) // days
 
   const fetchAnalytics = useCallback(async () => {
@@ -27,13 +28,19 @@ export default function AnalyticsPage() {
 
     try {
       setLoading(true)
+      setFetchError(null)
 
       const client = getSupabaseClient()
-      const { data: store } = await client
+      // maybeSingle: a user without a store is a normal state, not an error.
+      const { data: store, error: storeError } = await client
         .from('stores')
         .select('id')
         .eq('clerk_user_id', user.id)
-        .single()
+        .maybeSingle()
+
+      if (storeError) {
+        throw new Error(storeError.message)
+      }
 
       if (!store) {
         setLoading(false)
@@ -43,16 +50,27 @@ export default function AnalyticsPage() {
       const startDate = new Date()
       startDate.setDate(startDate.getDate() - dateRange)
 
-      const { data } = await client
+      // Select only the columns the dashboard renders (avoids over-fetch).
+      const { data, error: analyticsError } = await client
         .from('analytics_daily')
-        .select('*')
+        .select('date, carts_created, messages_sent, messages_delivered, messages_read, carts_recovered, revenue_recovered')
         .eq('store_id', store.id)
         .gte('date', startDate.toISOString().split('T')[0])
         .order('date', { ascending: true })
 
+      if (analyticsError) {
+        throw new Error(analyticsError.message)
+      }
+
       setAnalytics(data || [])
     } catch (error) {
       console.error('Error fetching analytics:', error)
+      // Surface the failure so the user can retry instead of seeing stale zeros.
+      setFetchError(
+        error instanceof Error && error.message
+          ? error.message
+          : 'Could not load analytics. Check your connection and try again.'
+      )
     } finally {
       setLoading(false)
     }
@@ -145,6 +163,21 @@ export default function AnalyticsPage() {
       </header>
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Connection / fetch failure banner with manual retry */}
+        {fetchError && (
+          <div className="mb-6 flex items-center justify-between gap-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+            <p className="text-sm text-red-700">
+              <span className="font-semibold">Connection issue:</span> {fetchError}
+            </p>
+            <button
+              onClick={() => void fetchAnalytics()}
+              className="shrink-0 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
         {/* Date Range Filter */}
         <div className="flex gap-2 mb-6">
           {[7, 14, 30, 90].map((days) => (

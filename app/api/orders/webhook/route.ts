@@ -62,9 +62,12 @@ export async function POST(request: Request) {
       void triggerCodWhatsAppLog(order.phoneNumber, order.customerName, order.shopifyOrderId, verificationOtp);
     }
 
+    // Never echo verificationOtp (or other sensitive columns) back to the caller.
+    const { verificationOtp: _omitted, ...safeOrder } = order;
+
     return NextResponse.json({
       success: true,
-      order,
+      order: safeOrder,
     });
   } catch (error) {
     console.error("Order webhook route error:", error);
