@@ -1,7 +1,7 @@
 # CartRenew — Public distribution app (App Store listing enabled)
 # Learn more: https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "e83ce0fc464ef74ff7216252543272a5"
+client_id = "b0d8dbf013b051fc9ba20c1c5df304ca"
 name = "CartRenew Public"
 # Embedded console entry inside Shopify Admin (App Bridge).
 application_url = "https://cartrenew.com/shopify"

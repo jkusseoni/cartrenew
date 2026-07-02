@@ -5,8 +5,8 @@ import crypto from "crypto";
  *
  * Reads the canonical env names first, falling back to the legacy names so
  * existing routes keep working regardless of which set is populated:
- *   - Client ID:     NEXT_PUBLIC_SHOPIFY_CLIENT_ID  -> NEXT_PUBLIC_SHOPIFY_APP_API_KEY
- *   - Client Secret: SHOPIFY_CLIENT_SECRET          -> SHOPIFY_APP_API_SECRET
+ *   - Client ID:     NEXT_PUBLIC_SHOPIFY_CLIENT_ID  -> SHOPIFY_API_KEY -> NEXT_PUBLIC_SHOPIFY_APP_API_KEY
+ *   - Client Secret: SHOPIFY_CLIENT_SECRET          -> SHOPIFY_API_SECRET -> SHOPIFY_APP_API_SECRET
  *   - App URL:       SHOPIFY_APP_URL                -> NEXT_PUBLIC_APP_URL
  */
 
@@ -18,12 +18,18 @@ function clean(value?: string | null): string {
 
 export function getShopifyClientId(): string {
   return clean(
-    process.env.NEXT_PUBLIC_SHOPIFY_CLIENT_ID || process.env.NEXT_PUBLIC_SHOPIFY_APP_API_KEY
+    process.env.NEXT_PUBLIC_SHOPIFY_CLIENT_ID ||
+      process.env.SHOPIFY_API_KEY ||
+      process.env.NEXT_PUBLIC_SHOPIFY_APP_API_KEY
   );
 }
 
 export function getShopifyClientSecret(): string {
-  return clean(process.env.SHOPIFY_CLIENT_SECRET || process.env.SHOPIFY_APP_API_SECRET);
+  return clean(
+    process.env.SHOPIFY_CLIENT_SECRET ||
+      process.env.SHOPIFY_API_SECRET ||
+      process.env.SHOPIFY_APP_API_SECRET
+  );
 }
 
 export function getShopifyAppUrl(): string {

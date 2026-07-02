@@ -1,8 +1,8 @@
-# Default Shopify CLI config — synced with shopify.app.cartrenew.toml (Public app)
+# Default Shopify CLI config — synced with shopify.app.cartrenew-public.toml (Public app)
 # Docs: https://shopify.dev/docs/apps/tools/cli/configuration
 
 name = "CartRenew Public"
-client_id = "e83ce0fc464ef74ff7216252543272a5"
+client_id = "b0d8dbf013b051fc9ba20c1c5df304ca"
 application_url = "https://cartrenew.com/shopify"
 embedded = true
 

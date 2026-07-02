@@ -1,0 +1,22 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "b0d8dbf013b051fc9ba20c1c5df304ca"
+name = "CartRenew Public"
+application_url = "https://www.cartrenew.com/shopify"
+embedded = true
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "read_checkouts,read_orders,write_orders"
+
+[auth]
+redirect_urls = [
+  "https://www.cartrenew.com/api/auth/shopify/callback",
+  "https://www.cartrenew.com/api/shopify/callback"
+]
+
+[webhooks]
+api_version = "2026-07"
+
+[build]
+automatically_update_urls_on_dev = true
