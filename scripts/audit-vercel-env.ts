@@ -11,6 +11,7 @@ config({ path: ".env.local", override: true });
 const REQUIRED = [
   "NEXT_PUBLIC_SHOPIFY_CLIENT_ID",
   "SHOPIFY_CLIENT_SECRET",
+  "SHOPIFY_API_SECRET",
   "SHOPIFY_APP_URL",
   "NEXT_PUBLIC_APP_URL",
   "NEXT_PUBLIC_SITE_URL",
@@ -48,7 +49,10 @@ function main() {
 
   let missing = 0;
   for (const key of REQUIRED) {
-    const ok = vercel.has(key);
+    const ok =
+      key === "SHOPIFY_API_SECRET"
+        ? vercel.has(key) || vercel.has("SHOPIFY_CLIENT_SECRET")
+        : vercel.has(key);
     console.log(`${key}: ${ok ? "present on Vercel" : "MISSING on Vercel"}`);
     if (!ok) missing++;
   }

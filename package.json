@@ -18,6 +18,7 @@
     "shopify": "shopify",
     "shopify:dev": "shopify app dev --store cartrenew-sandbox-store.myshopify.com",
     "shopify:deploy": "shopify app deploy",
+    "shopify:hmac:test": "tsx scripts/verify-shopify-hmac.ts",
     "shopify:link": "shopify app config link"
   },
   "dependencies": {

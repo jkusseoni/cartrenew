@@ -237,6 +237,11 @@ function handleRecoveryRedirectRequest(request: NextRequest): NextResponse | nul
 }
 
 function handleApiRequest(request: NextRequest) {
+  // Shopify (and other providers) must not be rate-limited on webhook delivery.
+  if (request.nextUrl.pathname.startsWith("/api/webhooks")) {
+    return NextResponse.next();
+  }
+
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "127.0.1";
   const limitTriggered = isRateLimited(ip, 60, 60 * 1000);
 

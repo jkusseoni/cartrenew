@@ -3,7 +3,7 @@
 
 name = "CartRenew Public"
 client_id = "b0d8dbf013b051fc9ba20c1c5df304ca"
-application_url = "https://cartrenew.com/shopify"
+application_url = "https://www.cartrenew.com/shopify"
 embedded = true
 
 [access_scopes]
@@ -11,16 +11,20 @@ scopes = "read_checkouts,read_orders,write_orders"
 
 [auth]
 redirect_urls = [
-  "https://cartrenew.com/api/auth/shopify/callback",
-  "https://cartrenew.com/api/shopify/callback"
+  "https://www.cartrenew.com/api/auth/shopify/callback",
+  "https://www.cartrenew.com/api/shopify/callback"
 ]
 
 [webhooks]
 api_version = "2026-07"
 
+# Mandatory GDPR webhooks — Shopify resolves uri + topic to:
+#   /api/webhooks/compliance/customers/data_request
+#   /api/webhooks/compliance/customers/redact
+#   /api/webhooks/compliance/shop/redact
 [[webhooks.subscriptions]]
 compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]
-uri = "/api/webhooks"
+uri = "/api/webhooks/compliance"
 
 [pos]
 embedded = false

@@ -83,14 +83,19 @@ export function verifyWebhookHmac(
   hmacHeader: string | null | undefined,
   secret: string = getShopifyClientSecret()
 ): boolean {
-  if (!secret || !hmacHeader) return false;
+  const normalizedHmac = clean(hmacHeader);
+  if (!secret || !normalizedHmac) return false;
 
   const generated = crypto
     .createHmac("sha256", secret)
     .update(rawBody, "utf8")
     .digest("base64");
 
-  return timingSafeEqual(generated, hmacHeader, "base64");
+  return timingSafeEqual(generated, normalizedHmac, "base64");
+}
+
+export function hasShopifyClientSecret(): boolean {
+  return getShopifyClientSecret().length > 0;
 }
 
 function timingSafeEqual(a: string, b: string, encoding: "hex" | "base64"): boolean {

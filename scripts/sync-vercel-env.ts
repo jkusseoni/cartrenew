@@ -19,6 +19,8 @@ const ENVIRONMENTS = ["production", "preview"] as const;
 const SYNC_VARS = [
   "NEXT_PUBLIC_SHOPIFY_CLIENT_ID",
   "SHOPIFY_CLIENT_SECRET",
+  "SHOPIFY_API_KEY",
+  "SHOPIFY_API_SECRET",
   "SHOPIFY_APP_URL",
   "NEXT_PUBLIC_APP_URL",
   "NEXT_PUBLIC_SITE_URL",
@@ -34,6 +36,7 @@ const SYNC_VARS = [
 
 const SENSITIVE = new Set([
   "SHOPIFY_CLIENT_SECRET",
+  "SHOPIFY_API_SECRET",
   "SUPABASE_SERVICE_ROLE_KEY",
   "DATABASE_URL",
   "CLERK_SECRET_KEY",
@@ -84,6 +87,10 @@ function main() {
   for (const key of SYNC_VARS) {
     values[key] = key === "DATABASE_URL" ? databaseUrl : process.env[key];
   }
+
+  // Keep legacy Shopify env aliases in sync with the canonical client secret/id.
+  values.SHOPIFY_API_KEY ||= values.NEXT_PUBLIC_SHOPIFY_CLIENT_ID;
+  values.SHOPIFY_API_SECRET ||= values.SHOPIFY_CLIENT_SECRET;
 
   const missing = SYNC_VARS.filter((k) => !values[k]?.trim());
   if (missing.length) {

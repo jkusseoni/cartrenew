@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-import { verifyWebhookHmac } from '@/lib/shopify/config'
+import { hasShopifyClientSecret, verifyWebhookHmac } from '@/lib/shopify/config'
 
 /**
  * Handler for Shopify mandatory GDPR/compliance webhooks:
@@ -20,7 +20,17 @@ export async function handleShopifyComplianceWebhook(
   const shopDomain = req.headers.get('x-shopify-shop-domain') || 'unknown'
   const rawBody = await req.text()
 
+  if (!hasShopifyClientSecret()) {
+    console.error(
+      `[compliance-webhook] ${topic} rejected: SHOPIFY_CLIENT_SECRET / SHOPIFY_API_SECRET is not configured`
+    )
+    return NextResponse.json({ error: 'Webhook secret not configured' }, { status: 500 })
+  }
+
   if (!verifyWebhookHmac(rawBody, hmac)) {
+    console.error(
+      `[compliance-webhook] ${topic} HMAC verification failed for ${shopDomain} at ${req.nextUrl.pathname}`
+    )
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
   }
 
