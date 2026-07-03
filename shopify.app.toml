@@ -18,13 +18,14 @@ redirect_urls = [
 [webhooks]
 api_version = "2026-07"
 
-# Mandatory GDPR webhooks — Shopify resolves uri + topic to:
-#   /api/webhooks/compliance/customers/data_request
-#   /api/webhooks/compliance/customers/redact
-#   /api/webhooks/compliance/shop/redact
+# application_url includes /shopify, so Shopify delivers compliance webhooks to:
+#   https://www.cartrenew.com/shopify/api/webhooks
+#   https://www.cartrenew.com/shopify/api/webhooks/customers/data_request
+#   https://www.cartrenew.com/shopify/api/webhooks/customers/redact
+#   https://www.cartrenew.com/shopify/api/webhooks/shop/redact
 [[webhooks.subscriptions]]
 compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]
-uri = "/api/webhooks/compliance"
+uri = "/api/webhooks"
 
 [pos]
 embedded = false

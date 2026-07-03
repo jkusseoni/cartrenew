@@ -12,7 +12,7 @@ api_version = "2026-07"
 
 [[webhooks.subscriptions]]
 compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]
-uri = "/api/webhooks/compliance"
+uri = "/api/webhooks"
 
 [access_scopes]
 scopes = "read_checkouts,read_orders,write_orders"
