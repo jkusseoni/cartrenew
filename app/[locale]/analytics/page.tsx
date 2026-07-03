@@ -2,47 +2,6 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSafeUser } from '@/lib/clerk'
-import { getSupabaseClient } from '@/lib/supabase-browser'
-
-const ANALYTICS_COLUMNS =
-  'date,carts_created,messages_sent,messages_delivered,messages_read,carts_recovered,revenue_recovered'
-
-function getSupabaseRestBaseUrl(): string {
-  const raw = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() ?? ''
-  return raw.replace(/\/$/, '')
-}
-
-/** Browser / Supabase network failures surface as TypeError or "Failed to fetch". */
-function isNetworkFetchError(error: unknown): boolean {
-  if (error instanceof TypeError) return true
-  if (error instanceof DOMException && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
-    return true
-  }
-  if (error instanceof Error && /failed to fetch/i.test(error.message)) return true
-  if (typeof error === 'object' && error !== null && 'message' in error) {
-    const message = String((error as { message?: unknown }).message ?? '')
-    if (/failed to fetch/i.test(message)) return true
-  }
-  return false
-}
-
-function logNetworkFetchFallback(requestUrl: string, error: unknown) {
-  console.warn('Analytics request unreachable; falling back to empty metrics.')
-  console.error('Analytics fetch failed for URL:', requestUrl, error)
-}
-
-/**
- * Map non-network failures to actionable messages for the retry banner.
- */
-function toFriendlyFetchError(error: unknown): string {
-  if (error instanceof Error && error.message.includes('env vars are missing')) {
-    return 'Analytics is not configured for this deployment (missing Supabase settings). Contact support.'
-  }
-  if (error instanceof Error && error.message) {
-    return error.message
-  }
-  return 'Could not load analytics. Check your connection and try again.'
-}
 
 interface DailyAnalytics {
   date: string
@@ -54,11 +13,74 @@ interface DailyAnalytics {
   revenue_recovered: number
 }
 
+type AnalyticsTotals = {
+  cartsCreated: number
+  messagesSent: number
+  deliveredRate: number
+  readRate: number
+  recoveredRate: number
+  revenue: number
+}
+
+type AnalyticsFetchResult = {
+  daily: DailyAnalytics[]
+  totals: AnalyticsTotals
+}
+
+const EMPTY_ANALYTICS_TOTALS: AnalyticsTotals = {
+  cartsCreated: 0,
+  messagesSent: 0,
+  deliveredRate: 0,
+  readRate: 0,
+  recoveredRate: 0,
+  revenue: 0,
+}
+
+function getAnalyticsApiUrl(days: number): string {
+  const base = (
+    process.env.NEXT_PUBLIC_APP_URL ||
+    (typeof window !== 'undefined' ? window.location.origin : 'https://www.cartrenew.com')
+  ).replace(/\/$/, '')
+  return `${base}/api/analytics?days=${days}`
+}
+
+/** Robust fallback for dashboard analytics connection. */
+async function fetchAnalyticsData(days: number): Promise<AnalyticsFetchResult> {
+  const requestUrl = getAnalyticsApiUrl(days)
+
+  try {
+    const response = await fetch(requestUrl, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP Error Status: ${response.status}`)
+    }
+
+    const data = (await response.json()) as AnalyticsFetchResult
+    return {
+      daily: data.daily ?? [],
+      totals: data.totals ?? EMPTY_ANALYTICS_TOTALS,
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.warn('Silent Warning: Connection issue handled cleanly.', message)
+    console.error('Analytics fetch failed for URL:', requestUrl, error)
+
+    return {
+      daily: [],
+      totals: EMPTY_ANALYTICS_TOTALS,
+    }
+  }
+}
+
 export default function AnalyticsPage() {
   const { user, isLoaded } = useSafeUser()
   const [analytics, setAnalytics] = useState<DailyAnalytics[]>([])
   const [loading, setLoading] = useState(true)
-  const [fetchError, setFetchError] = useState<string | null>(null)
   const [dateRange, setDateRange] = useState(30) // days
   // Monotonic id so a slow, stale response can't overwrite a newer one
   // (e.g. when the user switches the date range mid-flight).
@@ -72,95 +94,10 @@ export default function AnalyticsPage() {
     const requestId = ++requestIdRef.current
     const isCurrent = () => requestId === requestIdRef.current
 
-    const supabaseRestBase = getSupabaseRestBaseUrl()
-    const storesRequestUrl = `${supabaseRestBase}/rest/v1/stores?select=id&clerk_user_id=eq.${encodeURIComponent(user.id)}`
-
     try {
       setLoading(true)
-      setFetchError(null)
-
-      // Throws early (and readably) if NEXT_PUBLIC_SUPABASE_URL / ANON_KEY are
-      // missing from the build — a common cause of "Failed to fetch"-style errors.
-      const client = getSupabaseClient()
-
-      let store: { id: string } | null = null
-      try {
-        // maybeSingle: a user without a store is a normal state, not an error.
-        const { data, error: storeError } = await client
-          .from('stores')
-          .select('id')
-          .eq('clerk_user_id', user.id)
-          .maybeSingle()
-
-        if (storeError) {
-          if (isNetworkFetchError(storeError)) {
-            logNetworkFetchFallback(storesRequestUrl, storeError)
-            if (isCurrent()) setAnalytics([])
-            return
-          }
-          throw new Error(storeError.message)
-        }
-
-        store = data
-      } catch (error) {
-        if (error instanceof TypeError || isNetworkFetchError(error)) {
-          logNetworkFetchFallback(storesRequestUrl, error)
-          if (isCurrent()) setAnalytics([])
-          return
-        }
-        throw error
-      }
-
-      if (!store) {
-        // No store connected yet — show the "No data yet" empty state.
-        if (isCurrent()) setAnalytics([])
-        return
-      }
-
-      const startDate = new Date()
-      startDate.setDate(startDate.getDate() - dateRange)
-      const startDateIso = startDate.toISOString().split('T')[0]
-      const analyticsRequestUrl =
-        `${supabaseRestBase}/rest/v1/analytics_daily?select=${ANALYTICS_COLUMNS}` +
-        `&store_id=eq.${encodeURIComponent(store.id)}` +
-        `&date=gte.${encodeURIComponent(startDateIso)}` +
-        '&order=date.asc'
-
-      try {
-        // Select only the columns the dashboard renders (avoids over-fetch).
-        const { data, error: analyticsError } = await client
-          .from('analytics_daily')
-          .select(ANALYTICS_COLUMNS)
-          .eq('store_id', store.id)
-          .gte('date', startDateIso)
-          .order('date', { ascending: true })
-
-        if (analyticsError) {
-          if (isNetworkFetchError(analyticsError)) {
-            logNetworkFetchFallback(analyticsRequestUrl, analyticsError)
-            if (isCurrent()) setAnalytics([])
-            return
-          }
-          throw new Error(analyticsError.message)
-        }
-
-        if (isCurrent()) setAnalytics(data ?? [])
-      } catch (error) {
-        if (error instanceof TypeError || isNetworkFetchError(error)) {
-          logNetworkFetchFallback(analyticsRequestUrl, error)
-          if (isCurrent()) setAnalytics([])
-          return
-        }
-        throw error
-      }
-    } catch (error) {
-      if (error instanceof TypeError || isNetworkFetchError(error)) {
-        logNetworkFetchFallback(storesRequestUrl, error)
-        if (isCurrent()) setAnalytics([])
-        return
-      }
-      console.error('Error fetching analytics:', error)
-      if (isCurrent()) setFetchError(toFriendlyFetchError(error))
+      const result = await fetchAnalyticsData(dateRange)
+      if (isCurrent()) setAnalytics(result.daily)
     } finally {
       if (isCurrent()) setLoading(false)
     }
@@ -257,21 +194,6 @@ export default function AnalyticsPage() {
       </header>
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Connection / fetch failure banner with manual retry */}
-        {fetchError && (
-          <div className="mb-6 flex items-center justify-between gap-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
-            <p className="text-sm text-red-700">
-              <span className="font-semibold">Connection issue:</span> {fetchError}
-            </p>
-            <button
-              onClick={() => void fetchAnalytics()}
-              className="shrink-0 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
-            >
-              Retry
-            </button>
-          </div>
-        )}
-
         {/* Date Range Filter */}
         <div className="flex gap-2 mb-6">
           {[7, 14, 30, 90].map((days) => (
