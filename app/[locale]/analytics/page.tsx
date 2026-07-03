@@ -4,18 +4,37 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSafeUser } from '@/lib/clerk'
 import { getSupabaseClient } from '@/lib/supabase-browser'
 
+const ANALYTICS_COLUMNS =
+  'date,carts_created,messages_sent,messages_delivered,messages_read,carts_recovered,revenue_recovered'
+
+function getSupabaseRestBaseUrl(): string {
+  const raw = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() ?? ''
+  return raw.replace(/\/$/, '')
+}
+
+/** Browser / Supabase network failures surface as TypeError or "Failed to fetch". */
+function isNetworkFetchError(error: unknown): boolean {
+  if (error instanceof TypeError) return true
+  if (error instanceof DOMException && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
+    return true
+  }
+  if (error instanceof Error && /failed to fetch/i.test(error.message)) return true
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    const message = String((error as { message?: unknown }).message ?? '')
+    if (/failed to fetch/i.test(message)) return true
+  }
+  return false
+}
+
+function logNetworkFetchFallback(requestUrl: string, error: unknown) {
+  console.warn('Analytics request unreachable; falling back to empty metrics.')
+  console.error('Analytics fetch failed for URL:', requestUrl, error)
+}
+
 /**
- * Map low-level fetch failures to actionable messages. The browser reports any
- * network-layer problem (offline, DNS, CORS, blocked request, paused Supabase
- * project) as `TypeError: Failed to fetch`, which is useless to end users.
+ * Map non-network failures to actionable messages for the retry banner.
  */
 function toFriendlyFetchError(error: unknown): string {
-  if (error instanceof DOMException && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
-    return 'The request timed out. The analytics service may be slow or unreachable — please retry.'
-  }
-  if (error instanceof TypeError) {
-    return 'Could not reach the analytics service. Check your internet connection and try again.'
-  }
   if (error instanceof Error && error.message.includes('env vars are missing')) {
     return 'Analytics is not configured for this deployment (missing Supabase settings). Contact support.'
   }
@@ -53,6 +72,9 @@ export default function AnalyticsPage() {
     const requestId = ++requestIdRef.current
     const isCurrent = () => requestId === requestIdRef.current
 
+    const supabaseRestBase = getSupabaseRestBaseUrl()
+    const storesRequestUrl = `${supabaseRestBase}/rest/v1/stores?select=id&clerk_user_id=eq.${encodeURIComponent(user.id)}`
+
     try {
       setLoading(true)
       setFetchError(null)
@@ -60,15 +82,33 @@ export default function AnalyticsPage() {
       // Throws early (and readably) if NEXT_PUBLIC_SUPABASE_URL / ANON_KEY are
       // missing from the build — a common cause of "Failed to fetch"-style errors.
       const client = getSupabaseClient()
-      // maybeSingle: a user without a store is a normal state, not an error.
-      const { data: store, error: storeError } = await client
-        .from('stores')
-        .select('id')
-        .eq('clerk_user_id', user.id)
-        .maybeSingle()
 
-      if (storeError) {
-        throw new Error(storeError.message)
+      let store: { id: string } | null = null
+      try {
+        // maybeSingle: a user without a store is a normal state, not an error.
+        const { data, error: storeError } = await client
+          .from('stores')
+          .select('id')
+          .eq('clerk_user_id', user.id)
+          .maybeSingle()
+
+        if (storeError) {
+          if (isNetworkFetchError(storeError)) {
+            logNetworkFetchFallback(storesRequestUrl, storeError)
+            if (isCurrent()) setAnalytics([])
+            return
+          }
+          throw new Error(storeError.message)
+        }
+
+        store = data
+      } catch (error) {
+        if (error instanceof TypeError || isNetworkFetchError(error)) {
+          logNetworkFetchFallback(storesRequestUrl, error)
+          if (isCurrent()) setAnalytics([])
+          return
+        }
+        throw error
       }
 
       if (!store) {
@@ -79,21 +119,46 @@ export default function AnalyticsPage() {
 
       const startDate = new Date()
       startDate.setDate(startDate.getDate() - dateRange)
+      const startDateIso = startDate.toISOString().split('T')[0]
+      const analyticsRequestUrl =
+        `${supabaseRestBase}/rest/v1/analytics_daily?select=${ANALYTICS_COLUMNS}` +
+        `&store_id=eq.${encodeURIComponent(store.id)}` +
+        `&date=gte.${encodeURIComponent(startDateIso)}` +
+        '&order=date.asc'
 
-      // Select only the columns the dashboard renders (avoids over-fetch).
-      const { data, error: analyticsError } = await client
-        .from('analytics_daily')
-        .select('date, carts_created, messages_sent, messages_delivered, messages_read, carts_recovered, revenue_recovered')
-        .eq('store_id', store.id)
-        .gte('date', startDate.toISOString().split('T')[0])
-        .order('date', { ascending: true })
+      try {
+        // Select only the columns the dashboard renders (avoids over-fetch).
+        const { data, error: analyticsError } = await client
+          .from('analytics_daily')
+          .select(ANALYTICS_COLUMNS)
+          .eq('store_id', store.id)
+          .gte('date', startDateIso)
+          .order('date', { ascending: true })
 
-      if (analyticsError) {
-        throw new Error(analyticsError.message)
+        if (analyticsError) {
+          if (isNetworkFetchError(analyticsError)) {
+            logNetworkFetchFallback(analyticsRequestUrl, analyticsError)
+            if (isCurrent()) setAnalytics([])
+            return
+          }
+          throw new Error(analyticsError.message)
+        }
+
+        if (isCurrent()) setAnalytics(data ?? [])
+      } catch (error) {
+        if (error instanceof TypeError || isNetworkFetchError(error)) {
+          logNetworkFetchFallback(analyticsRequestUrl, error)
+          if (isCurrent()) setAnalytics([])
+          return
+        }
+        throw error
       }
-
-      if (isCurrent()) setAnalytics(data ?? [])
     } catch (error) {
+      if (error instanceof TypeError || isNetworkFetchError(error)) {
+        logNetworkFetchFallback(storesRequestUrl, error)
+        if (isCurrent()) setAnalytics([])
+        return
+      }
       console.error('Error fetching analytics:', error)
       if (isCurrent()) setFetchError(toFriendlyFetchError(error))
     } finally {
