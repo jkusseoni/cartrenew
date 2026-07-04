@@ -50,3 +50,6 @@ next-env.d.ts
 .vercel
 
 .vercel
+
+# clerk configuration (can include secrets)
+/.clerk/
