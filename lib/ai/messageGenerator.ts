@@ -1,9 +1,14 @@
 import { OpenAI } from 'openai';
 
-// EndpointAI OpenAI-compatible configuration instance
+import {
+  getEndpointAIApiKey,
+  getEndpointAIBaseUrl,
+  getEndpointAIModel,
+} from '@/lib/endpointai-config';
+
 const openai = new OpenAI({
-  apiKey: process.env.ENDPOINTAI_API_KEY?.trim(),
-  baseURL: 'https://api.endpointai.in/v1',
+  apiKey: getEndpointAIApiKey(),
+  baseURL: getEndpointAIBaseUrl(),
 });
 
 export async function POST(req: Request) {
@@ -12,7 +17,7 @@ export async function POST(req: Request) {
 
     // AI Messaging generation prompt matrix
     const response = await openai.chat.completions.create({
-      model: process.env.ENDPOINTAI_MODEL?.trim() || 'meta-llama-3-70b-instruct',
+      model: getEndpointAIModel(),
       messages: [
         {
           role: 'system',

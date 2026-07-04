@@ -76,12 +76,11 @@ type ShippingRateContext = {
   courierName: string;
 };
 
-const ENDPOINTAI_CONFIG = {
-  apiKey: process.env.ENDPOINTAI_API_KEY?.trim(),
-  baseURL: "https://api.endpointai.in/v1",
-  model: process.env.ENDPOINTAI_MODEL?.trim() || "meta-llama-3-70b-instruct",
-};
-const ENDPOINTAI_CHAT_COMPLETIONS_URL = `${ENDPOINTAI_CONFIG.baseURL}/chat/completions`;
+import {
+  getEndpointAIApiKey,
+  getEndpointAIChatCompletionsUrl,
+  getEndpointAIModel,
+} from "@/lib/endpointai-config";
 const HIGH_VALUE_CART_AMOUNT = 3000;
 const AI_DISCOUNT_PERCENT = 10;
 const PAYMENT_LINK_EXPIRY_SECONDS = 15 * 60;
@@ -128,11 +127,12 @@ export async function POST(request: Request) {
     const cartDetails = parseCartRecoveryBody(body);
     const shippingRateContext = await getShippingRateContext(request, cartDetails);
 
-    if (!ENDPOINTAI_CONFIG.apiKey) {
+    if (!getEndpointAIApiKey()) {
       return NextResponse.json(
         {
           success: false,
-          error: "ENDPOINTAI_API_KEY is not configured",
+          error:
+            "EndpointAI is not configured. Set ENDPOINTAI_API_KEY or OPENAI_API_KEY with OPENAI_BASE_URL=https://api.endpointai.in/v1",
         },
         { status: 500 }
       );
@@ -334,14 +334,14 @@ async function generateEndpointAIMessage(
   cartDetails: CartRecoveryDetails,
   shippingRateContext?: ShippingRateContext | null
 ) {
-  const response = await fetch(ENDPOINTAI_CHAT_COMPLETIONS_URL, {
+  const response = await fetch(getEndpointAIChatCompletionsUrl(), {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${ENDPOINTAI_CONFIG.apiKey}`,
+      Authorization: `Bearer ${getEndpointAIApiKey()}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: ENDPOINTAI_CONFIG.model,
+      model: getEndpointAIModel(),
       messages: [
         {
           role: "system",

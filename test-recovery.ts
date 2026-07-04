@@ -14,7 +14,6 @@ import {
   type AICartRecoveryContext,
 } from "@/lib/ai-agent";
 
-config({ path: ".env.local", override: true });
 config({ path: ".env", override: true });
 
 type RecoveryScenario = {
@@ -125,7 +124,10 @@ function printResult(scenario: RecoveryScenario, result: Awaited<ReturnType<type
 }
 
 async function main() {
-  const hasEndpointAI = Boolean(process.env.ENDPOINTAI_API_KEY?.trim());
+  const hasEndpointAI = Boolean(
+    process.env.ENDPOINTAI_API_KEY?.trim() ||
+      (process.env.OPENAI_API_KEY?.trim() && process.env.OPENAI_BASE_URL?.includes("endpointai.in"))
+  );
   const hasDeepSeek = Boolean(process.env.DEEPSEEK_API_KEY?.trim());
   const hasOpenAI = Boolean(process.env.OPENAI_API_KEY?.trim());
   const preferredProvider = process.env.AI_AGENT_PROVIDER?.trim() || "(auto → EndpointAI first)";

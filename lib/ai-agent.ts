@@ -9,6 +9,12 @@ import {
   type LanguageStrategyInput,
   type RegionalLanguage,
 } from "@/lib/lang-policy";
+import {
+  getEndpointAIApiKey,
+  getEndpointAIChatCompletionsUrl,
+  getEndpointAIModel,
+  isOpenAIConfiguredForEndpointAI,
+} from "@/lib/endpointai-config";
 
 export type AIProvider = "endpointai" | "deepseek" | "openai" | "fallback";
 
@@ -97,9 +103,6 @@ type GeneratedCartRecoveryMessage = {
   offerType: OfferType;
 };
 
-const DEFAULT_ENDPOINTAI_MODEL = "deepseek-r1-7b";
-const ENDPOINTAI_BASE_URL = "https://api.endpointai.in/v1";
-const ENDPOINTAI_CHAT_COMPLETIONS_URL = `${ENDPOINTAI_BASE_URL}/chat/completions`;
 const DEFAULT_DEEPSEEK_MODEL = "deepseek-chat";
 const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
 const DEEPSEEK_CHAT_COMPLETIONS_URL = "https://api.deepseek.com/v1/chat/completions";
@@ -387,19 +390,8 @@ function formatStoredPrompt(systemPrompt: string, userPrompt: string) {
   return [`System:\n${systemPrompt}`, `User:\n${userPrompt}`].join("\n\n");
 }
 
-function getEndpointAIChatCompletionsUrl(): string {
-  const explicitUrl = process.env.ENDPOINTAI_CHAT_COMPLETIONS_URL?.trim();
-
-  if (explicitUrl) {
-    return explicitUrl;
-  }
-
-  const baseUrl = (process.env.ENDPOINTAI_BASE_URL?.trim() || ENDPOINTAI_BASE_URL).replace(/\/$/, "");
-  return `${baseUrl}/chat/completions`;
-}
-
 function getEndpointAIProviderConfig(): ProviderConfig | null {
-  const apiKey = process.env.ENDPOINTAI_API_KEY?.trim();
+  const apiKey = getEndpointAIApiKey();
 
   if (!apiKey) {
     return null;
@@ -408,7 +400,7 @@ function getEndpointAIProviderConfig(): ProviderConfig | null {
   return {
     apiKey,
     endpoint: getEndpointAIChatCompletionsUrl(),
-    model: process.env.ENDPOINTAI_MODEL?.trim() || DEFAULT_ENDPOINTAI_MODEL,
+    model: getEndpointAIModel(),
     provider: "endpointai",
   };
 }
@@ -418,8 +410,9 @@ function getProviderConfig(): ProviderConfig | null {
   const endpointAIConfig = getEndpointAIProviderConfig();
   const deepSeekApiKey = process.env.DEEPSEEK_API_KEY?.trim();
   const openAIApiKey = process.env.OPENAI_API_KEY?.trim();
+  const openAIIsEndpointAI = isOpenAIConfiguredForEndpointAI();
 
-  if (preferredProvider === "openai" && openAIApiKey) {
+  if (preferredProvider === "openai" && openAIApiKey && !openAIIsEndpointAI) {
     return {
       apiKey: openAIApiKey,
       endpoint: process.env.OPENAI_CHAT_COMPLETIONS_URL?.trim() || OPENAI_CHAT_COMPLETIONS_URL,
@@ -431,7 +424,8 @@ function getProviderConfig(): ProviderConfig | null {
   if (
     (preferredProvider === "endpointai" ||
       preferredProvider === "deepseek" ||
-      !preferredProvider) &&
+      !preferredProvider ||
+      openAIIsEndpointAI) &&
     endpointAIConfig
   ) {
     return endpointAIConfig;
@@ -446,7 +440,7 @@ function getProviderConfig(): ProviderConfig | null {
     };
   }
 
-  if (openAIApiKey) {
+  if (openAIApiKey && !openAIIsEndpointAI) {
     return {
       apiKey: openAIApiKey,
       endpoint: process.env.OPENAI_CHAT_COMPLETIONS_URL?.trim() || OPENAI_CHAT_COMPLETIONS_URL,
