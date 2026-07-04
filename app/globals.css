@@ -24,3 +24,12 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+/* Clerk temporary keyless helper badge hide karne ke liye */
+#clerk-keyless-container,
+[id^="clerk-keyless"],
+.clerk-keyless-mode-badge {
+  display: none !important;
+  pointer-events: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+}
