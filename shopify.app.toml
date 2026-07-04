@@ -3,7 +3,7 @@
 
 name = "CartRenew Public"
 client_id = "b0d8dbf013b051fc9ba20c1c5df304ca"
-application_url = "https://www.cartrenew.com/shopify"
+application_url = "https://sanction-gratified-atypical.ngrok-free.dev"
 embedded = true
 
 [access_scopes]
@@ -11,18 +11,13 @@ scopes = "read_checkouts,read_orders,write_orders"
 
 [auth]
 redirect_urls = [
-  "https://www.cartrenew.com/api/auth/shopify/callback",
-  "https://www.cartrenew.com/api/shopify/callback"
+  "https://sanction-gratified-atypical.ngrok-free.dev/api/auth/shopify/callback",
+  "https://sanction-gratified-atypical.ngrok-free.dev/api/shopify/callback"
 ]
 
 [webhooks]
 api_version = "2026-07"
 
-# application_url includes /shopify, so Shopify delivers compliance webhooks to:
-#   https://www.cartrenew.com/shopify/api/webhooks
-#   https://www.cartrenew.com/shopify/api/webhooks/customers/data_request
-#   https://www.cartrenew.com/shopify/api/webhooks/customers/redact
-#   https://www.cartrenew.com/shopify/api/webhooks/shop/redact
 [[webhooks.subscriptions]]
 compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]
 uri = "/api/webhooks"

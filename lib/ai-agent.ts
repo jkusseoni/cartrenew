@@ -109,7 +109,12 @@ const DEEPSEEK_CHAT_COMPLETIONS_URL = "https://api.deepseek.com/v1/chat/completi
 const OPENAI_CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions";
 const HIGH_VALUE_CART_AMOUNT = 3000;
 const AI_TIMEOUT_MS = 10000;
+const AI_REASONING_TIMEOUT_MS = 45000;
 const MAX_MESSAGE_LENGTH = 700;
+
+function getAIRequestTimeoutMs(model: string): number {
+  return /r1|reasoner/i.test(model) ? AI_REASONING_TIMEOUT_MS : AI_TIMEOUT_MS;
+}
 
 export async function generateAICartRecoveryMessage(
   context: AICartRecoveryContext
@@ -193,7 +198,7 @@ async function requestStructuredMessage(
       stream: false,
       temperature: 0.65,
     }),
-    signal: AbortSignal.timeout(AI_TIMEOUT_MS),
+    signal: AbortSignal.timeout(getAIRequestTimeoutMs(config.model)),
   });
 
   const data = (await response.json().catch(() => null)) as ChatCompletionResponse | null;

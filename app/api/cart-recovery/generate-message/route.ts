@@ -132,7 +132,7 @@ export async function POST(request: Request) {
         {
           success: false,
           error:
-            "EndpointAI is not configured. Set ENDPOINTAI_API_KEY or OPENAI_API_KEY with OPENAI_BASE_URL=https://api.endpointai.in/v1",
+            "EndpointAI is not configured. Set ENDPOINTAI_API_KEY or OPENAI_API_KEY with a custom OPENAI_BASE_URL (e.g. https://aicredits.in/v1).",
         },
         { status: 500 }
       );

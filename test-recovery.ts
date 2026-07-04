@@ -5,7 +5,11 @@
  *   npx tsx test-recovery.ts
  *   npm run test:recovery
  *
- * Loads AI keys from .env.local / .env (ENDPOINTAI_API_KEY, DEEPSEEK_API_KEY, or OPENAI_API_KEY).
+ * Language forcing:
+ *   Remove customerStateCode/stateCode and set languageStrategy.primaryLanguage
+ *   or languageStrategy.stateCode so AI does not infer Kannada/Marathi from geo.
+ *
+ * Loads AI keys from .env.local / .env.
  */
 import { config } from "dotenv";
 
@@ -13,28 +17,44 @@ import {
   generateAICartRecoveryMessage,
   type AICartRecoveryContext,
 } from "@/lib/ai-agent";
+import type { LanguageStrategyInput } from "@/lib/lang-policy";
 
+config({ path: ".env.local", override: true });
 config({ path: ".env", override: true });
 
 type RecoveryScenario = {
   name: string;
   description: string;
+  languageOverride: string;
   context: AICartRecoveryContext;
 };
 
 const CHECKOUT_URL = "https://cartrenew-sandbox-store.myshopify.com/checkouts/test-recovery";
 
+/** Force script language — bypasses geo/state inference (e.g. KA → Kannada). */
+function forcedLanguage(primaryLanguage: "HINGLISH" | "ENGLISH" | "HINDI"): LanguageStrategyInput {
+  return { primaryLanguage };
+}
+
+/** Force state routing + script — e.g. MP → Hindi belt, still render Hinglish if set. */
+function forcedStateLanguage(
+  stateCode: string,
+  primaryLanguage: "HINGLISH" | "ENGLISH" | "HINDI" = "HINGLISH"
+): LanguageStrategyInput {
+  return { stateCode, primaryLanguage };
+}
+
 const scenarios: RecoveryScenario[] = [
   {
     name: "High-value cart",
-    description: "Rs. 4,850 cart with shipping hesitation — expects Free Shipping or discount angle.",
+    description: "Rs. 4,850 cart — forced HINGLISH (ignores any geo signal).",
+    languageOverride: "primaryLanguage: HINGLISH",
     context: {
       storeName: "CartRenew Demo Store",
       checkoutUrl: CHECKOUT_URL,
       totalAmount: 4850,
       currency: "INR",
       customerName: "Priya Sharma",
-      customerStateCode: "MH",
       phoneNumber: "+919876543210",
       itemsCount: 2,
       items: [
@@ -50,18 +70,19 @@ const scenarios: RecoveryScenario[] = [
       ],
       brandVoice: "premium, reassuring, concise",
       supportPhone: "+918888777666",
+      languageStrategy: forcedLanguage("HINGLISH"),
     },
   },
   {
     name: "Payment friction",
-    description: "UPI/payment failure after long checkout — expects Priority Callback from Support.",
+    description: "UPI failure — forced MP state + HINGLISH script.",
+    languageOverride: 'stateCode: "MP", primaryLanguage: HINGLISH',
     context: {
       storeName: "CartRenew Demo Store",
       checkoutUrl: CHECKOUT_URL,
       totalAmount: 1899,
       currency: "INR",
       customerName: "Rahul Mehta",
-      customerStateCode: "DL",
       phoneNumber: "+919811223344",
       itemsCount: 1,
       items: [{ title: "Running Shoes - Size 9", quantity: 1, price: 1899 }],
@@ -74,18 +95,19 @@ const scenarios: RecoveryScenario[] = [
       ],
       brandVoice: "helpful, calm, action-oriented",
       whatsappNumber: "+918888777666",
+      languageStrategy: forcedStateLanguage("MP", "HINGLISH"),
     },
   },
   {
     name: "Low-value reminder",
-    description: "Small cart with no friction signals — expects Friendly Reminder.",
+    description: "Small cart — forced HINGLISH instead of Kannada (no KA state passed).",
+    languageOverride: "primaryLanguage: HINGLISH",
     context: {
       storeName: "CartRenew Demo Store",
       checkoutUrl: CHECKOUT_URL,
       totalAmount: 499,
       currency: "INR",
       customerName: "Ananya",
-      customerStateCode: "KA",
       phoneNumber: "+917700112233",
       itemsCount: 1,
       items: [{ title: "Phone Stand", quantity: 1, price: 499 }],
@@ -93,6 +115,7 @@ const scenarios: RecoveryScenario[] = [
       timeSpentOnCheckout: 6,
       userHistory: ["Added item from Instagram ad", "Opened checkout once"],
       brandVoice: "friendly, light, non-pushy",
+      languageStrategy: forcedLanguage("HINGLISH"),
     },
   },
 ];
@@ -105,18 +128,20 @@ function printDivider(label: string) {
 
 function printResult(scenario: RecoveryScenario, result: Awaited<ReturnType<typeof generateAICartRecoveryMessage>>) {
   printDivider(`Scenario: ${scenario.name}`);
-  console.log(`About   : ${scenario.description}`);
-  console.log(`Amount  : Rs. ${scenario.context.totalAmount.toLocaleString("en-IN")}`);
-  console.log(`Provider: ${result.provider} (${result.model})`);
-  console.log(`Offer   : ${result.offerType}`);
-  console.log(`Language: ${result.language} (confidence: ${result.languageConfidence})`);
-  console.log(`Fallback: ${result.fallbackUsed ? "yes" : "no"}`);
+  console.log(`About    : ${scenario.description}`);
+  console.log(`Override : ${scenario.languageOverride}`);
+  console.log(`Strategy : ${result.languageStrategy.primaryLanguage} (state: ${result.languageStrategy.stateCode})`);
+  console.log(`Amount   : Rs. ${scenario.context.totalAmount.toLocaleString("en-IN")}`);
+  console.log(`Provider : ${result.provider} (${result.model})`);
+  console.log(`Offer    : ${result.offerType}`);
+  console.log(`Language : ${result.language} (confidence: ${result.languageConfidence})`);
+  console.log(`Fallback : ${result.fallbackUsed ? "yes" : "no"}`);
 
   if (result.fallbackReason) {
-    console.log(`Reason  : ${result.fallbackReason}`);
+    console.log(`Reason   : ${result.fallbackReason}`);
   }
 
-  console.log(`CTA     : ${result.cta}`);
+  console.log(`CTA      : ${result.cta}`);
   console.log("\nMessage:\n");
   console.log(result.message);
   console.log("\n--- Prompt snapshot (first 400 chars) ---");
@@ -126,11 +151,13 @@ function printResult(scenario: RecoveryScenario, result: Awaited<ReturnType<type
 async function main() {
   const hasEndpointAI = Boolean(
     process.env.ENDPOINTAI_API_KEY?.trim() ||
-      (process.env.OPENAI_API_KEY?.trim() && process.env.OPENAI_BASE_URL?.includes("endpointai.in"))
+      (process.env.OPENAI_API_KEY?.trim() &&
+        process.env.OPENAI_BASE_URL?.trim() &&
+        !process.env.OPENAI_BASE_URL.includes("api.openai.com"))
   );
   const hasDeepSeek = Boolean(process.env.DEEPSEEK_API_KEY?.trim());
   const hasOpenAI = Boolean(process.env.OPENAI_API_KEY?.trim());
-  const preferredProvider = process.env.AI_AGENT_PROVIDER?.trim() || "(auto → EndpointAI first)";
+  const preferredProvider = process.env.AI_AGENT_PROVIDER?.trim() || "(auto → proxy first)";
 
   console.log("CartRenew — AI recovery message test");
   console.log(`Provider preference: ${preferredProvider}`);
