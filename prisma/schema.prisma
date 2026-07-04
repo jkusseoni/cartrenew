@@ -50,7 +50,7 @@ model Cart {
   customerPhone          String
   cartUrl                String
   totalAmount            Float
-  status                 String    @default("ABANDONED")
+  status                 String    @default("ABANDONED") // ABANDONED, AI_SENT, RECOVERED, FAILED
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
   merchant               Merchant  @relation(fields: [merchantId], references: [id], onDelete: Cascade)
@@ -61,6 +61,9 @@ model Cart {
   recoveryMessageModel   String?
   recoveryMessagePrompt  String?
   recoveryMessageAt      DateTime?
+  detectedLang           String    @default("HINGLISH")
+  confidenceScore        Float     @default(0.0)
+  activeChannel          String    @default("WHATSAPP")
 
   @@index([merchantId])
   @@index([customerPhone])
@@ -69,17 +72,18 @@ model Cart {
 
 model WebhookSubscription {
   id          String   @id @default(uuid())
-  merchantId  String   
-  url         String   // Merchant's target webhook destination
-  eventType   String   // e.g., "cart.recovered" or "order.verified"
-  secret      String   // HMAC signing secret unique to this webhook connection
+  merchantId  String
+  url         String
+  eventType   String
+  secret      String
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  @@unique([merchantId, url, eventType]) // Restricts duplicate triggers
+  @@unique([merchantId, url, eventType])
   @@index([merchantId])
 }
+
 enum VerificationStatus {
   PENDING
   VERIFIED
@@ -93,9 +97,9 @@ model Order {
   customerName    String
   phoneNumber     String
   totalAmount     Float
-  paymentMethod   String             // e.g., "COD" or "Razorpay"
+  paymentMethod   String
   status          VerificationStatus @default(PENDING)
-  verificationOtp String?            // OTP stored for validation checking
+  verificationOtp String?
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
 

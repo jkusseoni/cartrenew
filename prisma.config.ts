@@ -10,5 +10,7 @@ export default defineConfig({
   },
   datasource: {
     url: process.env["DATABASE_URL"],
+    // Supabase cannot auto-create shadow DBs; set SHADOW_DATABASE_URL to a second empty DB for migrate dev.
+    shadowDatabaseUrl: process.env["SHADOW_DATABASE_URL"],
   },
 });
