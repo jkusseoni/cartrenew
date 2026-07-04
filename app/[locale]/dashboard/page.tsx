@@ -7,6 +7,7 @@ import { useParams } from 'next/navigation';
 
 import TrialBanner from '@/components/dashboard/TrialBanner';
 import TrialExpiredModal from '@/components/dashboard/TrialExpiredModal';
+import DashboardAnalytics from '@/components/dashboard-analytics';
 import { useTrialBilling } from '@/hooks/useTrialBilling';
 
 // Mock Data for Live Abandoned Cart Stream Tracking
@@ -127,29 +128,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* 📈 3. CORE METRICS OVERVIEW PANEL MATRIX */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-neutral-950/40 border border-neutral-900 p-5 rounded-2xl">
-            <p className="text-[10px] uppercase font-bold tracking-wider text-neutral-500">Total Recovered Sales</p>
-            <p className="text-2xl font-mono font-black text-[#00DF89] mt-2" suppressHydrationWarning>₹45,200</p>
-            <p className="text-[10px] text-neutral-400 mt-1">From +18 orders this cycle</p>
-          </div>
-          <div className="bg-neutral-950/40 border border-neutral-900 p-5 rounded-2xl">
-            <p className="text-[10px] uppercase font-bold tracking-wider text-neutral-500">Net Recovery Ratio</p>
-            <p className="text-2xl font-mono font-black text-white mt-2">68%</p>
-            <p className="text-[10px] text-[#00DF89] font-bold mt-1">↑ 4% above benchmark</p>
-          </div>
-          <div className="bg-neutral-950/40 border border-neutral-900 p-5 rounded-2xl">
-            <p className="text-[10px] uppercase font-bold tracking-wider text-neutral-500">Active Automation Flows</p>
-            <p className="text-2xl font-mono font-black text-white mt-2">1,240</p>
-            <p className="text-[10px] text-neutral-400 mt-1">Meta WhatsApp API nodes open</p>
-          </div>
-          <div className="bg-neutral-950/40 border border-neutral-900 p-5 rounded-2xl">
-            <p className="text-[10px] uppercase font-bold tracking-wider text-neutral-500">Platform Middleware Saved</p>
-            <p className="text-2xl font-mono font-black text-[#00D1FF] mt-2" suppressHydrationWarning>₹9,840</p>
-            <p className="text-[10px] text-neutral-400 mt-1">Saved via 0% markup protocol</p>
-          </div>
-        </div>
+        <DashboardAnalytics />
 
         {/* ⚡ 4. LIVE TRANSACTION TRACKING STREAM TABLE */}
         <div className="space-y-4">
