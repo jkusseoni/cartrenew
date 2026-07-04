@@ -18,6 +18,7 @@ export default function AppProviders({ children }: { children: React.ReactNode }
 
   return (
     <ClerkProvider
+      disableKeyless
       signInUrl="/en/sign-in"
       signUpUrl="/en/sign-up"
       signInForceRedirectUrl="/en/dashboard"
