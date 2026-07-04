@@ -10,7 +10,7 @@ import {
   type RegionalLanguage,
 } from "@/lib/lang-policy";
 
-export type AIProvider = "deepseek" | "openai" | "fallback";
+export type AIProvider = "endpointai" | "deepseek" | "openai" | "fallback";
 
 export type CartItemContext = {
   name?: string;
@@ -97,6 +97,9 @@ type GeneratedCartRecoveryMessage = {
   offerType: OfferType;
 };
 
+const DEFAULT_ENDPOINTAI_MODEL = "deepseek-r1-7b";
+const ENDPOINTAI_BASE_URL = "https://api.endpointai.in/v1";
+const ENDPOINTAI_CHAT_COMPLETIONS_URL = `${ENDPOINTAI_BASE_URL}/chat/completions`;
 const DEFAULT_DEEPSEEK_MODEL = "deepseek-chat";
 const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
 const DEEPSEEK_CHAT_COMPLETIONS_URL = "https://api.deepseek.com/v1/chat/completions";
@@ -384,8 +387,35 @@ function formatStoredPrompt(systemPrompt: string, userPrompt: string) {
   return [`System:\n${systemPrompt}`, `User:\n${userPrompt}`].join("\n\n");
 }
 
+function getEndpointAIChatCompletionsUrl(): string {
+  const explicitUrl = process.env.ENDPOINTAI_CHAT_COMPLETIONS_URL?.trim();
+
+  if (explicitUrl) {
+    return explicitUrl;
+  }
+
+  const baseUrl = (process.env.ENDPOINTAI_BASE_URL?.trim() || ENDPOINTAI_BASE_URL).replace(/\/$/, "");
+  return `${baseUrl}/chat/completions`;
+}
+
+function getEndpointAIProviderConfig(): ProviderConfig | null {
+  const apiKey = process.env.ENDPOINTAI_API_KEY?.trim();
+
+  if (!apiKey) {
+    return null;
+  }
+
+  return {
+    apiKey,
+    endpoint: getEndpointAIChatCompletionsUrl(),
+    model: process.env.ENDPOINTAI_MODEL?.trim() || DEFAULT_ENDPOINTAI_MODEL,
+    provider: "endpointai",
+  };
+}
+
 function getProviderConfig(): ProviderConfig | null {
   const preferredProvider = process.env.AI_AGENT_PROVIDER?.trim().toLowerCase();
+  const endpointAIConfig = getEndpointAIProviderConfig();
   const deepSeekApiKey = process.env.DEEPSEEK_API_KEY?.trim();
   const openAIApiKey = process.env.OPENAI_API_KEY?.trim();
 
@@ -396,6 +426,15 @@ function getProviderConfig(): ProviderConfig | null {
       model: process.env.OPENAI_MODEL?.trim() || DEFAULT_OPENAI_MODEL,
       provider: "openai",
     };
+  }
+
+  if (
+    (preferredProvider === "endpointai" ||
+      preferredProvider === "deepseek" ||
+      !preferredProvider) &&
+    endpointAIConfig
+  ) {
+    return endpointAIConfig;
   }
 
   if (deepSeekApiKey) {
@@ -416,7 +455,7 @@ function getProviderConfig(): ProviderConfig | null {
     };
   }
 
-  return null;
+  return endpointAIConfig;
 }
 
 function parseJsonObject(rawText: string) {
