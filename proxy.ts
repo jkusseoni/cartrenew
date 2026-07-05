@@ -409,7 +409,7 @@ export default skipClerk
 
       if (!isPublicRoute(request)) {
         const locale = getLocaleFromPath(request.nextUrl.pathname);
-        const signInUrl = localizedPath(locale, "/sign-in");
+        const signInUrl = new URL(localizedPath(locale, "/sign-in"), request.url).toString();
         await auth.protect({ unauthenticatedUrl: signInUrl });
       }
 
