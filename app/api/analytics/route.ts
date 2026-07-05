@@ -141,16 +141,18 @@ async function fetchLanguageMetrics(userId: string): Promise<LanguageMetric[]> {
 
     const grouped = langStats.reduce<Record<string, LanguageMetric>>(
       (acc: Record<string, LanguageMetric>, cart: { detectedLang: string; totalAmount: number; status: string }) => {
-      const lang = cart.detectedLang || 'HINGLISH'
-      if (!acc[lang]) {
-        acc[lang] = { name: lang, counts: 0, revenue: 0 }
-      }
-      acc[lang].counts += 1
-      if (cart.status === 'RECOVERED') {
-        acc[lang].revenue += cart.totalAmount || 0
-      }
-      return acc
-    }, {})
+        const lang = cart.detectedLang || 'HINGLISH'
+        if (!acc[lang]) {
+          acc[lang] = { name: lang, counts: 0, revenue: 0 }
+        }
+        acc[lang].counts += 1
+        if (cart.status === 'RECOVERED') {
+          acc[lang].revenue += cart.totalAmount || 0
+        }
+        return acc
+      },
+      {}
+    )
 
     return Object.values(grouped)
   } catch (error) {
@@ -185,14 +187,23 @@ async function fetchPrismaLiveFeed(userId: string): Promise<LiveFeedItem[]> {
       },
     })
 
-    return carts.map((cart: { id: string; customerName: string | null; totalAmount: number; status: string; updatedAt: Date; activeChannel: string }) => ({
-      id: cart.id,
-      customerName: cart.customerName || 'Guest',
-      cartValue: cart.totalAmount || 0,
-      status: cart.status,
-      createdAt: cart.updatedAt.toISOString(),
-      channel: cart.activeChannel || 'WHATSAPP',
-    }))
+    return carts.map(
+      (cart: {
+        id: string
+        customerName: string | null
+        totalAmount: number
+        status: string
+        updatedAt: Date
+        activeChannel: string
+      }) => ({
+        id: cart.id,
+        customerName: cart.customerName || 'Guest',
+        cartValue: cart.totalAmount || 0,
+        status: cart.status,
+        createdAt: cart.updatedAt.toISOString(),
+        channel: cart.activeChannel || 'WHATSAPP',
+      })
+    )
   } catch (error) {
     console.warn('[api/analytics] prisma live feed unavailable:', error)
     return []
