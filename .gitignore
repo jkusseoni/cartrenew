@@ -23,6 +23,7 @@ test-results/
 /build
 dist/
 
+.env
 # misc
 .DS_Store
 *.pem
