@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { use, useState, useEffect, useCallback, useRef } from 'react'
 import { useSafeUser } from '@/lib/clerk'
 
 interface DailyAnalytics {
@@ -77,7 +77,12 @@ async function fetchAnalyticsData(days: number): Promise<AnalyticsFetchResult> {
   }
 }
 
-export default function AnalyticsPage() {
+export default function AnalyticsPage({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  use(params);
   const { user, isLoaded } = useSafeUser()
   const [analytics, setAnalytics] = useState<DailyAnalytics[]>([])
   const [loading, setLoading] = useState(true)

@@ -1,9 +1,8 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
+import React, { use, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useClerk } from '@clerk/nextjs';
-import { useParams } from 'next/navigation';
 
 import TrialBanner from '@/components/dashboard/TrialBanner';
 import TrialExpiredModal from '@/components/dashboard/TrialExpiredModal';
@@ -20,13 +19,17 @@ import {
   type DashboardAnalyticsPayload,
 } from '@/lib/fetch-dashboard-analytics';
 
-export default function Dashboard() {
+export default function Dashboard({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  const { locale: localeParam } = use(params);
+  const locale = localeParam ?? "en";
   const [activeStore] = useState("My Shopify Store");
   const [analytics, setAnalytics] = useState<DashboardAnalyticsPayload>(EMPTY_DASHBOARD_ANALYTICS);
   const [analyticsLoading, setAnalyticsLoading] = useState(true);
   const { signOut } = useClerk();
-  const params = useParams();
-  const locale = typeof params.locale === "string" ? params.locale : "en";
   const { ready, access, gateBlocked, gateReason } = useTrialBilling();
 
   useEffect(() => {

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { use, useState } from 'react';
 import Link from 'next/link';
 
 // Mock Data for pre-configured automation templates
@@ -31,7 +31,8 @@ const initialTemplates = [
   }
 ];
 
-export default function MarketingHub() {
+export default function MarketingHub({ params }) {
+  use(params);
   const [templates, setTemplates] = useState(initialTemplates);
 
   // 🎯 Fixed: TypeScript type annotation (: string) ko hata kar pure JS kar diya hai

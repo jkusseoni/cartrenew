@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { use, useState } from 'react';
 import Link from 'next/link';
 
 import {
@@ -26,7 +26,12 @@ const NO_ERRORS: SettingsErrors = {
   shiprocketPassword: null,
 };
 
-export default function SettingsPage() {
+export default function SettingsPage({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  use(params);
   // Mock states for key configuration parameters
   const [shopifyDomain, setShopifyDomain] = useState("cartrenew-test-store.myshopify.com");
   const [whatsappPhoneId, setWhatsappPhoneId] = useState("9755612850"); // Verified active phone connection node
