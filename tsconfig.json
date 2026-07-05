@@ -31,5 +31,12 @@
     "**/*.mts",
     "scripts/cartPoller.js"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules",
+    "test-recovery.ts",
+    "test-twilio.ts",
+    "tests",
+    "playwright-report",
+    "test-results"
+  ]
 }

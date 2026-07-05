@@ -38,7 +38,7 @@ function forcedLanguage(primaryLanguage: "HINGLISH" | "ENGLISH" | "HINDI"): Lang
 
 /** Force state routing + script — e.g. MP → Hindi belt, still render Hinglish if set. */
 function forcedStateLanguage(
-  stateCode: string,
+  stateCode: LanguageStrategyInput["stateCode"],
   primaryLanguage: "HINGLISH" | "ENGLISH" | "HINDI" = "HINGLISH"
 ): LanguageStrategyInput {
   return { stateCode, primaryLanguage };
