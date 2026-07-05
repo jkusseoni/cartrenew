@@ -6,7 +6,7 @@ const axios = require("axios");
 
 // Prisma 6/7 modern strict connection format (Bypasses config parsing)
 const prisma = new PrismaClient({
-  url: "postgresql://postgres.xolermujthasddrenoyx:Vijay%408619%25@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres"
+  url: process.env.DATABASE_URL
 });
 
 console.log("[INFO] CartRenew Poller Daemon Initialized.");
