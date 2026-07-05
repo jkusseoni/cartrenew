@@ -134,7 +134,7 @@ export default function Dashboard({
         
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-neutral-900/60 pb-6">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">Console Workspace</h1>
+            <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">Console Workspace Live Test</h1>
             <p className="text-xs sm:text-sm text-neutral-400 mt-1">Real-time status monitoring of Shopify client abandonment triggers.</p>
           </div>
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-950/20 border border-emerald-900/30 text-xs font-bold text-[#00DF89]">
