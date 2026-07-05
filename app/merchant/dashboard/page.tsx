@@ -15,5 +15,5 @@ export default async function MerchantDashboardPage() {
     forbidden();
   }
 
-  return <Dashboard />;
+  return <Dashboard params={Promise.resolve({ locale: "en" })} />;
 }
