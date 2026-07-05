@@ -19,6 +19,32 @@ type DailyRow = {
   revenue_recovered: number | null
 }
 
+type LanguageMetric = {
+  name: string
+  counts: number
+  revenue: number
+}
+
+type LiveFeedItem = {
+  id: string
+  customerName: string
+  cartValue: number
+  status: string
+  createdAt: string
+  channel: string
+  itemsSummary?: string
+}
+
+type AbandonedCartRow = {
+  id: string
+  customer_name: string | null
+  cart_value: number | null
+  status: string | null
+  created_at: string
+  updated_at: string
+  items: unknown
+}
+
 function computeTotals(daily: DailyRow[]) {
   const totals = daily.reduce(
     (acc, day) => ({
@@ -27,7 +53,7 @@ function computeTotals(daily: DailyRow[]) {
       messagesDelivered: acc.messagesDelivered + (day.messages_delivered || 0),
       messagesRead: acc.messagesRead + (day.messages_read || 0),
       cartsRecovered: acc.cartsRecovered + (day.carts_recovered || 0),
-      revenueRecovered: acc.revenueRecovered + (day.revenue_recovered || 0),
+      revenueRecovered: acc.revenueRecovered + Number(day.revenue_recovered || 0),
     }),
     {
       cartsCreated: 0,
@@ -58,6 +84,144 @@ function computeTotals(daily: DailyRow[]) {
   }
 }
 
+function summarizeItems(items: unknown): string | undefined {
+  if (!Array.isArray(items) || items.length === 0) {
+    return undefined
+  }
+
+  const labels = items
+    .slice(0, 2)
+    .map((item) => {
+      const row = item as { title?: string; name?: string; quantity?: number }
+      const label = row.title || row.name || 'item'
+      return `${label} (x${row.quantity || 1})`
+    })
+    .join(', ')
+
+  const suffix = items.length > 2 ? ` +${items.length - 2} more` : ''
+  return `${items.length} Item${items.length === 1 ? '' : 's'} (${labels}${suffix})`
+}
+
+function mapAbandonedCartRow(row: AbandonedCartRow): LiveFeedItem {
+  return {
+    id: row.id,
+    customerName: row.customer_name || 'Guest',
+    cartValue: Number(row.cart_value || 0),
+    status: (row.status || 'pending').toUpperCase(),
+    createdAt: row.updated_at || row.created_at,
+    channel: row.status === 'messaged' ? 'WHATSAPP' : 'WHATSAPP',
+    itemsSummary: summarizeItems(row.items),
+  }
+}
+
+async function fetchLanguageMetrics(userId: string): Promise<LanguageMetric[]> {
+  try {
+    const { prisma } = await import('@/lib/prisma')
+    const merchant = await prisma.merchant.findFirst({
+      where: { userId },
+      select: { id: true },
+    })
+
+    if (!merchant) {
+      return []
+    }
+
+    const langStats = await prisma.cart.findMany({
+      where: { merchantId: merchant.id },
+      select: {
+        detectedLang: true,
+        totalAmount: true,
+        status: true,
+      },
+    })
+
+    if (langStats.length === 0) {
+      return []
+    }
+
+    const grouped = langStats.reduce<Record<string, LanguageMetric>>((acc, cart) => {
+      const lang = cart.detectedLang || 'HINGLISH'
+      if (!acc[lang]) {
+        acc[lang] = { name: lang, counts: 0, revenue: 0 }
+      }
+      acc[lang].counts += 1
+      if (cart.status === 'RECOVERED') {
+        acc[lang].revenue += cart.totalAmount || 0
+      }
+      return acc
+    }, {})
+
+    return Object.values(grouped)
+  } catch (error) {
+    console.warn('[api/analytics] language metrics unavailable:', error)
+    return []
+  }
+}
+
+async function fetchPrismaLiveFeed(userId: string): Promise<LiveFeedItem[]> {
+  try {
+    const { prisma } = await import('@/lib/prisma')
+    const merchant = await prisma.merchant.findFirst({
+      where: { userId },
+      select: { id: true },
+    })
+
+    if (!merchant) {
+      return []
+    }
+
+    const carts = await prisma.cart.findMany({
+      where: { merchantId: merchant.id },
+      orderBy: { updatedAt: 'desc' },
+      take: 5,
+      select: {
+        id: true,
+        customerName: true,
+        totalAmount: true,
+        status: true,
+        updatedAt: true,
+        activeChannel: true,
+      },
+    })
+
+    return carts.map((cart) => ({
+      id: cart.id,
+      customerName: cart.customerName || 'Guest',
+      cartValue: cart.totalAmount || 0,
+      status: cart.status,
+      createdAt: cart.updatedAt.toISOString(),
+      channel: cart.activeChannel || 'WHATSAPP',
+    }))
+  } catch (error) {
+    console.warn('[api/analytics] prisma live feed unavailable:', error)
+    return []
+  }
+}
+
+async function fetchLiveFeed(storeId: string | null, userId: string): Promise<LiveFeedItem[]> {
+  const feed: LiveFeedItem[] = []
+
+  if (storeId) {
+    const { data: rawFeed, error: feedError } = await supabaseAdmin
+      .from('abandoned_carts')
+      .select('id, customer_name, cart_value, status, created_at, updated_at, items')
+      .eq('store_id', storeId)
+      .order('updated_at', { ascending: false })
+      .limit(5)
+
+    if (!feedError && rawFeed) {
+      feed.push(...(rawFeed as AbandonedCartRow[]).map(mapAbandonedCartRow))
+    }
+  }
+
+  const prismaFeed = await fetchPrismaLiveFeed(userId)
+  feed.push(...prismaFeed)
+
+  return feed
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+    .slice(0, 5)
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { userId } = await auth()
@@ -79,101 +243,46 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: storeError.message }, { status: 500 })
     }
 
-    if (!store) {
-      return NextResponse.json({
-        daily: [],
-        totals: computeTotals([]),
-        languageData: [],
-        liveFeed: []
-      })
-    }
-
     const startDate = new Date()
     startDate.setDate(startDate.getDate() - days)
     const startDateIso = startDate.toISOString().split('T')[0]
 
-    // 1. Existing Supabase Fetch: Daily Metrics
-    const { data: analyticsData, error: analyticsError } = await supabaseAdmin
-      .from('analytics_daily')
-      .select(ANALYTICS_COLUMNS)
-      .eq('store_id', store.id)
-      .gte('date', startDateIso)
-      .order('date', { ascending: true })
+    let daily: DailyRow[] = []
 
-    if (analyticsError) {
-      console.error('[api/analytics] daily metrics failed:', analyticsError.message)
-      return NextResponse.json({ error: analyticsError.message }, { status: 500 })
+    if (store?.id) {
+      const { data: analyticsData, error: analyticsError } = await supabaseAdmin
+        .from('analytics_daily')
+        .select(ANALYTICS_COLUMNS)
+        .eq('store_id', store.id)
+        .gte('date', startDateIso)
+        .order('date', { ascending: true })
+
+      if (analyticsError) {
+        console.error('[api/analytics] daily metrics failed:', analyticsError.message)
+        return NextResponse.json({ error: analyticsError.message }, { status: 500 })
+      }
+
+      daily = (analyticsData ?? []) as DailyRow[]
     }
 
-    const daily = (analyticsData ?? []) as DailyRow[]
     const calculatedTotals = computeTotals(daily)
+    const [languageData, liveFeed] = await Promise.all([
+      fetchLanguageMetrics(userId),
+      fetchLiveFeed(store?.id ?? null, userId),
+    ])
 
-    // 2. 🚀 NEW: Language Performance Breakdown query
-    // Hum actual 'carts' table se metrics pull kar rahe hain taaki Recharts render ho sake
-    const { data: langStats, error: langError } = await supabaseAdmin
-      .from('carts')
-      .select('detected_lang, total_amount, status')
-      .eq('merchant_id', store.id) // check standard mapping keys
-
-    let languageData = [
-      { name: "Hinglish", counts: 540, revenue: 269400 },
-      { name: "English", counts: 210, revenue: 104800 },
-      { name: "Kannada", counts: 95, revenue: 47400 },
-      { name: "Hindi", counts: 320, revenue: 159600 }
-    ]
-
-    // Agar database mein real languages data dynamic mile, toh use map karenge
-    if (!langError && langStats && langStats.length > 0) {
-      const grouped = langStats.reduce((acc: any, curr: any) => {
-        const lang = curr.detected_lang || 'Hinglish'
-        if (!acc[lang]) acc[lang] = { counts: 0, revenue: 0 }
-        acc[lang].counts += 1
-        if (curr.status === 'RECOVERED') {
-          acc[lang].revenue += curr.total_amount || 0
-        }
-        return acc;
-      }, {})
-
-      languageData = Object.keys(grouped).map(key => ({
-        name: key,
-        counts: grouped[key].counts,
-        revenue: grouped[key].revenue
-      }))
-    }
-
-    // 3. 🚀 NEW: Continuous Live Recovery Stream (Latest 5 Events)
-    const { data: rawFeed, error: feedError } = await supabaseAdmin
-      .from('carts')
-      .select('id, customer_name, total_amount, status, created_at, active_channel')
-      .eq('merchant_id', store.id)
-      .order('created_at', { ascending: false })
-      .limit(5)
-
-    const liveFeed = (!feedError && rawFeed && rawFeed.length > 0) 
-      ? rawFeed.map((c: any) => ({
-          id: c.id,
-          customerName: c.customer_name || "Anonymous User",
-          cartValue: c.total_amount || 0,
-          status: c.status || "ABANDONED",
-          createdAt: c.created_at,
-          channel: c.active_channel || "WHATSAPP"
-        }))
-      : [ // Mock Fallback state agar abhi data empty ho
-          { id: "CR-9082", customerName: "Aman Sharma", cartValue: 6499, status: "RECOVERED", createdAt: new Date().toISOString(), channel: "WHATSAPP" },
-          { id: "CR-9081", customerName: "Priya Patel", cartValue: 2199, status: "AI_SENT", createdAt: new Date().toISOString(), channel: "WHATSAPP" }
-        ]
-
-    // Final Payload Return
     return NextResponse.json({
       daily,
       totals: {
-        totalAbandoned: calculatedTotals.cartsCreated || 1165, // matching fallback stats if empty
-        messagesSent: calculatedTotals.messagesSent || 1080,
-        recoveredRevenue: calculatedTotals.revenue || 581200,
-        trustScore: 85
+        totalAbandoned: calculatedTotals.cartsCreated,
+        messagesSent: calculatedTotals.messagesSent,
+        recoveredRevenue: calculatedTotals.revenue,
+        recoveredRate: calculatedTotals.recoveredRate,
+        deliveredRate: calculatedTotals.deliveredRate,
+        readRate: calculatedTotals.readRate,
       },
       languageData,
-      liveFeed
+      liveFeed,
     })
   } catch (error) {
     console.error('[api/analytics] unexpected error:', error)
