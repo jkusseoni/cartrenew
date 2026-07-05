@@ -139,7 +139,8 @@ async function fetchLanguageMetrics(userId: string): Promise<LanguageMetric[]> {
       return []
     }
 
-    const grouped = langStats.reduce<Record<string, LanguageMetric>>((acc, cart) => {
+    const grouped = langStats.reduce<Record<string, LanguageMetric>>(
+      (acc: Record<string, LanguageMetric>, cart: { detectedLang: string; totalAmount: number; status: string }) => {
       const lang = cart.detectedLang || 'HINGLISH'
       if (!acc[lang]) {
         acc[lang] = { name: lang, counts: 0, revenue: 0 }
@@ -184,7 +185,7 @@ async function fetchPrismaLiveFeed(userId: string): Promise<LiveFeedItem[]> {
       },
     })
 
-    return carts.map((cart) => ({
+    return carts.map((cart: { id: string; customerName: string | null; totalAmount: number; status: string; updatedAt: Date; activeChannel: string }) => ({
       id: cart.id,
       customerName: cart.customerName || 'Guest',
       cartValue: cart.totalAmount || 0,
