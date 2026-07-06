@@ -1,8 +1,32 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import Stripe from 'stripe'; // यदि आपके प्रोजेक्ट में इसकी डिपेंडेंसी ऊपर इम्पोर्टेड थी
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+// 1. मेटा वेबहुक वेरिफिकेशन के लिए GET मेथड (नया जोड़ा गया)
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const mode = searchParams.get('hub.mode');
+    const token = searchParams.get('hub.verify_token');
+    const challenge = searchParams.get('hub.challenge');
+
+    if (mode && token) {
+      if (mode === 'subscribe' && token === process.env.WHATSAPP_VERIFY_TOKEN) {
+        // मेटा को केवल चैलेंज की वैल्यू प्लेन टेक्स्ट में लौटानी होती है
+        return new NextResponse(challenge, { status: 200 });
+      }
+      return new NextResponse('Forbidden', { status: 403 });
+    }
+    return new NextResponse('Bad Request', { status: 400 });
+  } catch (error: any) {
+    console.error("❌ WhatsApp Webhook GET Verification Error:", error.message);
+    return new NextResponse('Internal Server Error', { status: 500 });
+  }
+}
+
+// 2. आपका पुराना Twilio मैसेज भेजने वाला POST मेथड
 export async function POST(request: Request) {
   try {
     // 1. Parse request body metrics incoming from client dashboard or automated hooks
