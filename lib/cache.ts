@@ -5,10 +5,24 @@ const globalForRedisCache = global as unknown as {
   cacheRedis: IORedis | undefined;
 };
 
+function getRedisUrl() {
+  const url = process.env.REDIS_URL?.trim();
+
+  if (url) {
+    return url;
+  }
+
+  if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
+    throw new Error('REDIS_URL is not configured. Add your Upstash URL in Vercel Environment Variables.');
+  }
+
+  return 'redis://127.0.0.1:6379';
+}
+
 // 1. Redis Connection for Caching
 const redis =
   globalForRedisCache.cacheRedis ||
-  new IORedis(process.env.REDIS_URL || 'redis://127.0.0.1:6379');
+  new IORedis(getRedisUrl());
 
 if (process.env.NODE_ENV !== 'production') globalForRedisCache.cacheRedis = redis;
 

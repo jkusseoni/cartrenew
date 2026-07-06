@@ -1,6 +1,5 @@
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-
 export const maxDuration = 60;
 
 import type { NextRequest } from "next/server";
@@ -13,26 +12,27 @@ type CartProcessResult = {
   cartId: string;
   status: "processed" | "skipped" | "failed";
   message?: string;
-  model?: string;
   error?: string;
   reason?: string;
 };
 
 export async function GET(request: NextRequest) {
-  //const unauthorizedResponse = authorizeCronRequest(request);
-
-  //if (unauthorizedResponse) {
-  //  return unauthorizedResponse;
-  //}
+  // 1. सिक्योरिटी (Cron Secret) को वापस चालू करें
+  const unauthorizedResponse = authorizeCronRequest(request);
+  if (unauthorizedResponse) {
+    return unauthorizedResponse;
+  }
 
   const startedAt = Date.now();
   const results: CartProcessResult[] = [];
 
   try {
     const { prisma } = await import("@/lib/prisma");
-    const { generateCartRecoveryMessageForCartId } = await import("@/lib/cartRecoveryMessage");
+    // BullMQ की कतार (Queue) को इम्पोर्ट करें ताकि काम बैकग्राउंड में हो
+    const { cartRecoveryQueue } = await import("@/lib/bullmq"); 
 
-    const abandonedCarts = await prisma.cart.findMany({
+    // डेटाबेस से सही तरीके से लेट (let) वेरिएबल्स में कार्ट्स निकालें
+    const abandonedCarts = await prisma.cart.findMany({ 
       where: {
         status: ABANDONED_STATUS,
         notified: false,
@@ -64,16 +64,16 @@ export async function GET(request: NextRequest) {
       }
 
       try {
-        const recovery = await generateCartRecoveryMessageForCartId(cart.id);
+        // भारी काम सीधे यहाँ करने के बजाय BullMQ Queue में धकेलें (Fast & Secure)
+        await cartRecoveryQueue.add(`recover-${cart.id}`, { cartId: cart.id });
 
         results.push({
           cartId: cart.id,
           status: "processed",
-          message: recovery.message,
-          model: recovery.model,
+          message: "Successfully queued in BullMQ",
         });
       } catch (error) {
-        console.error(`Cart recovery cron failed for cart ${cart.id}:`, error);
+        console.error(`Failed to queue job for cart ${cart.id}:`, error);
 
         try {
           await prisma.cart.update({
@@ -97,7 +97,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: failed === 0,
-      message: processed > 0 ? "Messages triggered!" : "No abandoned carts to process",
+      message: processed > 0 ? "Jobs successfully queued!" : "No abandoned carts to process",
       scanned: abandonedCarts.length,
       processed,
       skipped: results.filter((result) => result.status === "skipped").length,

@@ -8,10 +8,24 @@ const globalForRedis = global as unknown as {
   whatsappWorker: Worker | undefined;
 };
 
+function getRedisUrl() {
+  const url = process.env.REDIS_URL?.trim();
+
+  if (url) {
+    return url;
+  }
+
+  if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
+    throw new Error('REDIS_URL is not configured. Add your Upstash URL in Vercel Environment Variables.');
+  }
+
+  return 'redis://127.0.0.1:6379';
+}
+
 // 1. Singleton Redis Connection Setup
 export const connection =
   globalForRedis.redisConnection ||
-  new IORedis(process.env.REDIS_URL || 'redis://127.0.0.1:6379', {
+  new IORedis(getRedisUrl(), {
     maxRetriesPerRequest: null, // BullMQ worker ke liye yeh setting compulsory hai
   });
 
