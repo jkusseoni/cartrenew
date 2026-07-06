@@ -28,8 +28,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const { prisma } = await import("@/lib/prisma");
-    // BullMQ की कतार (Queue) को इम्पोर्ट करें ताकि काम बैकग्राउंड में हो
-    const { cartRecoveryQueue } = await import("@/lib/bullmq"); 
+    const { generateCartRecoveryMessageForCartId } = await import("@/lib/cartRecoveryMessage");
 
     // डेटाबेस से सही तरीके से लेट (let) वेरिएबल्स में कार्ट्स निकालें
     const abandonedCarts = await prisma.cart.findMany({ 
@@ -64,13 +63,13 @@ export async function GET(request: NextRequest) {
       }
 
       try {
-        // भारी काम सीधे यहाँ करने के बजाय BullMQ Queue में धकेलें (Fast & Secure)
-        await cartRecoveryQueue.add(`recover-${cart.id}`, { cartId: cart.id });
+        // AI message generate karega aur lib/bullmq.ts ke whatsappQueue me job push karega
+        const recovery = await generateCartRecoveryMessageForCartId(cart.id);
 
         results.push({
           cartId: cart.id,
           status: "processed",
-          message: "Successfully queued in BullMQ",
+          message: recovery.message,
         });
       } catch (error) {
         console.error(`Failed to queue job for cart ${cart.id}:`, error);
