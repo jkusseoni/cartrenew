@@ -37,11 +37,7 @@ const EMPTY_ANALYTICS_TOTALS: AnalyticsTotals = {
 }
 
 function getAnalyticsApiUrl(days: number): string {
-  const base = (
-    process.env.NEXT_PUBLIC_APP_URL ||
-    (typeof window !== 'undefined' ? window.location.origin : 'https://www.cartrenew.com')
-  ).replace(/\/$/, '')
-  return `${base}/api/analytics?days=${days}`
+  return `/api/analytics?days=${days}`
 }
 
 /** Robust fallback for dashboard analytics connection. */
@@ -51,6 +47,8 @@ async function fetchAnalyticsData(days: number): Promise<AnalyticsFetchResult> {
   try {
     const response = await fetch(requestUrl, {
       method: 'GET',
+      cache: 'no-store',
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
       },

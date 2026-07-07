@@ -37,6 +37,7 @@
     "bullmq": "^5.78.0",
     "clsx": "^2.1.1",
     "dotenv": "^17.4.2",
+    "framer-motion": "^12.42.2",
     "gsap": "^3.15.0",
     "ioredis": "^5.11.0",
     "lucide-react": "^1.23.0",

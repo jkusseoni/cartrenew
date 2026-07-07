@@ -1,136 +1,126 @@
 "use client";
 
-import type { LucideIcon } from "lucide-react";
-import {
-  CreditCard,
-  Globe2,
-  Layers3,
-  ShieldCheck,
-  Sparkles,
-  TrendingUp,
-} from "lucide-react";
-import ChatCheckout from "@/components/features/ChatCheckout";
-import RagChatbot from "@/components/features/RagChatbot";
-import SegmentationTest from "@/components/features/SegmentationTest";
-import VideoMessaging from "@/components/features/VideoMessaging";
-
-type BlueprintRow = {
-  area: string;
-  capability: string;
-  icon: LucideIcon;
-  impact: string;
-  priority: string;
-};
-
-const blueprintRows: BlueprintRow[] = [
-  {
-    area: "Localization",
-    capability: "90+ language recovery flows",
-    icon: Globe2,
-    impact: "Translate reminders, offers, and policy answers by market without rebuilding campaigns.",
-    priority: "Market fit",
-  },
-  {
-    area: "Payments",
-    capability: "Multi-currency checkout rails",
-    icon: CreditCard,
-    impact: "Route recovered carts through USD, INR, EUR, GBP, and AED-ready payment paths.",
-    priority: "Revenue capture",
-  },
-  {
-    area: "Omnichannel",
-    capability: "Fallback recovery routing",
-    icon: Layers3,
-    impact: "Escalate from WhatsApp to SMS, email, or web push when channel delivery weakens.",
-    priority: "Deliverability",
-  },
-  {
-    area: "Agency Ops",
-    capability: "White-label workspace matrix",
-    icon: ShieldCheck,
-    impact: "Separate brands, clients, permissions, and reporting views for reseller operations.",
-    priority: "Partner scale",
-  },
-  {
-    area: "Intelligence",
-    capability: "Predictive drop-off signals",
-    icon: TrendingUp,
-    impact: "Score carts by risk, margin, and urgency so high-value recoveries get priority.",
-    priority: "Automation depth",
-  },
-];
+import React from 'react';
+import { motion } from 'framer-motion';
 
 export default function AdvancedFeatures() {
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    visible: {
+      opacity: 1,
+      transition: { staggerChildren: 0.15 }
+    }
+  };
+
+  const cardVariants = {
+    hidden: { opacity: 0, y: 40 },
+    visible: { 
+      opacity: 1, 
+      y: 0, 
+      transition: { duration: 0.6, ease: [0.16, 1, 0.3, 1] } 
+    }
+  };
+
   return (
-    <section className="bg-neutral-950 px-4 py-24 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-6xl">
-        <div className="mb-12 max-w-3xl">
-          <div className="mb-4 inline-flex items-center gap-2 rounded-md border border-indigo-400/20 bg-indigo-400/10 px-3 py-1 text-sm font-semibold uppercase tracking-wide text-indigo-300">
-            <Sparkles aria-hidden="true" className="h-4 w-4" />
-            Advanced automation layer
+    <section className="w-full bg-[#030712] relative py-24 overflow-hidden border-t border-white/5">
+      
+      {/* 🔮 Ambient Glow Layer Specific to Features Grid */}
+      <div className="absolute inset-0 pointer-events-none z-0">
+        <div className="absolute top-[20%] left-[-10%] w-[600px] h-[600px] bg-blue-600/10 blur-[140px] rounded-full mix-blend-screen" />
+        <div className="absolute bottom-[10%] right-[-10%] w-[600px] h-[600px] bg-indigo-500/15 blur-[150px] rounded-full mix-blend-screen" />
+      </div>
+
+      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+        
+        {/* Section Header */}
+        <div className="text-left space-y-4 mb-16 max-w-3xl">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-[10px] font-black uppercase tracking-widest text-indigo-400">
+            ⚡ Advanced Automation Layer
           </div>
-          <h2 className="text-3xl font-extrabold tracking-tight text-white sm:text-4xl">
-            Future-ready recovery features for global SaaS scale
+          <h2 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
+            Future-ready recovery features for <br />
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-300 to-emerald-400">
+              global SaaS scale
+            </span>
           </h2>
-          <p className="mt-4 text-lg leading-8 text-neutral-400">
-            Expand the core cart recovery stack with rich media, checkout-native conversations,
-            context-aware AI support, and segmentation testing for cross-border merchants.
+          <p className="text-slate-400 text-sm max-w-2xl leading-relaxed">
+            Expand the core cart recovery stack with rich media, checkout-native conversations, context-aware AI support, and segmentation testing for cross-border merchants.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-8 xl:grid-cols-2">
-          <VideoMessaging />
-          <ChatCheckout />
-          <RagChatbot />
-          <SegmentationTest />
-        </div>
-
-        <div className="mt-14 overflow-hidden rounded-lg border border-neutral-800 bg-neutral-900/50">
-          <div className="border-b border-neutral-800 bg-neutral-950 px-5 py-5 sm:px-6">
-            <p className="text-sm font-semibold uppercase tracking-wide text-indigo-300">
-              Blueprint matrix
+        {/* 📊 GRID OF 4 PREMIUM CARDS */}
+        <motion.div 
+          variants={containerVariants}
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, margin: "-100px" }}
+          className="grid grid-cols-1 md:grid-cols-2 gap-6"
+        >
+          
+          {/* Card 1: Personalized Video Messaging */}
+          <motion.div variants={cardVariants} className="bg-slate-950/40 border border-white/10 p-6 rounded-2xl backdrop-blur-xl relative group hover:border-blue-500/30 transition-all shadow-xl shadow-black/40">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-pink-500/10 border border-pink-500/20 flex items-center justify-center text-pink-400 font-bold">📹</div>
+              <h3 className="text-base font-bold text-white tracking-tight">1. Personalized Video Messaging</h3>
+            </div>
+            <p className="text-xs text-slate-400 leading-relaxed mb-6">
+              यह फीचर स्टैंडर्ड टेक्स्ट मैसेज को रिच कस्टम मल्टीमीडिया वर्कफ्लो में बदल देता है। जैसे ही कोई यूजर कार्ट छोड़ता है, बैकग्राउंड वर्कर वीडियो रिक्वेस्ट जनरेट करता है: <span className="text-pink-400 font-mono">"Hey {`{Name}`}, your cart is waiting!"</span>.
             </p>
-            <h3 className="mt-2 text-2xl font-bold text-white">Global SaaS Scaling Blueprint</h3>
-          </div>
+            <div className="bg-white/5 border border-white/10 rounded-xl p-3 flex items-center justify-between text-xs backdrop-blur-md">
+              <span className="text-slate-400">AI Video Render Sandbox</span>
+              <button className="px-3 py-1.5 bg-pink-600 hover:bg-pink-500 text-white font-bold text-[10px] rounded-lg transition-colors">Simulate AI Video</button>
+            </div>
+          </motion.div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] border-collapse text-left">
-              <thead>
-                <tr className="border-b border-neutral-800 bg-neutral-900/70 text-xs font-semibold uppercase tracking-wide text-neutral-500">
-                  <th className="px-5 py-4 sm:px-6">Scale Area</th>
-                  <th className="px-5 py-4">Capability</th>
-                  <th className="px-5 py-4">Operational Impact</th>
-                  <th className="px-5 py-4 sm:pr-6">Priority</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-800 text-sm">
-                {blueprintRows.map((row) => {
-                  const Icon = row.icon;
+          {/* Card 2: In-Chat Conversational Checkout */}
+          <motion.div variants={cardVariants} className="bg-slate-950/40 border border-white/10 p-6 rounded-2xl backdrop-blur-xl relative group hover:border-blue-500/30 transition-all shadow-xl shadow-black/40">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 font-bold">💬</div>
+              <h3 className="text-base font-bold text-white tracking-tight">2. In-Chat Conversational Checkout</h3>
+            </div>
+            <p className="text-xs text-slate-400 leading-relaxed mb-6">
+              कस्टमर को लिंक पर क्लिक करके दोबारा ब्राउज़र लोडिंग के झंझट से नहीं जूझना पड़ेगा। WhatsApp Business API सैंडबॉक्स के अंदर पेमेंट गेटवे इंटीग्रेशन लॉजिक सीधे कम्प्लीट कार्ड क्लियरेंस रनटाइम को इनवोक करता है।
+            </p>
+            <div className="bg-emerald-950/30 border border-emerald-500/20 rounded-xl p-3 text-[11px] text-emerald-400 flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              Your Shopify Cart has 1 Product waiting. Would you like to check out natively?
+            </div>
+          </motion.div>
 
-                  return (
-                    <tr className="transition hover:bg-neutral-800/40" key={row.area}>
-                      <td className="px-5 py-5 sm:px-6">
-                        <div className="flex items-center gap-3">
-                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-neutral-800 text-indigo-300">
-                            <Icon aria-hidden="true" className="h-4 w-4" />
-                          </span>
-                          <span className="font-semibold text-white">{row.area}</span>
-                        </div>
-                      </td>
-                      <td className="px-5 py-5 font-medium text-neutral-200">{row.capability}</td>
-                      <td className="px-5 py-5 leading-6 text-neutral-400">{row.impact}</td>
-                      <td className="px-5 py-5 sm:pr-6">
-                        <span className="inline-flex rounded-md border border-neutral-700 bg-neutral-950 px-2.5 py-1 text-xs font-semibold text-neutral-300">
-                          {row.priority}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
+          {/* Card 3: RAG-Based Smart Chatbot */}
+          <motion.div variants={cardVariants} className="bg-slate-950/40 border border-white/10 p-6 rounded-2xl backdrop-blur-xl relative group hover:border-blue-500/30 transition-all shadow-xl shadow-black/40">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 font-bold">🤖</div>
+              <h3 className="text-base font-bold text-white tracking-tight">3. RAG-Based Smart Chatbot</h3>
+            </div>
+            <p className="text-xs text-slate-400 leading-relaxed mb-6">
+              नॉर्मल जेनेरिक ऑटोमेटेड टेक्स्ट रिप्लाई के बदले हम यूज़ करते हैं <b className="text-blue-400">Retrieval-Augmented Generation (RAG)</b>. Supabase Vector (pgvector) पाइपलाइन सीधे स्टोर सेटिंग्स से कनेक्टेड है, जिससे बॉट इंसेंटिव साइज़ को मैच कर सकता है।
+            </p>
+            <div className="grid grid-cols-3 gap-2 text-center text-[10px] font-mono">
+              <div className="bg-white/5 border border-white/5 p-2 rounded-lg text-slate-300">Vector Status: <span className="text-blue-400">Synced</span></div>
+              <div className="bg-white/5 border border-white/5 p-2 rounded-lg text-slate-300">Context Match: <span className="text-emerald-400">94%</span></div>
+              <div className="bg-white/5 border border-white/5 p-2 rounded-lg text-slate-300">Avg Response: <span className="text-indigo-400">&lt; 1.2s</span></div>
+            </div>
+          </motion.div>
+
+          {/* Card 4: Audience Segmentation & A/B Testing */}
+          <motion.div variants={cardVariants} className="bg-slate-950/40 border border-white/10 p-6 rounded-2xl backdrop-blur-xl relative group hover:border-blue-500/30 transition-all shadow-xl shadow-black/40">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 font-bold">📊</div>
+              <h3 className="text-base font-bold text-white tracking-tight">4. Audience Segmentation & A/B Testing</h3>
+            </div>
+            <p className="text-xs text-slate-400 leading-relaxed mb-5">
+              ऑटोमेशन फ्लो ऑप्टिमाइज़ करने के लिए डायनेमिक सेगमेंट राउटिंग। हाई-टिकट वैल्यू ऑर्डर्स को सीधे हाई-प्रायोरिटी नोड्स पर ऑटोमैटिक राउट करेंगे, जबकि अल्टरनेटिव अकाउंट स्ट्रिंग्स ऑटोमैटिक A/B टेस्ट स्प्लिट एक्ज़ीक्यूट करेंगी।
+            </p>
+            <div className="space-y-2">
+              <div className="flex justify-between text-[10px] text-slate-400"><span>Template A (10% Offer Hook)</span> <span className="text-emerald-400 font-bold">72% CR</span></div>
+              <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden"><div className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full" style={{ width: '72%' }} /></div>
+              <div className="flex justify-between text-[10px] text-slate-400"><span>Template B (FOMO Countdown Template)</span> <span className="text-amber-400 font-bold">51% CR</span></div>
+              <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden"><div className="h-full bg-gradient-to-r from-amber-500 to-orange-500 rounded-full" style={{ width: '51%' }} /></div>
+            </div>
+          </motion.div>
+
+        </motion.div>
       </div>
     </section>
   );
