@@ -31,32 +31,32 @@ export default function Footer() {
   }, []);
 
   return (
-    <footer ref={footerRef} className="w-full bg-neutral-950 border-t border-neutral-900 py-8 mt-12 shrink-0 relative z-20">
+    // 🌸 सॉफ़्ट लाइट थीम फुटर विथ क्लीन बॉर्डर
+    <footer ref={footerRef} className="w-full bg-white/60 backdrop-blur-md border-t border-slate-200/80 py-8 mt-12 shrink-0 relative z-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
         
         {/* Left Section: Brand & Copyright */}
         <div className="flex flex-col items-center sm:items-start gap-1 text-center sm:text-left">
-          <span className="text-white font-bold text-lg tracking-wider">
+          <span className="text-slate-900 font-black text-lg tracking-wider">
             CartRenew
           </span>
-          {/* 🎯 Fixed: suppressHydrationWarning laga diya taaki Next.js background text logs standard check bypass karein */}
-          <p className="text-sm text-neutral-500" suppressHydrationWarning>
+          <p className="text-xs sm:text-sm text-slate-400 font-medium" suppressHydrationWarning>
             © {currentYear} All rights reserved.
           </p>
         </div>
 
         {/* Right Section: Legal & Mailto Active Links */}
-        <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs font-semibold text-neutral-400">
-          <Link href="/privacy" className="hover:text-neutral-100 transition-colors">
+        <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs font-bold text-slate-500">
+          <Link href="/privacy" className="hover:text-slate-900 transition-colors">
             Privacy Policy
           </Link>
-          <Link href="/terms" className="hover:text-neutral-100 transition-colors">
+          <Link href="/terms" className="hover:text-slate-900 transition-colors">
             Terms of Service
           </Link>
-          <Link href="/refund" className="hover:text-neutral-100 transition-colors">
+          <Link href="/refund" className="hover:text-slate-900 transition-colors">
             Refund Policy
           </Link>
-          <a href="mailto:contact@cartrenew.com" className="text-indigo-400 hover:text-indigo-300 transition-colors">
+          <a href="mailto:contact@cartrenew.com" className="text-indigo-600 hover:text-indigo-500 transition-colors font-extrabold">
             Contact Support
           </a>
         </div>

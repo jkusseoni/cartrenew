@@ -84,18 +84,19 @@ export default function LaunchTimeline() {
   }, []);
 
   return (
-    <section id="timeline" ref={sectionRef} className="w-full bg-[#0B0F17] py-20 relative border-b border-neutral-900/60 overflow-hidden">
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-indigo-500/[0.01] blur-3xl pointer-events-none" />
+    // 🌸 सॉफ़्ट लाइट थीम कंटेनर विथ टॉप/बॉटम क्लीन बॉर्डर्स
+    <section id="timeline" ref={sectionRef} className="w-full bg-transparent py-20 relative border-b border-slate-200/60 overflow-hidden z-10">
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-pink-100/30 blur-3xl pointer-events-none mix-blend-multiply" />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative">
-        <h2 className="text-3xl sm:text-4xl font-black tracking-tight text-white mb-16">
+        <h2 className="text-3xl sm:text-4xl font-black tracking-tight text-slate-900 mb-16">
           Launch Strategy Timeline
         </h2>
 
         <div className="relative w-full">
-          {/* Base Progress Track Lines */}
-          <div className="hidden md:block absolute top-[14px] left-0 right-0 h-[2px] bg-neutral-900 -z-10" />
-          <div ref={lineRef} className="hidden md:block absolute top-[14px] left-0 right-0 h-[2px] bg-gradient-to-r from-emerald-500 via-indigo-500 to-cyan-500 -z-10" />
+          {/* Base Progress Track Lines - Light Look */}
+          <div className="hidden md:block absolute top-[14px] left-0 right-0 h-[2px] bg-slate-200 -z-10" />
+          <div ref={lineRef} className="hidden md:block absolute top-[14px] left-0 right-0 h-[2px] bg-gradient-to-r from-emerald-400 via-indigo-500 to-blue-500 -z-10" />
 
           {/* Dynamic Grid Mapping */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8 md:gap-6 lg:gap-8 relative">
@@ -105,19 +106,19 @@ export default function LaunchTimeline() {
                 ref={(el) => { if (el) nodesRef.current[idx] = el; }}
                 className="flex flex-col space-y-3 relative group"
               >
-                {/* Number Circle Badge */}
-                <div className="w-7 h-7 rounded-full bg-neutral-950 border-2 border-indigo-500/80 flex items-center justify-center shadow-lg shadow-indigo-500/20 z-10 self-start md:self-auto group-hover:border-emerald-400 transition-colors duration-300">
-                  <span className="font-mono font-bold text-[10px] text-indigo-400 group-hover:text-emerald-400 transition-colors duration-300">
+                {/* Number Circle Badge - Premium Light Glassmorphism */}
+                <div className="w-7 h-7 rounded-full bg-white border-2 border-indigo-400 flex items-center justify-center shadow-md shadow-indigo-100 z-10 self-start md:self-auto group-hover:border-emerald-500 group-hover:shadow-emerald-100 transition-all duration-300">
+                  <span className="font-mono font-black text-[10px] text-indigo-600 group-hover:text-emerald-600 transition-colors duration-300">
                     {step.num}
                   </span>
                 </div>
 
                 {/* Content Layout */}
                 <div className="pt-2">
-                  <h4 className="text-base font-bold text-white tracking-tight group-hover:text-indigo-400 transition-colors duration-300">
+                  <h4 className="text-base font-black text-slate-900 tracking-tight group-hover:text-indigo-600 transition-colors duration-300">
                     {step.title}
                   </h4>
-                  <p className="text-neutral-400 text-xs sm:text-sm leading-relaxed mt-1">
+                  <p className="text-slate-500 text-xs sm:text-sm leading-relaxed mt-1 font-medium">
                     {step.desc}
                   </p>
                 </div>

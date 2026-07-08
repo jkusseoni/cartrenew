@@ -2,7 +2,6 @@
 import { useRef, useEffect } from "react";
 import { useLanguage } from "@/context/LanguageContext";
 import gsap from "gsap";
-import { Play, ArrowRight } from "lucide-react";
 
 export default function Hero() {
   const sectionRef = useRef<HTMLElement>(null);
@@ -21,20 +20,42 @@ export default function Hero() {
   }, []);
 
   return (
-    <section ref={sectionRef} className="relative min-h-screen flex items-center overflow-hidden" style={{ background: "var(--bg-base)", paddingTop: 120 }}>
+    <section 
+      ref={sectionRef} 
+      className="relative min-h-screen flex items-center overflow-hidden bg-gradient-to-b from-pink-50/40 via-blue-50/30 to-transparent" 
+      style={{ paddingTop: 120 }}
+    >
       <div className="relative z-10 max-w-[1200px] mx-auto px-6 w-full">
-        <div className="grid lg:grid-cols-[52%_48%] gap-12 items-center">
+        <div className="grid lg:grid-cols-[55%_45%] gap-12 items-center">
           <div>
-            <div className="hero-label inline-flex items-center gap-2 px-3 py-1.5 rounded-full mb-6" style={{ background: "rgba(0,214,125,0.1)", border: "1px solid rgba(0,214,125,0.2)" }}>
-              <span className="w-2 h-2 rounded-full bg-[#00D67D] animate-pulse" />
-              <span className="text-xs font-semibold text-[#00D67D] uppercase tracking-wider">{t("hero.badge")}</span>
+            
+            {/* प्रीमियम लाइट ग्रीन बैज */}
+            <div className="hero-label inline-flex items-center gap-2 px-3 py-1.5 rounded-full mb-6 bg-emerald-50 border border-emerald-200/60 shadow-sm">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider">{t("hero.badge")}</span>
             </div>
-            <h1 className="hero-headline font-bold text-white leading-[1.08] tracking-[-0.03em]" style={{ fontSize: "clamp(2.5rem, 5vw, 3.8rem)" }}>{t("hero.headline", { percent: "30%" })}</h1>
-            <p className="hero-subline text-[var(--text-secondary)] text-lg leading-relaxed mt-5 max-w-[500px]">{t("hero.subheadline")}</p>
+            
+            {/* हेडलाइन */}
+            <h1 className="hero-headline font-black text-slate-900 leading-[1.08] tracking-[-0.03em]" style={{ fontSize: "clamp(2.5rem, 5vw, 3.8rem)" }}>
+              {t("hero.headline", { percent: "30%" })}
+            </h1>
+            
+            {/* सब-हेडलाइन */}
+            <p className="hero-subline text-slate-600 text-lg leading-relaxed mt-5 max-w-[520px]">
+              {t("hero.subheadline")}
+            </p>
+            
+            {/* सीटीए बटन (सिर्फ ट्रायल बटन रखा गया है) */}
             <div className="hero-cta flex flex-wrap gap-4 mt-8">
-              <a href="#pricing" className="gradient-btn text-base gap-2">{t("hero.ctaTrial")} <span className="text-xs opacity-80">{t("hero.ctaNoCard")}</span></a>
-              <button className="ghost-btn text-base"><Play size={18} /> {t("hero.ctaDemo")}</button>
+              <a 
+                href="#pricing" 
+                className="inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-emerald-500 via-blue-500 to-indigo-500 px-6 py-3 text-sm font-black text-white shadow-md shadow-blue-500/10 transition hover:opacity-95 active:scale-[0.98] gap-2"
+              >
+                {t("hero.ctaTrial")} 
+                <span className="text-xs font-medium opacity-90">({t("hero.ctaNoCard")})</span>
+              </a>
             </div>
+
           </div>
         </div>
       </div>

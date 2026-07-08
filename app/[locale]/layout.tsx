@@ -8,6 +8,7 @@ import { MarketSettingsProvider } from "@/context/MarketSettingsContext";
 import MetaCheckoutTracker from "@/components/MetaCheckoutTracker";
 import OfflineBanner from "@/components/OfflineBanner";
 import PageTransitionProvider from "@/components/PageTransitionProvider"; // नया एनीमेशन प्रोवाइडर
+import Navbar from "@/components/Navbar"; // 🌟 नेवबार को यहाँ इंपोर्ट किया
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -29,16 +30,21 @@ export default async function LocaleLayout({ children, params }: LayoutProps) {
           <div 
             lang={locale} 
             dir={locale === "ar" ? "rtl" : "ltr"} 
-            className="relative flex min-h-screen flex-col bg-[#060913] text-slate-100 font-sans antialiased selection:bg-blue-500/30 overflow-x-hidden"
+            // 🌸 डार्क कलर्स (bg-[#060913]) हटाकर साफ़ सुथरा लाइट बैकग्राउंड (bg-[#F8FAFC]) कर दिया
+            className="relative flex min-h-screen flex-col bg-[#F8FAFC] text-slate-800 font-sans antialiased selection:bg-blue-500/10 overflow-x-hidden"
           >
-            {/* ✨ ग्लोबल प्रीमियम बैकग्राउंड एम्बिएंट लाइट्स (BiteSpeed स्टाइल) */}
+            {/* ✨ ग्लोबल प्रीमियम लाइट-थीम एम्बिएंट लाइट्स (सॉफ़्ट पिंक और कोमल ब्लू वाइब्स) */}
             <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden">
-              <div className="absolute -top-[30%] -left-[10%] h-[600px] w-[600px] rounded-full bg-blue-600/10 blur-[120px]" />
-              <div className="absolute bottom-[10%] -right-[10%] h-[500px] w-[500px] rounded-full bg-indigo-500/5 blur-[100px]" />
+              <div className="absolute -top-[10%] -left-[10%] h-[700px] w-[700px] rounded-full bg-blue-100/40 blur-[130px] mix-blend-multiply" />
+              <div className="absolute top-[40%] -right-[20%] h-[600px] w-[600px] rounded-full bg-pink-100/30 blur-[140px] mix-blend-multiply" />
+              <div className="absolute bottom-[-10%] left-[20%] h-[500px] w-[500px] rounded-full bg-emerald-50/40 blur-[120px] mix-blend-multiply" />
             </div>
 
-            {/* मुख्य कंटेंट रैपर */}
-            <div className="relative z-10 flex-1 flex flex-col">
+            {/* 🌟 नेवबार को पूरे ऐप के ऊपर रेंडर किया ताकि यह हर पेज पर दिखे */}
+            <Navbar />
+
+            {/* मुख्य कंटेंट रैपर - पैडिंग टॉप (pt-16) दी ताकि कंटेंट नेवबार के पीछे न छुपे */}
+            <div className="relative z-10 flex-1 flex flex-col pt-16">
               <Suspense fallback={null}>
                 <MetaCheckoutTracker />
               </Suspense>
