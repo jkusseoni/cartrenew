@@ -2,7 +2,6 @@
 
 import React, { useState } from 'react';
 import { Check, Globe, MapPin, Zap, Crown } from "lucide-react";
-import { motion } from 'framer-motion';
 
 type Market = "india" | "global";
 type PlanType = "monthly" | "lifetime";
@@ -196,13 +195,7 @@ export default function Pricing() {
         </div>
 
         {/* 📊 Pricing Grid */}
-        <motion.div 
-          initial={{ opacity: 0, y: 30 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
-          className="w-full max-w-7xl grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch pt-4 text-left"
-        >
+        <div className="w-full max-w-7xl grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch pt-4 text-left">
           {activeTiers.map((tier) => (
             <div 
               key={tier.id}
@@ -252,7 +245,7 @@ export default function Pricing() {
               </button>
             </div>
           ))}
-        </motion.div>
+        </div>
       </div>
     </section>
   );
