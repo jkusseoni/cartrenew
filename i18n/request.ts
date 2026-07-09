@@ -1,15 +1,18 @@
 import { getRequestConfig } from "next-intl/server";
+import { hasLocale } from "next-intl";
 import { routing } from "./routing";
 
 export default getRequestConfig(async ({ requestLocale }) => {
-  let locale = await requestLocale;
+  const requested = await requestLocale;
+  const locale = hasLocale(routing.locales, requested)
+    ? requested
+    : routing.defaultLocale;
 
-  if (!locale || !routing.locales.includes(locale as (typeof routing.locales)[number])) {
-    locale = routing.defaultLocale;
-  }
+  // Explicit per-locale imports so Turbopack never serves the wrong JSON bundle.
+  const messages = (await import(`../messages/${locale}.json`)).default;
 
   return {
     locale,
-    messages: (await import(`../messages/${locale}.json`)).default,
+    messages,
   };
 });

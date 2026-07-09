@@ -1,7 +1,7 @@
 import { defineRouting } from 'next-intl/routing';
 import { createNavigation } from 'next-intl/navigation';
 
-export const locales = ['en', 'hi', 'es', 'pt', 'de'] as const;
+export const locales = ['en', 'hi', 'hni'] as const;
 export type Locale = (typeof locales)[number];
 
 export const routing = defineRouting({
@@ -11,6 +11,9 @@ export const routing = defineRouting({
   // so Clerk's hardcoded path="/en/..." props line up with the real URLs
   // and next-intl no longer strips/redirects the prefix.
   localePrefix: 'always',
+  // URL prefix is the source of truth — do not override /en with a
+  // NEXT_LOCALE cookie or Accept-Language preference.
+  localeDetection: false,
 });
 
 export const { Link, redirect, usePathname, useRouter, getPathname } =

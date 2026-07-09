@@ -9,9 +9,7 @@ import { locales, usePathname, useRouter, type Locale } from "@/i18n/routing";
 const LOCALE_NAMES: Record<Locale, string> = {
   en: "English",
   hi: "हिन्दी",
-  es: "Español",
-  pt: "Português",
-  de: "Deutsch",
+  hni: "Hinglish",
 };
 
 export default function LanguageSwitcher() {
@@ -34,6 +32,13 @@ export default function LanguageSwitcher() {
   const handleLanguageChange = (nextLocale: Locale) => {
     setIsOpen(false);
     if (nextLocale === currentLocale) return;
+
+    try {
+      window.localStorage.setItem("cartrenew-locale", nextLocale);
+    } catch {
+      // ignore storage failures (private mode, etc.)
+    }
+
     router.replace(pathname, { locale: nextLocale });
   };
 

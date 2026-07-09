@@ -2,19 +2,18 @@
 
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 
-export type Locale = "en" | "hi" | "es" | "fr" | "de" | "ar" | "zh" | "ja" | "pt" | "ru" | "bn" | "ur" | "ta" | "te" | "mr" | "gu" | "kn" | "ml" | "pa" | "or";
+export type Locale = "en" | "hi" | "hni";
 
 const localeNames: Record<Locale, string> = {
-  en: "English", hi: "हिन्दी", es: "Español", fr: "Français", de: "Deutsch",
-  ar: "العربية", zh: "中文", ja: "日本語", pt: "Português", ru: "Русский",
-  bn: "বাংলা", ur: "اردو", ta: "தமிழ்", te: "తెలుగు", mr: "मराठी",
-  gu: "ગુજરાતી", kn: "ಕನ್ನಡ", ml: "മലയാളം", pa: "ਪੰਜਾਬੀ", or: "ଓଡ଼ିଆ",
+  en: "English",
+  hi: "हिन्दी",
+  hni: "Hinglish",
 };
 
 const localeFlags: Record<Locale, string> = {
-  en: "🇺🇸", hi: "🇮🇳", es: "🇪🇸", fr: "🇫🇷", de: "🇩🇪", ar: "🇸🇦", zh: "🇨🇳",
-  ja: "🇯🇵", pt: "🇧🇷", ru: "🇷🇺", bn: "🇧🇩", ur: "🇵🇰", ta: "🇮🇳", te: "🇮🇳",
-  mr: "🇮🇳", gu: "🇮🇳", kn: "🇮🇳", ml: "🇮🇳", pa: "🇮🇳", or: "🇮🇳",
+  en: "🇺🇸",
+  hi: "🇮🇳",
+  hni: "🇮🇳",
 };
 
 interface LanguageContextType {
@@ -33,23 +32,16 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   const [messages, setMessages] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    // Load from localStorage
     const saved = localStorage.getItem("cartrenew-locale") as Locale;
     if (saved && localeNames[saved]) {
       setLocaleState(saved);
-    } else {
-      // Auto-detect from browser
-      const browserLang = navigator.language.split("-")[0] as Locale;
-      if (localeNames[browserLang]) setLocaleState(browserLang);
     }
   }, []);
 
   useEffect(() => {
-    // Dynamic import of translation file
-    import(`../messages/${locale}.json`)
+    import(`../../messages/${locale}.json`)
       .then((mod) => setMessages(flattenObject(mod.default)))
       .catch(() => {
-        // Fallback to English
         import(`../../messages/en.json`).then((mod) => setMessages(flattenObject(mod.default)));
       });
   }, [locale]);
@@ -70,7 +62,16 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <LanguageContext.Provider value={{ locale, setLocale, t, locales: Object.keys(localeNames) as Locale[], localeNames, localeFlags }}>
+    <LanguageContext.Provider
+      value={{
+        locale,
+        setLocale,
+        t,
+        locales: Object.keys(localeNames) as Locale[],
+        localeNames,
+        localeFlags,
+      }}
+    >
       {children}
     </LanguageContext.Provider>
   );
@@ -82,7 +83,6 @@ export function useLanguage() {
   return ctx;
 }
 
-// Flatten nested JSON: {nav: {pricing: "..."}} → {"nav.pricing": "..."}
 function flattenObject(obj: any, prefix = ""): Record<string, string> {
   return Object.keys(obj).reduce((acc: Record<string, string>, k) => {
     const pre = prefix ? `${prefix}.` : "";

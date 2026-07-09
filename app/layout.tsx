@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { DM_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
-import { LanguageProvider } from "@/context/LanguageContext";
 import AppProviders from "./providers";
 
 const dmSans = DM_Sans({ subsets: ["latin"], variable: "--font-dm-sans" });
@@ -14,11 +13,9 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body className={`${dmSans.variable} ${jetBrainsMono.variable} antialiased`}>
-        <LanguageProvider>
-          <AppProviders>{children}</AppProviders>
-        </LanguageProvider>
+        <AppProviders>{children}</AppProviders>
       </body>
     </html>
   );

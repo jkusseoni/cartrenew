@@ -9,12 +9,9 @@ export default function ChatCheckout() {
   const [isCompleted, setIsCompleted] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Clear any pending typing timer on unmount.
   useEffect(() => {
     return () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
   }, []);
 
@@ -22,11 +19,7 @@ export default function ChatCheckout() {
     setStep(2);
     setIsCompleted(false);
     setIsTyping(true);
-
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-    }
-
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => {
       setIsTyping(false);
       setIsCompleted(true);
@@ -45,73 +38,71 @@ export default function ChatCheckout() {
   };
 
   return (
-    <div className="bg-neutral-950/40 border border-neutral-800 p-8 rounded-2xl backdrop-blur-sm">
-      <div className="flex items-center gap-4 mb-6">
-        <div className="h-12 w-12 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center justify-center">
-          <ShoppingBag className="h-6 w-6 text-emerald-400" />
+    <div className="min-h-[280px] rounded-2xl border border-slate-200 bg-white/80 p-8 shadow-sm backdrop-blur-sm">
+      <div className="mb-6 flex items-center gap-4">
+        <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50">
+          <ShoppingBag className="h-6 w-6 text-emerald-600" />
         </div>
         <div>
-          <h3 className="text-xl font-bold text-white">2. In-Chat Conversational Checkout</h3>
-          <p className="text-xs text-neutral-500">Zero-Friction WhatsApp Native Checkout</p>
+          <h3 className="text-xl font-bold text-slate-900">2. In-Chat Conversational Checkout</h3>
+          <p className="text-xs text-slate-500">Zero-Friction WhatsApp Native Checkout</p>
         </div>
       </div>
 
-      <p className="text-sm text-neutral-400 leading-relaxed mb-6">
-        Customer ko link par click karke dubara browser loading ka jhanjhat nahi jhelna padega. WhatsApp Business API sandbox ke andar payment gateways integration logic seedhe complete card clearance runtime ko invoke karta hai.
+      <p className="mb-6 text-sm leading-relaxed text-slate-600">
+        Customers can complete payment inside WhatsApp without bouncing back to a browser checkout
+        page. Payment gateway auth runs natively in the conversation flow.
       </p>
 
-      {/* Interactive Chat Sandbox UI */}
-      <div className="bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden max-w-sm mx-auto">
-        <div className="bg-emerald-950/60 border-b border-neutral-800 p-3 flex items-center gap-2">
-          <div className="h-2 w-2 rounded-full bg-emerald-400" />
-          <span className="text-xs font-bold text-neutral-200">CartRenew WhatsApp Node</span>
+      <div className="mx-auto max-w-sm overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div className="flex items-center gap-2 border-b border-slate-200 bg-emerald-50 p-3">
+          <div className="h-2 w-2 rounded-full bg-emerald-500" />
+          <span className="text-xs font-bold text-slate-700">CartRenew WhatsApp Node</span>
         </div>
 
-        <div className="p-4 space-y-3">
-          <div className="bg-neutral-800 text-xs text-neutral-300 p-2.5 rounded-lg rounded-tl-none max-w-[85%]">
+        <div className="space-y-3 p-4">
+          <div className="max-w-[85%] rounded-lg rounded-tl-none bg-slate-100 p-2.5 text-xs text-slate-700">
             📦 Your Shopify Cart has 1 Product waiting. Would you like to check out natively?
           </div>
 
           {step >= 2 && (
-            <div className="bg-indigo-600 text-xs text-white p-2.5 rounded-lg rounded-tr-none max-w-[50%] ml-auto text-right">
+            <div className="ml-auto max-w-[50%] rounded-lg rounded-tr-none bg-indigo-600 p-2.5 text-right text-xs text-white">
               Yes, checkout now
             </div>
           )}
 
           {step >= 2 && (
-            <div className="bg-neutral-800 text-xs text-neutral-300 p-2.5 rounded-lg rounded-tl-none max-w-[85%] border border-emerald-500/20">
+            <div className="max-w-[85%] rounded-lg rounded-tl-none border border-emerald-200 bg-slate-100 p-2.5 text-xs text-slate-700">
               💳 Click below to authenticate payment safely via Stripe:
-              <div className="mt-2 bg-neutral-950 p-2 rounded border border-neutral-700 flex justify-between items-center text-[10px]">
+              <div className="mt-2 flex items-center justify-between rounded border border-slate-200 bg-white p-2 text-[10px]">
                 <span>Total: $59.00 USD</span>
-                <span className="text-emerald-400 font-bold">Pay Native</span>
+                <span className="font-bold text-emerald-600">Pay Native</span>
               </div>
             </div>
           )}
 
-          {/* Bot is typing... indicator */}
           {isTyping && (
-            <div className="bg-neutral-800 p-2.5 rounded-lg rounded-tl-none w-fit flex items-center gap-1.5">
+            <div className="flex w-fit items-center gap-1.5 rounded-lg rounded-tl-none bg-slate-100 p-2.5">
               <span className="sr-only">Bot is typing</span>
-              <span className="h-1.5 w-1.5 rounded-full bg-neutral-400 animate-bounce [animation-delay:-0.3s]" />
-              <span className="h-1.5 w-1.5 rounded-full bg-neutral-400 animate-bounce [animation-delay:-0.15s]" />
-              <span className="h-1.5 w-1.5 rounded-full bg-neutral-400 animate-bounce" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.3s]" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.15s]" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400" />
             </div>
           )}
 
-          {/* Automated merchant response after typing completes */}
           {isCompleted && (
-            <div className="bg-emerald-950/50 text-xs text-emerald-200 p-2.5 rounded-lg rounded-tl-none max-w-[90%] border border-emerald-500/30">
+            <div className="max-w-[90%] rounded-lg rounded-tl-none border border-emerald-200 bg-emerald-50 p-2.5 text-xs text-emerald-800">
               ✅ Order completed via native WhatsApp gateway! Secure payload logged.
             </div>
           )}
         </div>
 
-        <div className="p-2.5 bg-neutral-950 border-t border-neutral-800 flex justify-end">
+        <div className="flex justify-end border-t border-slate-200 bg-slate-50 p-2.5">
           {step === 1 ? (
             <button
               type="button"
               onClick={handleSimulateReply}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-[11px] px-3 py-1.5 rounded transition-colors"
+              className="rounded bg-emerald-600 px-3 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-emerald-500"
             >
               Simulate Reply
             </button>
@@ -120,7 +111,7 @@ export default function ChatCheckout() {
               type="button"
               onClick={handleReset}
               disabled={isTyping}
-              className="text-neutral-500 font-semibold text-[11px] px-3 py-1.5 rounded hover:text-neutral-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="rounded px-3 py-1.5 text-[11px] font-semibold text-slate-500 transition-colors hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Reset Simulation
             </button>

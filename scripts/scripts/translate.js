@@ -1,33 +1,26 @@
 #!/usr/bin/env node
 /**
- * Auto-translate all language files using DeepL API
- * 
+ * Translate helper for CartRenew locales (en, hi, hni).
+ *
  * Usage:
  *   1. Get free DeepL API key: https://www.deepl.com/pro-api
  *   2. Set env: DEEPL_API_KEY=your-key
- *   3. Run: node scripts/translate.js
- * 
- * Free tier: 500,000 chars/month (enough for all 20 languages)
+ *   3. Run: node scripts/scripts/translate.js
+ *
+ * Note: Hinglish (hni) is maintained manually — this script only
+ * refreshes Hindi (hi) from English via DeepL.
  */
 
 const fs = require("fs");
 const path = require("path");
 
 const DEEPL_API_KEY = process.env.DEEPL_API_KEY;
-const MESSAGES_DIR = path.join(__dirname, "../messages");
+const MESSAGES_DIR = path.join(__dirname, "../../messages");
 
-// Language code mapping: our code → DeepL code
+// Supported app locales → DeepL target codes
 const deeplLangMap = {
-  es: "ES", fr: "FR", de: "DE", ar: "AR",
-  zh: "ZH", ja: "JA", pt: "PT-BR", ru: "RU",
-  bn: "EN", // Bengali not in DeepL free, fallback
-  ur: "EN", // Urdu not in DeepL, fallback
-  ta: "EN", te: "EN", mr: "EN", gu: "EN",
-  kn: "EN", ml: "EN", pa: "EN", or: "EN",
+  hi: "HI",
 };
-
-// For Indian languages NOT supported by DeepL, we keep English
-// and the community can contribute translations via GitHub
 
 async function translateText(text, targetLang) {
   if (!DEEPL_API_KEY) {
@@ -36,8 +29,8 @@ async function translateText(text, targetLang) {
   }
 
   const deeplLang = deeplLangMap[targetLang];
-  if (!deeplLang || deeplLang === "EN") {
-    return text; // Return English for unsupported languages
+  if (!deeplLang) {
+    return text;
   }
 
   try {
@@ -68,7 +61,7 @@ async function translateObject(obj, targetLang) {
     if (typeof value === "string" && value.startsWith("[TRANSLATE")) {
       const cleanText = value.replace(/\[TRANSLATE:[^\]]+\]\s*/, "");
       result[key] = await translateText(cleanText, targetLang);
-      await new Promise((r) => setTimeout(r, 50)); // Rate limit
+      await new Promise((r) => setTimeout(r, 50));
     } else if (typeof value === "object" && value !== null) {
       result[key] = await translateObject(value, targetLang);
     } else {
@@ -82,9 +75,7 @@ async function main() {
   const enPath = path.join(MESSAGES_DIR, "en.json");
   const enData = JSON.parse(fs.readFileSync(enPath, "utf-8"));
 
-  const targetLangs = Object.keys(deeplLangMap);
-
-  for (const lang of targetLangs) {
+  for (const lang of Object.keys(deeplLangMap)) {
     const filePath = path.join(MESSAGES_DIR, `${lang}.json`);
     console.log(`🌍 Translating ${lang}...`);
 
@@ -93,9 +84,8 @@ async function main() {
     console.log(`✅ Saved: messages/${lang}.json`);
   }
 
-  console.log("\n🎉 All translations complete!");
-  console.log("⚠️  Indian languages (bn, ur, ta, te, mr, gu, kn, ml, pa, or) kept in English.");
-  console.log("🤝 Please contribute community translations on GitHub!");
+  console.log("\n🎉 Done. Supported locales: en, hi, hni.");
+  console.log("ℹ️  Hinglish (hni) is maintained manually in messages/hni.json.");
 }
 
 main().catch(console.error);

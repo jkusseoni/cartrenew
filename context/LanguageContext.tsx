@@ -2,19 +2,18 @@
 
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 
-export type Locale = "en" | "hi" | "es" | "fr" | "de" | "ar" | "zh" | "ja" | "pt" | "ru" | "bn" | "ur" | "ta" | "te" | "mr" | "gu" | "kn" | "ml" | "pa" | "or";
+export type Locale = "en" | "hi" | "hni";
 
 const localeNames: Record<Locale, string> = {
-  en: "English", hi: "हिन्दी", es: "Español", fr: "Français", de: "Deutsch",
-  ar: "العربية", zh: "中文", ja: "日本語", pt: "Português", ru: "Русский",
-  bn: "বাংলা", ur: "اردو", ta: "தமிழ்", te: "తెలుగు", mr: "मराठी",
-  gu: "ગુજરાતી", kn: "ಕನ್ನಡ", ml: "മലയാളം", pa: "ਪੰਜਾਬੀ", or: "ଓଡ଼ିଆ",
+  en: "English",
+  hi: "हिन्दी",
+  hni: "Hinglish",
 };
 
 const localeFlags: Record<Locale, string> = {
-  en: "🇺🇸", hi: "🇮🇳", es: "🇪🇸", fr: "🇫🇷", de: "🇩🇪", ar: "🇸🇦", zh: "🇨🇳",
-  ja: "🇯🇵", pt: "🇧🇷", ru: "🇷🇺", bn: "🇧🇩", ur: "🇵🇰", ta: "🇮🇳", te: "🇮🇳",
-  mr: "🇮🇳", gu: "🇮🇳", kn: "🇮🇳", ml: "🇮🇳", pa: "🇮🇳", or: "🇮🇳",
+  en: "🇺🇸",
+  hi: "🇮🇳",
+  hni: "🇮🇳",
 };
 
 interface LangCtx {
@@ -35,10 +34,6 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const saved = localStorage.getItem("cartrenew-locale") as Locale;
     if (saved && localeNames[saved]) setLocaleState(saved);
-    else {
-      const browser = navigator.language.split("-")[0] as Locale;
-      if (localeNames[browser]) setLocaleState(browser);
-    }
   }, []);
 
   useEffect(() => {
@@ -47,15 +42,29 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
       .catch(() => import(`../messages/en.json`).then((m) => setMessages(flatten(m.default))));
   }, [locale]);
 
-  const setLocale = (l: Locale) => { setLocaleState(l); localStorage.setItem("cartrenew-locale", l); };
+  const setLocale = (l: Locale) => {
+    setLocaleState(l);
+    localStorage.setItem("cartrenew-locale", l);
+  };
   const t = (key: string, params?: Record<string, string>) => {
     let text = messages[key] || key;
-    if (params) Object.entries(params).forEach(([k, v]) => { text = text.replace(`{${k}}`, v); });
+    if (params) Object.entries(params).forEach(([k, v]) => {
+      text = text.replace(`{${k}}`, v);
+    });
     return text;
   };
 
   return (
-    <LangContext.Provider value={{ locale, setLocale, t, locales: Object.keys(localeNames) as Locale[], localeNames, localeFlags }}>
+    <LangContext.Provider
+      value={{
+        locale,
+        setLocale,
+        t,
+        locales: Object.keys(localeNames) as Locale[],
+        localeNames,
+        localeFlags,
+      }}
+    >
       {children}
     </LangContext.Provider>
   );
