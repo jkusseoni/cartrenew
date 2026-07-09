@@ -14,6 +14,9 @@ const intlMiddleware = createIntlMiddleware(routing);
 
 const localePublicRoutes = locales.flatMap((locale) => [
   `/${locale}`,
+  `/${locale}/pricing(.*)`,
+  `/${locale}/comparison(.*)`,
+  `/${locale}/docs(.*)`,
   `/${locale}/sign-in(.*)`,
   `/${locale}/sign-up(.*)`,
   `/${locale}/terms(.*)`,
@@ -24,6 +27,9 @@ const localePublicRoutes = locales.flatMap((locale) => [
 
 const isPublicRoute = createRouteMatcher([
   "/",
+  "/pricing(.*)",
+  "/comparison(.*)",
+  "/docs(.*)",
   "/sign-in(.*)",
   "/sign-up(.*)",
   "/terms(.*)",

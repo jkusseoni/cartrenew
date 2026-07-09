@@ -7,11 +7,11 @@ import { Menu, X } from "lucide-react";
 import { Link } from "@/i18n/routing";
 
 const navLinks = [
-  { key: "pricing", href: "/#pricing" },
-  { key: "comparison", href: "/#comparison" },
-  { key: "dashboard", href: "/#dashboard" },
-  { key: "docs", href: "/#docs" },
-];
+  { key: "pricing", href: "/pricing" },
+  { key: "comparison", href: "/comparison" },
+  { key: "dashboard", href: "/dashboard" },
+  { key: "docs", href: "/docs" },
+] as const;
 
 export default function Navigation() {
   const t = useTranslations("nav");
