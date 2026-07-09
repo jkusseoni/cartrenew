@@ -1,6 +1,7 @@
 "use client";
 
 import React from 'react';
+import { Link } from '@/i18n/routing';
 
 const comparisonData = [
   {
@@ -94,6 +95,21 @@ export default function CompetitorComparison() {
               ))}
             </tbody>
           </table>
+        </div>
+
+        <div className="mt-10 flex flex-col items-start gap-4 sm:flex-row sm:items-center">
+          <Link
+            href="/sign-up"
+            className="inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-emerald-500 to-blue-600 px-6 py-3 text-xs font-black text-white shadow-md shadow-blue-500/10 transition hover:opacity-95"
+          >
+            Start Free Trial
+          </Link>
+          <Link
+            href="/pricing"
+            className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-6 py-3 text-xs font-black text-slate-700 shadow-sm transition hover:bg-slate-50"
+          >
+            View Pricing
+          </Link>
         </div>
 
       </div>

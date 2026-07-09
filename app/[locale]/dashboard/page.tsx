@@ -1,7 +1,7 @@
 "use client";
 
 import React, { use, useEffect, useState } from 'react';
-import Link from 'next/link';
+import { Link } from '@/i18n/routing';
 import { useClerk } from '@clerk/nextjs';
 
 import TrialBanner from '@/components/dashboard/TrialBanner';
@@ -57,8 +57,15 @@ export default function Dashboard({
     } catch (error) {
       console.warn("Clerk signOut failed:", error);
     } finally {
-      window.location.href = "/en";
+      window.location.href = `/${locale}`;
     }
+  };
+
+  const handleRefreshAnalytics = async () => {
+    setAnalyticsLoading(true);
+    const data = await fetchDashboardAnalytics(30);
+    setAnalytics(data);
+    setAnalyticsLoading(false);
   };
 
   return (
@@ -137,9 +144,18 @@ export default function Dashboard({
             <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">Console Workspace Live Test</h1>
             <p className="text-xs sm:text-sm text-neutral-400 mt-1">Real-time status monitoring of Shopify client abandonment triggers.</p>
           </div>
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-950/20 border border-emerald-900/30 text-xs font-bold text-[#00DF89]">
-            <span className="w-2 h-2 rounded-full bg-[#00DF89] animate-pulse" />
-            Live Webhook Streams Syncing
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => void handleRefreshAnalytics()}
+              className="rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-1.5 text-xs font-bold text-neutral-300 transition hover:border-neutral-700 hover:text-white"
+            >
+              Refresh Analytics
+            </button>
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-950/20 border border-emerald-900/30 text-xs font-bold text-[#00DF89]">
+              <span className="w-2 h-2 rounded-full bg-[#00DF89] animate-pulse" />
+              Live Webhook Streams Syncing
+            </div>
           </div>
         </div>
 
@@ -180,7 +196,22 @@ export default function Dashboard({
                 ) : analytics.liveFeed.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="p-8 text-center text-neutral-500">
-                      No abandoned carts yet. They will appear here as Shopify webhooks and recovery jobs run.
+                      <p>No abandoned carts yet. They will appear here as Shopify webhooks and recovery jobs run.</p>
+                      <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
+                        <Link
+                          href="/settings"
+                          className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-blue-500"
+                        >
+                          Connect Shopify Store
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={() => void handleRefreshAnalytics()}
+                          className="rounded-lg border border-neutral-700 bg-neutral-900 px-4 py-2 text-xs font-bold text-neutral-300 transition hover:text-white"
+                        >
+                          Retry Fetch
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ) : (

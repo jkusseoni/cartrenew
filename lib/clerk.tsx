@@ -3,6 +3,7 @@
 import { useClerk, useUser, UserButton as ClerkUserButton } from '@clerk/nextjs'
 
 const skipClerk =
+  process.env.NODE_ENV === 'development' ||
   process.env.NEXT_PUBLIC_SKIP_CLERK === 'true' ||
   process.env.SKIP_CLERK === 'true'
 
@@ -16,6 +17,7 @@ const fakeUser = {
 }
 
 export function useSafeUser() {
+  // Always call the hook so Rules of Hooks stay valid; ignore Clerk state when skipped.
   const clerkState = useUser()
 
   if (skipClerk) {

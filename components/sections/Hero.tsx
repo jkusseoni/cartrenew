@@ -174,6 +174,9 @@ export default function Hero() {
 
             <button
               type="button"
+              onClick={() => {
+                window.open(`https://${sample.url}`, "_blank", "noopener,noreferrer");
+              }}
               className="w-full rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 py-3 text-xs font-black text-white shadow-md shadow-blue-500/20 transition-all hover:opacity-95"
             >
               Finish Order Now

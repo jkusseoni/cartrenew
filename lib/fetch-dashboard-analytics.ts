@@ -33,11 +33,12 @@ export const EMPTY_DASHBOARD_ANALYTICS: DashboardAnalyticsPayload = {
 };
 
 function getAnalyticsApiUrl(days = 30): string {
-  const base = (
-    process.env.NEXT_PUBLIC_APP_URL ||
-    (typeof window !== "undefined" ? window.location.origin : "")
-  ).replace(/\/$/, "");
+  // Prefer same-origin relative URL in the browser so cookies/session stay attached.
+  if (typeof window !== "undefined") {
+    return `/api/analytics?days=${days}`;
+  }
 
+  const base = (process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").replace(/\/$/, "");
   return `${base}/api/analytics?days=${days}`;
 }
 

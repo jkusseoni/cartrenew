@@ -92,8 +92,26 @@ function computeTotals(daily: DailyRow[]) {
 
 export async function GET(request: NextRequest) {
   try {
-    // 🔑 Clerk Auth v5 Check
-    const { userId } = await auth()
+    const skipClerk =
+      process.env.NODE_ENV === 'development' ||
+      process.env.SKIP_CLERK === 'true' ||
+      process.env.NEXT_PUBLIC_SKIP_CLERK === 'true'
+
+    let userId: string | null = null
+
+    if (skipClerk) {
+      // proxy.ts skips clerkMiddleware in local/dev — auth() would throw.
+      userId = 'local-dev'
+    } else {
+      try {
+        const session = await auth()
+        userId = session.userId
+      } catch (authError) {
+        console.warn('[api/analytics] auth() unavailable:', authError)
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
+    }
+
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -101,7 +119,6 @@ export async function GET(request: NextRequest) {
     const daysParam = request.nextUrl.searchParams.get('days')
     const days = Math.min(Math.max(parseInt(daysParam || '30', 10) || 30, 1), 365)
 
-    // 🛡️ डेटाबेस ऑपरेशन्स को एक इनर try-catch में डालें ताकि लोकल डीबी एरर से सर्वर 500 न दे
     try {
       const { data: store, error: storeError } = await supabaseAdmin
         .from('stores')
@@ -109,7 +126,7 @@ export async function GET(request: NextRequest) {
         .eq('clerk_user_id', userId)
         .maybeSingle()
 
-      if (storeError) throw new Error(storeError.message);
+      if (storeError) throw new Error(storeError.message)
 
       const startDate = new Date()
       startDate.setDate(startDate.getDate() - days)
@@ -125,13 +142,12 @@ export async function GET(request: NextRequest) {
           .gte('date', startDateIso)
           .order('date', { ascending: true })
 
-        if (analyticsError) throw new Error(analyticsError.message);
+        if (analyticsError) throw new Error(analyticsError.message)
         daily = (analyticsData ?? []) as DailyRow[]
       }
 
-      // अगर डेटाबेस से डेटा मिल गया है तो असली डेटा भेजें
       if (daily.length > 0) {
-        const calculatedTotals = computeTotals(daily);
+        const calculatedTotals = computeTotals(daily)
         return NextResponse.json({
           daily,
           totals: {
@@ -142,21 +158,36 @@ export async function GET(request: NextRequest) {
             deliveredRate: calculatedTotals.deliveredRate,
             readRate: calculatedTotals.readRate,
           },
-          languageData: [],
-          liveFeed: [],
-        });
+          languageData: [] as LanguageMetric[],
+          liveFeed: [] as LiveFeedItem[],
+        })
       }
 
+      // Connected store with empty analytics_daily — still return a structured empty payload.
+      if (store?.id) {
+        return NextResponse.json({
+          daily: [],
+          totals: {
+            totalAbandoned: 0,
+            messagesSent: 0,
+            recoveredRevenue: 0,
+            recoveredRate: 0,
+            deliveredRate: 0,
+            readRate: 0,
+          },
+          languageData: [],
+          liveFeed: [],
+          storeConnected: true,
+        })
+      }
     } catch (dbError) {
-      console.warn('[api/analytics] Database query failed, using safe fallback:', dbError);
+      console.warn('[api/analytics] Database query failed, using safe fallback:', dbError)
     }
 
-    // 🚀 अगर डेटाबेस खाली है या एरर आया, तो फॉलबैक डेटा भेजें ताकि 500 एरर न आए
-    return NextResponse.json(FALLBACK_ANALYTICS, { status: 200 });
-
+    // No store / DB error: demo fallback so local UI stays interactive.
+    return NextResponse.json({ ...FALLBACK_ANALYTICS, storeConnected: false }, { status: 200 })
   } catch (error) {
     console.error('[api/analytics] Unexpected critical error:', error)
-    // 🛡️ वर्स्ट केस में भी 200 रिस्पॉन्स दें ताकि फ्रंटएंड कभी क्रैश न हो
-    return NextResponse.json(FALLBACK_ANALYTICS, { status: 200 });
+    return NextResponse.json({ ...FALLBACK_ANALYTICS, storeConnected: false }, { status: 200 })
   }
 }
