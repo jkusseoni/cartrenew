@@ -3,7 +3,7 @@ import createIntlMiddleware from "next-intl/middleware";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-import { locales, routing } from "./i18n/routing";
+import { locales, routing } from "@/i18n/routing";
 import {
   isMerchantRole,
   MERCHANT_DASHBOARD_PATH,
@@ -418,6 +418,9 @@ export default skipClerk
 
 export const config = {
   matcher: [
+    // Explicit locale-prefixed app routes (en|hi|es|pt|de)
+    "/(en|hi|es|pt|de)/:path*",
+    // Catch-all for locale detection / redirects (excludes static assets)
     "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
     "/(api|trpc)(.*)",
     "/__clerk/(.*)",
