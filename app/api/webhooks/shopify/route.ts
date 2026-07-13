@@ -4,11 +4,6 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from 'next/server'
 import { getTrackedRecoveryUrl } from '@/lib/recovery-link'
 import { supabaseAdmin } from '@/lib/supabase'
-import {
-  buildRecoveryWhatsAppBody,
-  hasTwilioWhatsAppCredentials,
-  sendTwilioWhatsAppMessage,
-} from '@/lib/services/twilio-whatsapp'
 import { verifyWebhookHmac } from '@/lib/shopify/config'
 
 const SHOPIFY_WEBHOOK_VERIFY = process.env.SHOPIFY_WEBHOOK_VERIFY !== 'false'
@@ -215,6 +210,7 @@ async function dispatchWhatsAppRecovery({
   customer,
   cartValue,
   items,
+  cartToken,
 }: {
   storeId: string
   cartId: string
@@ -226,101 +222,83 @@ async function dispatchWhatsAppRecovery({
 }) {
   const customerPhone = extractCustomerPhone(payload, customer)
   const customerName = extractCustomerName(customer, payload)
-  const currency =
-    (typeof payload.currency === 'string' && payload.currency) ||
-    (typeof payload.presentment_currency === 'string' && payload.presentment_currency) ||
-    'USD'
-  const recoveryLink = getTrackedRecoveryUrl(cartId)
-  const messageBody = buildRecoveryWhatsAppBody({
-    customerName,
-    cartValue,
-    currency,
-    recoveryLink,
-    items,
-  })
+  const customerEmail = extractCustomerEmail(payload, customer)
 
   if (!customerPhone) {
+    console.warn(`WhatsApp recovery skipped: missing phone for cart ${cartId}`)
+    return { sent: false, queued: false, error: 'missing_phone' as const }
+  }
+
+  // Shared messaging path: Twilio → Meta fallback, message row + cart status updates.
+  const { triggerWhatsAppRecoveryForCart } = await import('@/lib/services/messaging')
+  return triggerWhatsAppRecoveryForCart({
+    storeId,
+    cartId,
+    customerPhone,
+    customerName,
+    checkoutUrl: getTrackedRecoveryUrl(cartId),
+    cartValue,
+    items,
+    customerEmail,
+    cartToken,
+  })
+}
+
+/**
+ * Send recovery while the cart is still pending, a phone is present, and we
+ * have not already marked a send. Callers should invoke this on insert, or on
+ * update only when a phone newly appears (carts/* is often phoneless).
+ */
+async function maybeDispatchWhatsAppRecovery({
+  storeId,
+  cartId,
+  cartStatus,
+  messageSentAt,
+  payload,
+  customer,
+  cartValue,
+  items,
+  cartToken,
+}: {
+  storeId: string
+  cartId: string
+  cartStatus: string
+  messageSentAt?: string | null
+  payload: Record<string, unknown>
+  customer: Record<string, unknown>
+  cartValue: number
+  items: unknown[]
+  cartToken: string
+}) {
+  if (cartStatus !== 'pending' || messageSentAt) {
+    return
+  }
+
+  if (!extractCustomerPhone(payload, customer)) {
     console.warn(`WhatsApp recovery skipped: missing phone for cart ${cartId}`)
     return
   }
 
-  if (!hasTwilioWhatsAppCredentials()) {
-    console.error(
-      `Twilio WhatsApp credentials missing — cannot send recovery for cart ${cartId}`
-    )
-    return
-  }
-
-  const { data: messageRow, error: insertError } = await supabaseAdmin
-    .from('messages')
-    .insert({
-      cart_id: cartId,
-      store_id: storeId,
-      phone: customerPhone,
-      template_name: 'cart_recovery_twilio',
-      body: messageBody,
-      status: 'queued',
-      attempt_count: 0,
-      next_retry_at: null,
-    })
-    .select('id')
-    .single()
-
-  if (insertError || !messageRow?.id) {
-    console.error('Failed to insert recovery message row:', insertError)
-    return
-  }
-
-  const sendResult = await sendTwilioWhatsAppMessage(customerPhone, messageBody)
-
-  if (sendResult.success) {
-    await supabaseAdmin
-      .from('messages')
-      .update({
-        status: 'sent',
-        whatsapp_message_id: sendResult.messageSid || null,
-        sent_at: new Date().toISOString(),
-        attempt_count: 1,
-        error_message: null,
-      })
-      .eq('id', messageRow.id)
-
-    await supabaseAdmin
-      .from('abandoned_carts')
-      .update({
-        status: 'messaged',
-        message_sent_at: new Date().toISOString(),
-      })
-      .eq('id', cartId)
-      .eq('status', 'pending')
-
-    console.log(
-      `✅ WhatsApp recovery sent for cart ${cartId} to ${customerPhone} via Twilio (${sendResult.messageSid}) — link: ${recoveryLink}`
-    )
-    return
-  }
-
-  await supabaseAdmin
-    .from('messages')
-    .update({
-      status: 'pending',
-      error_message: sendResult.error || 'twilio_send_failed',
-      attempt_count: 1,
-      next_retry_at: new Date(Date.now() + 5 * 60_000).toISOString(),
-    })
-    .eq('id', messageRow.id)
-
-  console.warn(
-    `WhatsApp recovery dispatch failed for cart ${cartId} (${customerPhone}):`,
-    sendResult.error ?? 'unknown'
-  )
+  await dispatchWhatsAppRecovery({
+    storeId,
+    cartId,
+    payload,
+    customer,
+    cartValue,
+    items,
+    cartToken,
+  })
 }
 
 // ============================================
 // Handle cart create/update
 // ============================================
 async function handleCartWebhook(storeId: string, shopDomain: string, payload: any) {
-  const token = payload.token || payload.id
+  const token = resolveCartToken(payload)
+  if (!token) {
+    console.warn('Cart webhook missing token — skipping abandoned-cart processing')
+    return
+  }
   const customer = payload.customer || {}
   
   // Extract line items
@@ -338,30 +316,51 @@ async function handleCartWebhook(storeId: string, shopDomain: string, payload: a
   }, 0)
 
   const checkoutUrl = resolveCheckoutUrl(payload, shopDomain)
+  const customerPhone = extractCustomerPhone(payload, customer)
+  const customerEmail = extractCustomerEmail(payload, customer)
+  const customerName = extractCustomerName(customer, payload)
   
   // Check if cart already exists
   const { data: existingCart } = await supabaseAdmin
     .from('abandoned_carts')
-    .select('id, status')
+    .select('id, status, customer_phone, message_sent_at')
     .eq('store_id', storeId)
     .eq('shopify_cart_token', token)
-    .single()
+    .maybeSingle()
   
   if (existingCart) {
     // Only update if not already recovered or messaged
     if (existingCart.status === 'pending') {
+      const phoneJustAppeared = !existingCart.customer_phone && Boolean(customerPhone)
+
       await supabaseAdmin
         .from('abandoned_carts')
         .update({
-          customer_phone: extractCustomerPhone(payload, customer),
-          customer_email: extractCustomerEmail(payload, customer),
-          customer_name: extractCustomerName(customer, payload),
+          customer_phone: customerPhone ?? existingCart.customer_phone,
+          customer_email: customerEmail,
+          customer_name: customerName,
           cart_value: cartValue,
           items,
           checkout_url: checkoutUrl,
           updated_at: new Date().toISOString(),
         })
         .eq('id', existingCart.id)
+
+      // carts/* usually has no phone; when a later carts/update finally
+      // includes one, this is the first chance to trigger WhatsApp.
+      if (phoneJustAppeared) {
+        await maybeDispatchWhatsAppRecovery({
+          storeId,
+          cartId: existingCart.id,
+          cartStatus: existingCart.status,
+          messageSentAt: existingCart.message_sent_at,
+          payload,
+          customer,
+          cartValue,
+          items,
+          cartToken: token,
+        })
+      }
     }
   } else {
     // Create new abandoned cart with scheduled message time
@@ -373,9 +372,9 @@ async function handleCartWebhook(storeId: string, shopDomain: string, payload: a
       .insert({
         store_id: storeId,
         shopify_cart_token: token,
-        customer_phone: extractCustomerPhone(payload, customer),
-        customer_email: extractCustomerEmail(payload, customer),
-        customer_name: extractCustomerName(customer, payload),
+        customer_phone: customerPhone,
+        customer_email: customerEmail,
+        customer_name: customerName,
         cart_value: cartValue,
         items,
         checkout_url: checkoutUrl,
@@ -391,9 +390,11 @@ async function handleCartWebhook(storeId: string, shopDomain: string, payload: a
     }
 
     if (insertedCart?.id) {
-      await dispatchWhatsAppRecovery({
+      await maybeDispatchWhatsAppRecovery({
         storeId,
         cartId: insertedCart.id,
+        cartStatus: 'pending',
+        messageSentAt: null,
         payload,
         customer,
         cartValue,
@@ -411,7 +412,7 @@ async function handleCartWebhook(storeId: string, shopDomain: string, payload: a
 // Handle checkout create/update
 // ============================================
 async function handleCheckoutWebhook(storeId: string, shopDomain: string, payload: any) {
-  const token = payload.token || payload.id
+  const token = resolveCartToken(payload)
   const customer = payload.customer || {}
   
   const items = (payload.line_items || []).map((item: any) => ({
@@ -427,14 +428,17 @@ async function handleCheckoutWebhook(storeId: string, shopDomain: string, payloa
   }, 0)
 
   const checkoutUrl = resolveCheckoutUrl(payload, shopDomain)
+  const customerPhone = extractCustomerPhone(payload, customer)
+  const customerEmail = extractCustomerEmail(payload, customer)
+  const customerName = extractCustomerName(customer, payload)
   
   // Upsert abandoned cart
   const { data: existingCart } = await supabaseAdmin
     .from('abandoned_carts')
-    .select('id, status')
+    .select('id, status, customer_phone, message_sent_at')
     .eq('store_id', storeId)
     .eq('shopify_cart_token', token)
-    .single()
+    .maybeSingle()
   
   if (!existingCart) {
     const scheduledAt = new Date(Date.now() + 60 * 60000)
@@ -444,9 +448,9 @@ async function handleCheckoutWebhook(storeId: string, shopDomain: string, payloa
       .insert({
         store_id: storeId,
         shopify_cart_token: token,
-        customer_phone: extractCustomerPhone(payload, customer),
-        customer_email: extractCustomerEmail(payload, customer),
-        customer_name: extractCustomerName(customer, payload),
+        customer_phone: customerPhone,
+        customer_email: customerEmail,
+        customer_name: customerName,
         cart_value: cartValue,
         items,
         checkout_url: checkoutUrl,
@@ -462,9 +466,11 @@ async function handleCheckoutWebhook(storeId: string, shopDomain: string, payloa
     }
 
     if (insertedCart?.id) {
-      await dispatchWhatsAppRecovery({
+      await maybeDispatchWhatsAppRecovery({
         storeId,
         cartId: insertedCart.id,
+        cartStatus: 'pending',
+        messageSentAt: null,
         payload,
         customer,
         cartValue,
@@ -476,19 +482,49 @@ async function handleCheckoutWebhook(storeId: string, shopDomain: string, payloa
     await incrementAnalytics(storeId, 'carts_created')
   } else if (existingCart.status === 'pending') {
     // Keep checkout URL / contact fresh so tracked /r/{id} links stay valid.
+    // If carts/* created a phoneless pending row earlier, this is where the
+    // phone finally arrives — dispatch WhatsApp then.
+    const phoneJustAppeared = !existingCart.customer_phone && Boolean(customerPhone)
+
     await supabaseAdmin
       .from('abandoned_carts')
       .update({
-        customer_phone: extractCustomerPhone(payload, customer),
-        customer_email: extractCustomerEmail(payload, customer),
-        customer_name: extractCustomerName(customer, payload),
+        customer_phone: customerPhone ?? existingCart.customer_phone,
+        customer_email: customerEmail,
+        customer_name: customerName,
         cart_value: cartValue,
         items,
         checkout_url: checkoutUrl,
         updated_at: new Date().toISOString(),
       })
       .eq('id', existingCart.id)
+
+    if (phoneJustAppeared) {
+      await maybeDispatchWhatsAppRecovery({
+        storeId,
+        cartId: existingCart.id,
+        cartStatus: existingCart.status,
+        messageSentAt: existingCart.message_sent_at,
+        payload,
+        customer,
+        cartValue,
+        items,
+        cartToken: token,
+      })
+    }
   }
+}
+
+function resolveCartToken(payload: Record<string, unknown>): string {
+  // Prefer cart_token so checkouts/* updates match carts/* rows. Fall back to
+  // checkout token / id when Shopify omits cart_token.
+  const candidates = [payload.cart_token, payload.token, payload.id, payload.checkout_token]
+  for (const value of candidates) {
+    if (value != null && String(value).trim()) {
+      return String(value).trim()
+    }
+  }
+  return ''
 }
 
 function resolveCheckoutUrl(payload: Record<string, unknown>, shopDomain: string): string {
