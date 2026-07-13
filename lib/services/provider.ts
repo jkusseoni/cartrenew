@@ -78,19 +78,24 @@ export async function sendMessageViaMetaWhatsApp(msg: ProviderMessage): Promise<
 
   const accessToken = cleanEnv(process.env.WHATSAPP_ACCESS_TOKEN)
   const phoneNumberId = cleanEnv(process.env.WHATSAPP_PHONE_NUMBER_ID)
-  const templateName = msg.templateName || cleanEnv(process.env.WHATSAPP_TEMPLATE_NAME)
+  // Only an env-configured, Meta-approved template name may be used here.
+  // Internal DB labels (e.g. cart_recovery_default from messaging.ts) are NOT
+  // WhatsApp Cloud API templates — using them made every Meta fallback fail.
+  const metaTemplateName = cleanEnv(process.env.WHATSAPP_TEMPLATE_NAME)
+  const useApprovedTemplate =
+    Boolean(metaTemplateName) && !isPlaceholderCredential(metaTemplateName)
 
   try {
     const to = sanitizePhoneNumber(msg.to)
     const metaUrl = `https://graph.facebook.com/v20.0/${phoneNumberId}/messages`
 
-    const whatsappPayload = templateName && !isPlaceholderCredential(templateName)
+    const whatsappPayload = useApprovedTemplate
       ? {
           messaging_product: 'whatsapp',
           to,
           type: 'template',
           template: {
-            name: templateName,
+            name: metaTemplateName,
             language: { code: process.env.WHATSAPP_TEMPLATE_LANG || 'en' },
             components: [
               {
