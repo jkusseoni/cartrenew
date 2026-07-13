@@ -413,6 +413,10 @@ async function handleCartWebhook(storeId: string, shopDomain: string, payload: a
 // ============================================
 async function handleCheckoutWebhook(storeId: string, shopDomain: string, payload: any) {
   const token = resolveCartToken(payload)
+  if (!token) {
+    console.warn('Checkout webhook missing token — skipping abandoned-cart processing')
+    return
+  }
   const customer = payload.customer || {}
   
   const items = (payload.line_items || []).map((item: any) => ({
