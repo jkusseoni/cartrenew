@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
     switch (topic) {
       case 'carts/create':
       case 'carts/update':
-        await handleCartWebhook(storeId, payload)
+        await handleCartWebhook(storeId, shopDomain, payload)
         break
 
       case 'carts/delete':
@@ -78,7 +78,7 @@ export async function POST(req: NextRequest) {
       
       case 'checkouts/create':
       case 'checkouts/update':
-        await handleCheckoutWebhook(storeId, payload)
+        await handleCheckoutWebhook(storeId, shopDomain, payload)
         break
       
       case 'orders/create':
@@ -319,7 +319,7 @@ async function dispatchWhatsAppRecovery({
 // ============================================
 // Handle cart create/update
 // ============================================
-async function handleCartWebhook(storeId: string, payload: any) {
+async function handleCartWebhook(storeId: string, shopDomain: string, payload: any) {
   const token = payload.token || payload.id
   const customer = payload.customer || {}
   
@@ -336,6 +336,8 @@ async function handleCartWebhook(storeId: string, payload: any) {
   const cartValue = items.reduce((sum: number, item: any) => {
     return sum + (parseFloat(item.price || 0) * (item.quantity || 1))
   }, 0)
+
+  const checkoutUrl = resolveCheckoutUrl(payload, shopDomain)
   
   // Check if cart already exists
   const { data: existingCart } = await supabaseAdmin
@@ -351,11 +353,12 @@ async function handleCartWebhook(storeId: string, payload: any) {
       await supabaseAdmin
         .from('abandoned_carts')
         .update({
-          customer_phone: customer.phone || null,
-          customer_email: customer.email || payload.email || null,
-          customer_name: `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || null,
+          customer_phone: extractCustomerPhone(payload, customer),
+          customer_email: extractCustomerEmail(payload, customer),
+          customer_name: extractCustomerName(customer, payload),
           cart_value: cartValue,
           items,
+          checkout_url: checkoutUrl,
           updated_at: new Date().toISOString(),
         })
         .eq('id', existingCart.id)
@@ -370,12 +373,12 @@ async function handleCartWebhook(storeId: string, payload: any) {
       .insert({
         store_id: storeId,
         shopify_cart_token: token,
-        customer_phone: customer.phone || null,
-        customer_email: customer.email || payload.email || null,
-        customer_name: `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || null,
+        customer_phone: extractCustomerPhone(payload, customer),
+        customer_email: extractCustomerEmail(payload, customer),
+        customer_name: extractCustomerName(customer, payload),
         cart_value: cartValue,
         items,
-        checkout_url: payload.abandoned_checkout_url || null,
+        checkout_url: checkoutUrl,
         status: 'pending',
         scheduled_message_at: scheduledAt.toISOString(),
       })
@@ -407,7 +410,7 @@ async function handleCartWebhook(storeId: string, payload: any) {
 // ============================================
 // Handle checkout create/update
 // ============================================
-async function handleCheckoutWebhook(storeId: string, payload: any) {
+async function handleCheckoutWebhook(storeId: string, shopDomain: string, payload: any) {
   const token = payload.token || payload.id
   const customer = payload.customer || {}
   
@@ -422,6 +425,8 @@ async function handleCheckoutWebhook(storeId: string, payload: any) {
   const cartValue = items.reduce((sum: number, item: any) => {
     return sum + (parseFloat(item.price || 0) * (item.quantity || 1))
   }, 0)
+
+  const checkoutUrl = resolveCheckoutUrl(payload, shopDomain)
   
   // Upsert abandoned cart
   const { data: existingCart } = await supabaseAdmin
@@ -439,12 +444,12 @@ async function handleCheckoutWebhook(storeId: string, payload: any) {
       .insert({
         store_id: storeId,
         shopify_cart_token: token,
-        customer_phone: customer.phone || null,
-        customer_email: customer.email || payload.email || null,
-        customer_name: `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || null,
+        customer_phone: extractCustomerPhone(payload, customer),
+        customer_email: extractCustomerEmail(payload, customer),
+        customer_name: extractCustomerName(customer, payload),
         cart_value: cartValue,
         items,
-        checkout_url: payload.abandoned_checkout_url || null,
+        checkout_url: checkoutUrl,
         status: 'pending',
         scheduled_message_at: scheduledAt.toISOString(),
       })
@@ -469,7 +474,39 @@ async function handleCheckoutWebhook(storeId: string, payload: any) {
     }
     
     await incrementAnalytics(storeId, 'carts_created')
+  } else if (existingCart.status === 'pending') {
+    // Keep checkout URL / contact fresh so tracked /r/{id} links stay valid.
+    await supabaseAdmin
+      .from('abandoned_carts')
+      .update({
+        customer_phone: extractCustomerPhone(payload, customer),
+        customer_email: extractCustomerEmail(payload, customer),
+        customer_name: extractCustomerName(customer, payload),
+        cart_value: cartValue,
+        items,
+        checkout_url: checkoutUrl,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', existingCart.id)
   }
+}
+
+function resolveCheckoutUrl(payload: Record<string, unknown>, shopDomain: string): string {
+  const candidates = [
+    payload.abandoned_checkout_url,
+    payload.abandoned_url,
+    payload.checkout_url,
+    payload.url,
+  ]
+
+  for (const value of candidates) {
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim()
+    }
+  }
+
+  const host = shopDomain.replace(/^https?:\/\//, '').replace(/\/$/, '')
+  return `https://${host}/cart`
 }
 
 // ============================================

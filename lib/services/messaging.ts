@@ -1,8 +1,4 @@
 import { supabaseAdmin } from '@/lib/supabase'
-import {
-  hasTwilioWhatsAppCredentials,
-  sendTwilioWhatsAppMessage,
-} from '@/lib/services/twilio-whatsapp'
 import { sendMessage } from '@/lib/services/provider'
 import { getTrackedRecoveryUrl } from '@/lib/recovery-link'
 
@@ -155,19 +151,14 @@ export async function triggerWhatsAppRecoveryForCart({
       return { queued: false, sent: false, error: insertError?.message || 'insert_failed' }
     }
 
-    const dispatch = hasTwilioWhatsAppCredentials()
-      ? await sendTwilioWhatsAppMessage(customerPhone, messageBody).then((result) => ({
-          success: result.success,
-          providerId: result.messageSid,
-          error: result.error,
-          provider: 'twilio_whatsapp' as const,
-        }))
-      : await sendMessage({
-          id: messageRow.id,
-          to: customerPhone,
-          body: messageBody,
-          templateName,
-        })
+    // Always route through the provider (Twilio → Meta) so a Twilio outage
+    // can still fall back instead of leaving the message stuck in pending.
+    const dispatch = await sendMessage({
+      id: messageRow.id,
+      to: customerPhone,
+      body: messageBody,
+      templateName,
+    })
 
     if (dispatch.success) {
       await supabaseAdmin

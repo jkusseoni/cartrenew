@@ -15,7 +15,7 @@ node_cron_1.default.schedule("*/15 * * * *", async () => {
         // 1. Find abandoned carts
         const unattendedCarts = await prisma.cart.findMany({
             where: {
-                status: "abandoned",
+                status: "ABANDONED",
                 notified: false,
                 createdAt: {
                     lte: checkTimeLimit,
@@ -38,8 +38,10 @@ node_cron_1.default.schedule("*/15 * * * *", async () => {
             try {
                 await axios_1.default.post("http://localhost:3000/api/whatsapp/send", {
                     customerName: cart.customerName,
-                    phoneNumber: cart.phoneNumber,
-                    cartTotalAmount: cart.totalAmount,
+                    phone: cart.phoneNumber || cart.customerPhone,
+                    phoneNumber: cart.phoneNumber || cart.customerPhone,
+                    checkoutUrl: cart.cartUrl,
+                    abandonedCartUrl: cart.cartUrl,
                     abandonCartUrl: cart.cartUrl,
                 });
                 console.log(`[${new Date().toLocaleTimeString()}] WhatsApp sent to ${cart.phoneNumber}`);

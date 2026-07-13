@@ -36,20 +36,7 @@ const bullMqConnection = connection as unknown as ConnectionOptions;
 // 2. WhatsApp Queue Initialization
 export const whatsappQueue = new Queue('WhatsAppRecovery', { connection: bullMqConnection });
 
-// 3. Helper function: Phone number ko clean aur format karne ke liye (Meta strictly digits expect karta hai country code ke sath)
-function sanitizePhoneNumber(phone: string): string {
-  // Saare non-numeric characters ko remove karein (plus, space, hyphens hatayega)
-  let cleaned = phone.replace(/\D/g, '');
-
-  // Agar phone 10 digits ka hai aur country code missing hai, toh default Indian code '91' lagayein
-  if (cleaned.length === 10) {
-    cleaned = '91' + cleaned;
-  }
-
-  return cleaned;
-}
-
-// 4. Singleton Worker: Background me real-time WhatsApp deliveries handle karne ke liye
+// 3. Singleton Worker: Background me real-time WhatsApp deliveries handle karne ke liye
 if (!globalForRedis.whatsappWorker) {
   globalForRedis.whatsappWorker = new Worker(
     'WhatsAppRecovery',
@@ -57,64 +44,49 @@ if (!globalForRedis.whatsappWorker) {
       const { cartId, phoneNumber, messagePayload } = job.data;
       console.log(`🚀 [BullMQ] Job ${job.id} started for Cart ID: ${cartId}`);
 
-      // Environment variables se credentials fetch karein
-      const WHATSAPP_ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN;
-      const WHATSAPP_PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
-
-      if (!WHATSAPP_ACCESS_TOKEN || !WHATSAPP_PHONE_NUMBER_ID) {
-        console.error("❌ [BullMQ] WhatsApp configuration keys missing hain .env me!");
-        throw new Error("Missing WhatsApp API environment configurations");
-      }
-
-      // Customer number format karein
-      const formattedPhone = sanitizePhoneNumber(phoneNumber);
-      const textMessage = messagePayload.text;
-
-      // Meta WhatsApp Cloud API Endpoint Setup (v20.0 Standard Endpoint)
-      const metaUrl = `https://graph.facebook.com/v20.0/${WHATSAPP_PHONE_NUMBER_ID}/messages`;
-
-      // Meta standard message payload design
-      const whatsappPayload = {
-        messaging_product: 'whatsapp',
-        recipient_type: 'individual',
-        to: formattedPhone,
-        type: 'text',
-        text: {
-          preview_url: true, // Link preview enable karein taaki checkout link mast dikhe
-          body: textMessage,
-        },
-      };
-
       try {
-        // Meta API ko POST request hit karein
-        const response = await fetch(metaUrl, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(whatsappPayload),
-        });
-
-        const result = await response.json();
-
-        // Agar response 200 ya 201 nahi hai toh check karein
-        if (!response.ok) {
-          console.error(`❌ [BullMQ] Meta WhatsApp API error for Job ${job.id}:`, result);
-          throw new Error(result.error?.message || "Meta API request failed");
+        if (!phoneNumber) {
+          throw new Error('WhatsAppRecovery job missing phoneNumber');
         }
 
-        const messageId = result.messages?.[0]?.id;
-        console.log(`📥 [BullMQ] Message successfully dispatched. Meta Message ID: ${messageId}`);
+        const textMessage =
+          typeof messagePayload?.text === 'string'
+            ? messagePayload.text
+            : typeof messagePayload === 'string'
+              ? messagePayload
+              : '';
 
-        // 5. Database me checkout status aur transaction updates sync karein
+        if (!textMessage) {
+          throw new Error('WhatsAppRecovery job missing messagePayload.text');
+        }
+
+        // Prefer Twilio when configured, then Meta Cloud API — same router as messaging.ts.
+        const { sendMessage } = await import('@/lib/services/provider');
+        const result = await sendMessage({
+          id: String(job.id ?? cartId ?? 'whatsapp-recovery'),
+          to: phoneNumber,
+          body: textMessage,
+          templateName:
+            typeof messagePayload?.templateName === 'string'
+              ? messagePayload.templateName
+              : undefined,
+        });
+
+        if (!result.success) {
+          console.error(`❌ [BullMQ] WhatsApp provider error for Job ${job.id}:`, result.error);
+          throw new Error(result.error || 'WhatsApp provider request failed');
+        }
+
+        const messageId = result.providerId;
+        console.log(
+          `📥 [BullMQ] Message dispatched via ${result.provider ?? 'provider'}. ID: ${messageId}`
+        );
+
         if (cartId) {
           await prisma.cart.update({
             where: { id: String(cartId) },
             data: {
-              status: "message_sent", // Status trigger update karein
-              // Agar aapke schema me messageId ya metadata save karne ka custom fields hai:
-              // lastMessageId: messageId,
+              status: 'message_sent',
             },
           });
           console.log(`💾 [Prisma] Cart ${cartId} status successfully updated to 'message_sent'`);
@@ -122,23 +94,21 @@ if (!globalForRedis.whatsappWorker) {
 
         console.log(`✅ [BullMQ] Job ${job.id} finished successfully!`);
       } catch (error: unknown) {
-        console.error(`💥 [BullMQ] Delivery execution failed for job ${job.id}:`, getErrorMessage(error));
-        throw error; // Job throw karein taaki queue automatically exponential delay se retry kar sake
+        console.error(
+          `💥 [BullMQ] Delivery execution failed for job ${job.id}:`,
+          error instanceof Error ? error.message : String(error)
+        );
+        throw error;
       }
     },
     {
       connection: bullMqConnection,
-      // WhatsApp rates limit aur templates stability parameters configures karein
       limiter: {
-        max: 10,       // Max 10 messages push allow honge
-        duration: 1000 // Har 1 second ke phase me rate speed restrict rahegi
-      }
+        max: 10,
+        duration: 1000,
+      },
     }
   );
 }
 
 export const worker = globalForRedis.whatsappWorker;
-
-function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
-}

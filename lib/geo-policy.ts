@@ -64,11 +64,13 @@ const GEO_POLICY_ENTRIES: GeoPolicyEntry[] = [
     region: "APAC",
     countryCode: "91",
     allowWhatsAppOfficial: true,
-    primaryChannel: "WHATSAPP_WEB_LINK",
-    fallbackChannels: ["EMAIL", "SMS"],
-    whatsappPolicy: "WEB_LINK_ONLY",
+    // Official Twilio/Meta WhatsApp must be primary — WEB_LINK_ONLY marked
+    // recovery as "success" without ever delivering a message.
+    primaryChannel: "WHATSAPP_OFFICIAL",
+    fallbackChannels: ["WHATSAPP_WEB_LINK", "EMAIL", "SMS"],
+    whatsappPolicy: "ALLOWED",
     restrictionReason:
-      "Prefer WhatsApp web-link automation for the India-first low-cost recovery loop.",
+      "India-first recovery: send via official WhatsApp, then fall back to web-link / email / SMS.",
   },
   {
     country: "United States and Canada",

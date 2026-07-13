@@ -1,113 +1,281 @@
-import { NextRequest, NextResponse } from 'next/server';
-import Stripe from 'stripe'; // यदि आपके प्रोजेक्ट में इसकी डिपेंडेंसी ऊपर इम्पोर्टेड थी
+import { NextRequest, NextResponse } from 'next/server'
+import { auth } from '@clerk/nextjs/server'
 
-export const dynamic = 'force-dynamic';
-export const runtime = 'nodejs';
+import { getTrackedRecoveryUrl } from '@/lib/recovery-link'
+import { triggerWhatsAppRecoveryForCart } from '@/lib/services/messaging'
+import {
+  formatWhatsAppAddress,
+  hasTwilioWhatsAppCredentials,
+  sendTwilioWhatsAppMessage,
+} from '@/lib/services/twilio-whatsapp'
+import { supabaseAdmin } from '@/lib/supabase'
 
-// 1. मेटा वेबहुक वेरिफिकेशन के लिए GET मेथड (नया जोड़ा गया)
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+
+type SendBody = {
+  cartId?: unknown
+  phone?: unknown
+  phoneNumber?: unknown
+  customerName?: unknown
+  checkoutUrl?: unknown
+  abandonedCartUrl?: unknown
+  cartUrl?: unknown
+  abandonCartUrl?: unknown
+}
+
+/**
+ * GET — Meta WhatsApp webhook verification (hub.challenge handshake).
+ * Prefer /api/whatsapp/webhook for new Meta app configs; kept here for
+ * backwards compatibility with older callback URLs.
+ */
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const mode = searchParams.get('hub.mode');
-    const token = searchParams.get('hub.verify_token');
-    const challenge = searchParams.get('hub.challenge');
+    const { searchParams } = new URL(request.url)
+    const mode = searchParams.get('hub.mode')
+    const token = searchParams.get('hub.verify_token')
+    const challenge = searchParams.get('hub.challenge')
 
     if (mode && token) {
       if (mode === 'subscribe' && token === process.env.WHATSAPP_VERIFY_TOKEN) {
-        // मेटा को केवल चैलेंज की वैल्यू प्लेन टेक्स्ट में लौटानी होती है
-        return new NextResponse(challenge, { status: 200 });
+        return new NextResponse(challenge, { status: 200 })
       }
-      return new NextResponse('Forbidden', { status: 403 });
+      return new NextResponse('Forbidden', { status: 403 })
     }
-    return new NextResponse('Bad Request', { status: 400 });
-  } catch (error: any) {
-    console.error("❌ WhatsApp Webhook GET Verification Error:", error.message);
-    return new NextResponse('Internal Server Error', { status: 500 });
+    return new NextResponse('Bad Request', { status: 400 })
+  } catch (error: unknown) {
+    console.error(
+      '❌ WhatsApp Webhook GET Verification Error:',
+      error instanceof Error ? error.message : error
+    )
+    return new NextResponse('Internal Server Error', { status: 500 })
   }
 }
 
-// 2. आपका पुराना Twilio मैसेज भेजने वाला POST मेथड
-export async function POST(request: Request) {
+/**
+ * POST /api/whatsapp/send
+ *
+ * Two supported shapes (dashboard + pollers historically used different keys):
+ *  1. { cartId } — look up abandoned_carts and dispatch recovery (dashboard "Send WA")
+ *  2. { phone|phoneNumber, customerName, checkoutUrl|abandonedCartUrl|cartUrl|abandonCartUrl }
+ *     — direct Twilio send for scripts / pollers
+ */
+export async function POST(request: NextRequest) {
   try {
-    // 1. Parse request body metrics incoming from client dashboard or automated hooks
-    const body = await request.json();
-    const { phone, customerName, checkoutUrl } = body;
+    const body = (await request.json()) as SendBody
+    const cartId = asNonEmptyString(body.cartId)
 
-    // Standard Validation Check
-    if (!phone || !customerName || !checkoutUrl) {
-      return NextResponse.json({ 
-        success: false, 
-        error: "Missing required tracking parameters (phone, customerName, checkoutUrl)" 
-      }, { status: 400 });
+    if (cartId) {
+      return sendForAbandonedCart(request, cartId)
     }
 
-    // 2. Fetch Twilio environment variables from secure local storage
-    const accountSid = process.env.TWILIO_ACCOUNT_SID;
-    const authToken = process.env.TWILIO_AUTH_TOKEN;
-    const fromWhatsApp = process.env.TWILIO_WHATSAPP_NUMBER || 'whatsapp:+14155238886';
-
-    if (!accountSid || !authToken) {
-      return NextResponse.json({ 
-        success: false, 
-        error: "Core Twilio authentication credentials missing inside secure logs" 
-      }, { status: 500 });
-    }
-
-    // 3. Format phone string to strict Twilio WhatsApp Sandbox/Prod standards (whatsapp:+91...)
-    let formattedTo = phone.trim();
-    if (!formattedTo.startsWith('whatsapp:')) {
-      // Ensure plus symbol mapping exists
-      const cleanPhone = formattedTo.startsWith('+') ? formattedTo : `+${formattedTo}`;
-      formattedTo = `whatsapp:${cleanPhone}`;
-    }
-
-    // 4. Construct high-converting localized marketing recovery body template
-    const messageBody = `Hey ${customerName}, we noticed you left some great items in your cart. No worries, we've saved them for you! Complete your order instantly here to claim priority dispatch: ${checkoutUrl}`;
-
-    // 5. Raw Fetch Request Pipeline to Twilio API Infrastructure nodes
-    const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
-    const base64Auth = Buffer.from(`${accountSid}:${authToken}`).toString('base64');
-
-    const response = await fetch(twilioUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Basic ${base64Auth}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
+    return sendDirectMessage(body)
+  } catch (error: unknown) {
+    console.error(
+      '❌ Send WhatsApp API Route Error:',
+      error instanceof Error ? error.message : error
+    )
+    return NextResponse.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : 'Internal network delivery pipe exception',
       },
-      body: new URLSearchParams({
-        From: fromWhatsApp,
-        To: formattedTo,
-        Body: messageBody,
-      }),
-    });
+      { status: 500 }
+    )
+  }
+}
 
-    // Twilio can return non-JSON bodies on gateway errors — parse defensively.
-    const result = await response.json().catch(() => ({} as Record<string, unknown>));
+async function sendForAbandonedCart(request: NextRequest, cartId: string) {
+  const userId = await resolveUserId()
+  if (!userId) {
+    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+  }
 
-    if (!response.ok) {
-      // 502: the upstream provider failed, not our server.
-      return NextResponse.json(
-        {
-          success: false,
-          error: (result as { message?: string }).message || "Twilio gateway rejected the message delivery request",
-        },
-        { status: 502 }
-      );
-    }
+  const { data: cart, error: cartError } = await supabaseAdmin
+    .from('abandoned_carts')
+    .select(
+      `
+      id,
+      store_id,
+      customer_phone,
+      customer_email,
+      customer_name,
+      cart_value,
+      items,
+      checkout_url,
+      shopify_cart_token,
+      status,
+      store:stores(id, clerk_user_id)
+    `
+    )
+    .eq('id', cartId)
+    .maybeSingle()
 
-    // 6. Return successful dispatch message log logs
+  if (cartError || !cart) {
+    return NextResponse.json({ success: false, error: 'Cart not found' }, { status: 404 })
+  }
+
+  const store = normalizeStore(cart.store)
+  if (!store) {
+    return NextResponse.json({ success: false, error: 'Store not found for cart' }, { status: 404 })
+  }
+
+  const skipOwnershipCheck =
+    process.env.NODE_ENV !== 'production' ||
+    request.headers.get('x-admin-secret') === process.env.ADMIN_PROCESS_SECRET
+
+  if (!skipOwnershipCheck && store.clerk_user_id !== userId && userId !== 'local-dev') {
+    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 403 })
+  }
+
+  if (cart.status !== 'pending') {
+    return NextResponse.json(
+      {
+        success: false,
+        error: `Cart is ${cart.status}, only pending carts can be messaged`,
+      },
+      { status: 409 }
+    )
+  }
+
+  if (!cart.customer_phone) {
+    return NextResponse.json({ success: false, error: 'No phone number' }, { status: 400 })
+  }
+
+  const result = await triggerWhatsAppRecoveryForCart({
+    storeId: cart.store_id,
+    cartId: cart.id,
+    customerPhone: cart.customer_phone,
+    customerName: cart.customer_name,
+    checkoutUrl: cart.checkout_url || getTrackedRecoveryUrl(cart.id),
+    cartValue: Number(cart.cart_value) || 0,
+    items: Array.isArray(cart.items) ? cart.items : [],
+    customerEmail: cart.customer_email,
+    cartToken: cart.shopify_cart_token,
+  })
+
+  if (result.sent) {
     return NextResponse.json({
       success: true,
-      message: "WhatsApp communication node initialized smoothly",
-      messageSid: result.sid,
-      deliveryStatus: result.status
-    });
-
-  } catch (error: any) {
-    console.error("❌ Send WhatsApp API Route Node Collision:", error.message);
-    return NextResponse.json({ 
-      success: false, 
-      error: error.message || "Internal network delivery pipe exception" 
-    }, { status: 500 });
+      message: 'WhatsApp recovery message sent',
+      messageId: result.messageId,
+      messageSid: result.messageId,
+    })
   }
+
+  if (result.queued) {
+    return NextResponse.json(
+      {
+        success: false,
+        queued: true,
+        error: result.error || 'Message queued for retry after provider failure',
+      },
+      { status: 502 }
+    )
+  }
+
+  return NextResponse.json(
+    {
+      success: false,
+      error: result.error || 'Failed to send WhatsApp recovery message',
+    },
+    { status: 500 }
+  )
+}
+
+async function sendDirectMessage(body: SendBody) {
+  const phone = asNonEmptyString(body.phone) || asNonEmptyString(body.phoneNumber)
+  const customerName = asNonEmptyString(body.customerName) || 'there'
+  const checkoutUrl =
+    asNonEmptyString(body.checkoutUrl) ||
+    asNonEmptyString(body.abandonedCartUrl) ||
+    asNonEmptyString(body.cartUrl) ||
+    asNonEmptyString(body.abandonCartUrl)
+
+  if (!phone || !checkoutUrl) {
+    return NextResponse.json(
+      {
+        success: false,
+        error:
+          'Missing required parameters. Provide cartId, or phone/phoneNumber + checkoutUrl (aliases: abandonedCartUrl, cartUrl, abandonCartUrl).',
+      },
+      { status: 400 }
+    )
+  }
+
+  if (!hasTwilioWhatsAppCredentials()) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'Twilio WhatsApp credentials missing or still placeholders',
+      },
+      { status: 500 }
+    )
+  }
+
+  const messageBody = `Hey ${customerName}, we noticed you left some great items in your cart. No worries, we've saved them for you! Complete your order instantly here to claim priority dispatch: ${checkoutUrl}`
+
+  const result = await sendTwilioWhatsAppMessage(phone, messageBody)
+
+  if (!result.success) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: result.error || 'Twilio gateway rejected the message delivery request',
+        to: formatWhatsAppAddress(phone),
+      },
+      { status: 502 }
+    )
+  }
+
+  return NextResponse.json({
+    success: true,
+    message: 'WhatsApp communication node initialized smoothly',
+    messageSid: result.messageSid,
+    deliveryStatus: 'queued',
+  })
+}
+
+async function resolveUserId(): Promise<string | null> {
+  // proxy.ts skips clerkMiddleware in local/dev — auth() can throw there.
+  if (process.env.NODE_ENV !== 'production') {
+    try {
+      const session = await auth()
+      return session.userId || 'local-dev'
+    } catch {
+      return 'local-dev'
+    }
+  }
+
+  try {
+    const session = await auth()
+    return session.userId
+  } catch (authError) {
+    console.warn('[api/whatsapp/send] auth() unavailable:', authError)
+    return null
+  }
+}
+
+function asNonEmptyString(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
+function normalizeStore(
+  store: unknown
+): { id: string; clerk_user_id: string } | null {
+  if (!store) return null
+  if (Array.isArray(store)) {
+    const first = store[0] as { id?: string; clerk_user_id?: string } | undefined
+    if (first?.id && first.clerk_user_id) {
+      return { id: first.id, clerk_user_id: first.clerk_user_id }
+    }
+    return null
+  }
+  const row = store as { id?: string; clerk_user_id?: string }
+  if (row.id && row.clerk_user_id) {
+    return { id: row.id, clerk_user_id: row.clerk_user_id }
+  }
+  return null
 }
