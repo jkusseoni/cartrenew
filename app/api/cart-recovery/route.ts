@@ -16,7 +16,23 @@ type CartProcessResult = {
   reason?: string;
 };
 
+/**
+ * GET /api/cart-recovery — Vercel cron worker (see vercel.json).
+ *
+ * This route does NOT receive Shopify webhook JSON.
+ * Shopify Abandoned Checkout webhooks (checkouts/create|update) must POST to
+ * /api/webhooks/shopify, which writes Supabase `abandoned_carts`.
+ * This cron only reads Prisma `Cart` rows with status=ABANDONED.
+ */
 export async function GET(request: NextRequest) {
+  console.log("⏰ /api/cart-recovery cron HIT (not a Shopify webhook receiver)", {
+    method: request.method,
+    url: request.url,
+    hasAuthorization: Boolean(request.headers.get("authorization")),
+    shopifyTopic: request.headers.get("x-shopify-topic"),
+    note: "Shopify checkouts/update payloads belong on POST /api/webhooks/shopify",
+  });
+
   // 1. सिक्योरिटी (Cron Secret) को वापस चालू करें
   const unauthorizedResponse = authorizeCronRequest(request);
   if (unauthorizedResponse) {
@@ -41,6 +57,11 @@ export async function GET(request: NextRequest) {
       },
       select: { id: true },
       take: MAX_CARTS_PER_RUN,
+    });
+
+    console.log("🗂️ /api/cart-recovery Prisma abandoned carts found:", {
+      count: abandonedCarts.length,
+      cartIds: abandonedCarts.map((cart) => cart.id),
     });
 
     for (const cart of abandonedCarts) {
@@ -152,4 +173,36 @@ function authorizeCronRequest(request: NextRequest) {
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Something went wrong";
+}
+
+/**
+ * If Shopify (or a test client) POSTs here by mistake, log the payload so we can
+ * see it — then point them at the real webhook route.
+ */
+export async function POST(request: NextRequest) {
+  const rawBody = await request.text();
+  let parsed: unknown = null;
+  try {
+    parsed = rawBody ? JSON.parse(rawBody) : null;
+  } catch {
+    parsed = null;
+  }
+
+  console.log("⚠️ POST /api/cart-recovery received — this is NOT the Shopify webhook endpoint", {
+    topic: request.headers.get("x-shopify-topic"),
+    shop: request.headers.get("x-shopify-shop-domain"),
+    bodyLength: rawBody.length,
+    rawBody,
+    parsedPayload: parsed,
+    correctEndpoint: "POST /api/webhooks/shopify",
+  });
+
+  return NextResponse.json(
+    {
+      success: false,
+      error:
+        "This endpoint is a cron worker (GET). Send Shopify checkouts/update webhooks to POST /api/webhooks/shopify.",
+    },
+    { status: 405 }
+  );
 }

@@ -1,4 +1,6 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+#
+# Iframe-based App Home: application_url is the embedded dashboard entry point.
 
 client_id = "b0d8dbf013b051fc9ba20c1c5df304ca"
 name = "CartRenew Public"
@@ -12,20 +14,32 @@ scopes = "read_checkouts,read_orders,write_orders"
 [auth]
 redirect_urls = [
   "https://www.cartrenew.com/api/auth/shopify/callback",
-  "https://www.cartrenew.com/api/shopify/callback"
+  "https://www.cartrenew.com/api/shopify/callback",
+  "https://www.cartrenew.com/api/shopify/billing/callback"
 ]
 
 [webhooks]
 api_version = "2026-07"
 
-# application_url includes /shopify, so Shopify delivers compliance webhooks to:
-#   https://www.cartrenew.com/shopify/api/webhooks
-#   https://www.cartrenew.com/shopify/api/webhooks/customers/data_request
-#   https://www.cartrenew.com/shopify/api/webhooks/customers/redact
-#   https://www.cartrenew.com/shopify/api/webhooks/shop/redact
+# HTTP only — no pubsub:// or EventBridge ARNs.
+# Absolute https:// URIs avoid application_url (/shopify) path-prefix confusion.
+
+[[webhooks.subscriptions]]
+topics = [
+  "checkouts/create",
+  "checkouts/update",
+  "carts/create",
+  "carts/update",
+  "orders/create",
+  "orders/paid",
+  "app/uninstalled",
+  "app_subscriptions/update"
+]
+uri = "https://www.cartrenew.com/api/webhooks/shopify"
+
 [[webhooks.subscriptions]]
 compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]
-uri = "/api/webhooks"
+uri = "https://www.cartrenew.com/api/webhooks"
 
 [build]
 automatically_update_urls_on_dev = true
