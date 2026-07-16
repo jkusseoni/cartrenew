@@ -18,6 +18,11 @@ export interface Database {
           clerk_user_id: string
           whatsapp_phone_id: string | null
           whatsapp_access_token: string | null
+          billing_plan: string | null
+          billing_status: string | null
+          shopify_subscription_id: string | null
+          billing_trial_ends_at: string | null
+          billing_current_period_end: string | null
           created_at: string
           updated_at: string
         }
@@ -29,6 +34,11 @@ export interface Database {
           clerk_user_id: string
           whatsapp_phone_id?: string | null
           whatsapp_access_token?: string | null
+          billing_plan?: string | null
+          billing_status?: string | null
+          shopify_subscription_id?: string | null
+          billing_trial_ends_at?: string | null
+          billing_current_period_end?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -40,6 +50,11 @@ export interface Database {
           clerk_user_id?: string
           whatsapp_phone_id?: string | null
           whatsapp_access_token?: string | null
+          billing_plan?: string | null
+          billing_status?: string | null
+          shopify_subscription_id?: string | null
+          billing_trial_ends_at?: string | null
+          billing_current_period_end?: string | null
           created_at?: string
           updated_at?: string
         }

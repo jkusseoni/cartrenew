@@ -42,10 +42,9 @@ export default function Hero() {
 
       <main className="relative z-10 mx-auto flex w-full max-w-7xl flex-col gap-12 px-4 pt-20 sm:px-6 md:pt-24 lg:px-8">
         <div className="max-w-4xl space-y-6 text-left">
-          <div className="inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-4 py-1.5 text-[10px] font-black uppercase tracking-widest text-blue-600 shadow-sm">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-blue-500" />
+          <p className="max-w-xl text-sm font-black uppercase tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-indigo-500 to-emerald-600 sm:text-base">
             {t("badge")}
-          </div>
+          </p>
 
           <h1 className="text-4xl font-black leading-[1.1] tracking-tight text-slate-900 sm:text-5xl md:text-6xl lg:text-7xl">
             {t("headline", { percent: "68%" })}

@@ -4,151 +4,21 @@ import { redirect } from "next/navigation";
 
 import { AppBridgeHead } from "@/components/shopify/AppBridgeHead";
 import { ShopifyEmbedGuard } from "@/components/shopify/ShopifyEmbedGuard";
+import ShopifyBillingPlans from "@/components/shopify/ShopifyBillingPlans";
+import {
+  loadShopifyStoreDashboard,
+  type ShopifyCartRow,
+  type ShopifyStoreRow,
+  type ShopifyDashboardMetrics,
+} from "@/lib/shopify/dashboard";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getShopifyClientId, isValidShopDomain, verifyOAuthHmac } from "@/lib/shopify/config";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
-type CartRow = {
-  id: string;
-  customer_name: string | null;
-  customer_phone: string | null;
-  cart_value: number;
-  status: string;
-  created_at: string;
-};
-
-type StoreRow = { id: string; shopify_domain: string };
-
-type DashboardMetrics = {
-  trackedCarts: number;
-  recovered: number;
-  recoveredValue: number;
-};
-
-type DashboardData = {
-  store: StoreRow | null;
-  carts: CartRow[];
-  metrics: DashboardMetrics;
-};
-
-function describeSupabaseError(error: unknown): string {
-  if (!error) return "";
-  if (error instanceof Error) return error.message;
-  if (typeof error === "object") {
-    const row = error as Record<string, unknown>;
-    return [row.message, row.code, row.details, row.hint]
-      .filter((value): value is string => typeof value === "string" && value.length > 0)
-      .join(" · ");
-  }
-  return String(error);
-}
-
-async function ensureDevStore(shop: string): Promise<StoreRow | null> {
-  const { data, error } = await supabaseAdmin
-    .from("stores")
-    .upsert(
-      {
-        shopify_domain: shop,
-        shopify_access_token: "dev-offline-token-placeholder",
-        clerk_user_id: `sandbox_${shop.replace(/[^a-z0-9]/gi, "_")}`,
-      },
-      { onConflict: "shopify_domain" }
-    )
-    .select("id, shopify_domain")
-    .maybeSingle();
-
-  if (error) {
-    const message = describeSupabaseError(error);
-    if (message) {
-      console.warn(`[CartRenew] Could not auto-provision store for ${shop}: ${message}`);
-    }
-    return null;
-  }
-
-  return (data as StoreRow | null) ?? null;
-}
-
-async function loadStoreDashboard(shop: string, options?: { autoProvision?: boolean }): Promise<DashboardData> {
-  const empty: DashboardData = {
-    store: null,
-    carts: [],
-    metrics: { trackedCarts: 0, recovered: 0, recoveredValue: 0 },
-  };
-
-  try {
-    let { data: store, error: storeError } = await supabaseAdmin
-      .from("stores")
-      .select("id, shopify_domain")
-      .eq("shopify_domain", shop)
-      .maybeSingle();
-
-    if (storeError) {
-      const message = describeSupabaseError(storeError);
-      if (message) {
-        console.warn(`[CartRenew] Supabase store lookup failed for ${shop}: ${message}`);
-      }
-      return empty;
-    }
-
-    if (!store && options?.autoProvision) {
-      store = await ensureDevStore(shop);
-    }
-
-    if (!store) {
-      return empty;
-    }
-
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - 30);
-    const startDateStr = startDate.toISOString().split("T")[0];
-
-    const [cartsRes, analyticsRes] = await Promise.all([
-      supabaseAdmin
-        .from("abandoned_carts")
-        .select("id, customer_name, customer_phone, cart_value, status, created_at")
-        .eq("store_id", store.id)
-        .order("created_at", { ascending: false })
-        .limit(20),
-      supabaseAdmin
-        .from("analytics_daily")
-        .select("carts_created, carts_recovered, revenue_recovered")
-        .eq("store_id", store.id)
-        .gte("date", startDateStr),
-    ]);
-
-    const carts = (cartsRes.data ?? []) as CartRow[];
-    const analytics = analyticsRes.data ?? [];
-
-    const metrics = analytics.reduce<DashboardMetrics>(
-      (acc, row) => ({
-        trackedCarts: acc.trackedCarts + (row.carts_created ?? 0),
-        recovered: acc.recovered + (row.carts_recovered ?? 0),
-        recoveredValue: acc.recoveredValue + Number(row.revenue_recovered ?? 0),
-      }),
-      { trackedCarts: 0, recovered: 0, recoveredValue: 0 }
-    );
-
-    // Fall back to live cart rows when analytics_daily has not been populated yet.
-    if (metrics.trackedCarts === 0 && carts.length > 0) {
-      const recoveredCarts = carts.filter((c) => c.status === "recovered");
-      metrics.trackedCarts = carts.length;
-      metrics.recovered = recoveredCarts.length;
-      metrics.recoveredValue = recoveredCarts.reduce(
-        (sum, c) => sum + (Number(c.cart_value) || 0),
-        0
-      );
-    }
-
-    return { store: store as StoreRow, carts, metrics };
-  } catch (err) {
-    const message = describeSupabaseError(err);
-    if (message) {
-      console.warn(`[CartRenew] Dashboard load failed for ${shop}: ${message}`);
-    }
-    return empty;
-  }
-}
+type CartRow = ShopifyCartRow;
+type StoreRow = ShopifyStoreRow;
+type DashboardMetrics = ShopifyDashboardMetrics;
 
 function toQueryString(params: SearchParams): URLSearchParams {
   const search = new URLSearchParams();
@@ -236,6 +106,13 @@ function Console({
           Connected store: <span className="text-[#00DF89] font-mono">{store.shopify_domain}</span>
         </p>
       </div>
+
+      <ShopifyBillingPlans
+        shop={store.shopify_domain}
+        host={host}
+        currentPlan={store.billing_plan}
+        billingStatus={store.billing_status}
+      />
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
         <div className="bg-neutral-950/40 border border-neutral-900 p-5 rounded-2xl">
@@ -331,7 +208,7 @@ export default async function ShopifyEntryPage({
 
   // Local dev: bypass HMAC, host, OAuth, and iframe gates — load live Supabase data.
   if (isDev) {
-    const dashboard = await loadStoreDashboard(shop, { autoProvision: true });
+    const dashboard = await loadShopifyStoreDashboard(shop, { autoProvision: true });
 
     return (
       <Console
@@ -403,7 +280,7 @@ export default async function ShopifyEntryPage({
     redirect(`/api/auth/shopify?shop=${encodeURIComponent(shop)}`);
   }
 
-  const dashboard = await loadStoreDashboard(shop);
+  const dashboard = await loadShopifyStoreDashboard(shop);
 
   return (
     <Console
