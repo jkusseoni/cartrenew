@@ -5,13 +5,13 @@ export const maxDuration = 60;
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-const ABANDONED_STATUS = "ABANDONED";
+const PENDING_STATUS = "pending";
 const MAX_CARTS_PER_RUN = 25;
 
 type CartProcessResult = {
   cartId: string;
   status: "processed" | "skipped" | "failed";
-  message?: string;
+  messageSid?: string | null;
   error?: string;
   reason?: string;
 };
@@ -22,7 +22,7 @@ type CartProcessResult = {
  * This route does NOT receive Shopify webhook JSON.
  * Shopify Abandoned Checkout webhooks (checkouts/create|update) must POST to
  * /api/webhooks/shopify, which writes Supabase `abandoned_carts`.
- * This cron only reads Prisma `Cart` rows with status=ABANDONED.
+ * This cron reads those rows with status=pending and sends Twilio WhatsApp.
  */
 export async function GET(request: NextRequest) {
   console.log("⏰ /api/cart-recovery cron HIT (not a Shopify webhook receiver)", {
@@ -33,7 +33,6 @@ export async function GET(request: NextRequest) {
     note: "Shopify checkouts/update payloads belong on POST /api/webhooks/shopify",
   });
 
-  // 1. सिक्योरिटी (Cron Secret) को वापस चालू करें
   const unauthorizedResponse = authorizeCronRequest(request);
   if (unauthorizedResponse) {
     return unauthorizedResponse;
@@ -43,38 +42,66 @@ export async function GET(request: NextRequest) {
   const results: CartProcessResult[] = [];
 
   try {
-    const { prisma } = await import("@/lib/prisma");
-    const { generateCartRecoveryMessageForCartId } = await import("@/lib/cartRecoveryMessage");
+    const { supabaseAdmin } = await import("@/lib/supabase");
+    const {
+      sendTwilioWhatsAppMessage,
+      hasTwilioWhatsAppCredentials,
+      getTwilioContentSid,
+      buildRecoveryWhatsAppBody,
+    } = await import("@/lib/services/twilio-whatsapp");
+    const { getTrackedRecoveryUrl } = await import("@/lib/recovery-link");
 
-    // डेटाबेस से सही तरीके से लेट (let) वेरिएबल्स में कार्ट्स निकालें
-    const abandonedCarts = await prisma.cart.findMany({ 
-      where: {
-        status: ABANDONED_STATUS,
-        notified: false,
-      },
-      orderBy: {
-        updatedAt: "asc",
-      },
-      select: { id: true },
-      take: MAX_CARTS_PER_RUN,
-    });
-
-    console.log("🗂️ /api/cart-recovery Prisma abandoned carts found:", {
-      count: abandonedCarts.length,
-      cartIds: abandonedCarts.map((cart) => cart.id),
-    });
-
-    for (const cart of abandonedCarts) {
-      const claimed = await prisma.cart.updateMany({
-        where: {
-          id: cart.id,
-          status: ABANDONED_STATUS,
-          notified: false,
+    if (!hasTwilioWhatsAppCredentials()) {
+      console.error("❌ Twilio WhatsApp credentials missing — aborting cart-recovery run");
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Twilio WhatsApp credentials missing or placeholder",
+          durationMs: Date.now() - startedAt,
         },
-        data: { notified: true },
-      });
+        { status: 500 }
+      );
+    }
 
-      if (claimed.count === 0) {
+    const { data: abandonedCarts, error: fetchError } = await supabaseAdmin
+      .from("abandoned_carts")
+      .select(
+        "id, store_id, customer_phone, customer_name, cart_value, items, checkout_url, status"
+      )
+      .eq("status", PENDING_STATUS)
+      .order("updated_at", { ascending: true })
+      .limit(MAX_CARTS_PER_RUN);
+
+    if (fetchError) {
+      throw new Error(fetchError.message);
+    }
+
+    const pendingCarts = abandonedCarts ?? [];
+
+    console.log("🗂️ /api/cart-recovery pending abandoned carts found:", {
+      count: pendingCarts.length,
+      cartIds: pendingCarts.map((cart) => cart.id),
+    });
+
+    for (const cart of pendingCarts) {
+      // Atomic claim: only one cron run processes a given pending cart.
+      const { data: claimedRows, error: claimError } = await supabaseAdmin
+        .from("abandoned_carts")
+        .update({ status: "messaged" })
+        .eq("id", cart.id)
+        .eq("status", PENDING_STATUS)
+        .select("id");
+
+      if (claimError) {
+        results.push({
+          cartId: cart.id,
+          status: "failed",
+          error: claimError.message,
+        });
+        continue;
+      }
+
+      if (!claimedRows?.length) {
         results.push({
           cartId: cart.id,
           status: "skipped",
@@ -83,23 +110,89 @@ export async function GET(request: NextRequest) {
         continue;
       }
 
+      const customerPhone = cart.customer_phone?.trim();
+      if (!customerPhone) {
+        // Release claim so a later update with a phone can retry.
+        await supabaseAdmin
+          .from("abandoned_carts")
+          .update({ status: PENDING_STATUS })
+          .eq("id", cart.id);
+
+        results.push({
+          cartId: cart.id,
+          status: "skipped",
+          reason: "missing_phone",
+        });
+        continue;
+      }
+
       try {
-        // AI message generate karega aur lib/bullmq.ts ke whatsappQueue me job push karega
-        const recovery = await generateCartRecoveryMessageForCartId(cart.id);
+        const customerName = cart.customer_name?.trim() || "there";
+        const checkoutUrl =
+          (typeof cart.checkout_url === "string" && cart.checkout_url) ||
+          getTrackedRecoveryUrl(cart.id);
+        const contentSid = getTwilioContentSid();
+        const messageBody = buildRecoveryWhatsAppBody({
+          customerName,
+          cartValue: Number(cart.cart_value) || 0,
+          recoveryLink: checkoutUrl,
+          items: Array.isArray(cart.items) ? cart.items : [],
+        });
+
+        const sendPayload = contentSid
+          ? {
+              contentSid,
+              contentVariables: {
+                "1": customerName,
+                "2": checkoutUrl,
+              },
+            }
+          : { body: messageBody };
+
+        console.log("📤 Calling sendTwilioWhatsAppMessage for pending cart", {
+          cartId: cart.id,
+          to: customerPhone,
+          status: cart.status,
+          hasContentSid: Boolean(contentSid),
+        });
+
+        const sendResult = await sendTwilioWhatsAppMessage(customerPhone, sendPayload);
+
+        if (!sendResult.success) {
+          await supabaseAdmin
+            .from("abandoned_carts")
+            .update({ status: PENDING_STATUS })
+            .eq("id", cart.id);
+
+          results.push({
+            cartId: cart.id,
+            status: "failed",
+            error: sendResult.error || "twilio_send_failed",
+          });
+          continue;
+        }
+
+        await supabaseAdmin
+          .from("abandoned_carts")
+          .update({
+            status: "messaged",
+            message_sent_at: new Date().toISOString(),
+          })
+          .eq("id", cart.id);
 
         results.push({
           cartId: cart.id,
           status: "processed",
-          message: recovery.message,
+          messageSid: sendResult.messageSid ?? null,
         });
       } catch (error) {
-        console.error(`Failed to queue job for cart ${cart.id}:`, error);
+        console.error(`Failed to send Twilio WhatsApp for cart ${cart.id}:`, error);
 
         try {
-          await prisma.cart.update({
-            where: { id: cart.id },
-            data: { notified: false },
-          });
+          await supabaseAdmin
+            .from("abandoned_carts")
+            .update({ status: PENDING_STATUS })
+            .eq("id", cart.id);
         } catch (releaseError) {
           console.error(`Failed to release claim for cart ${cart.id}:`, releaseError);
         }
@@ -117,8 +210,8 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: failed === 0,
-      message: processed > 0 ? "Jobs successfully queued!" : "No abandoned carts to process",
-      scanned: abandonedCarts.length,
+      message: processed > 0 ? "WhatsApp recovery messages sent" : "No pending carts to process",
+      scanned: pendingCarts.length,
       processed,
       skipped: results.filter((result) => result.status === "skipped").length,
       failed,
