@@ -313,6 +313,14 @@ function extractCustomerName(customer: Record<string, unknown>, payload: Record<
     if (billingName) return billingName
   }
 
+  const shipping = payload.shipping_address as Record<string, unknown> | undefined
+  if (shipping) {
+    const shippingFirst = typeof shipping.first_name === 'string' ? shipping.first_name : ''
+    const shippingLast = typeof shipping.last_name === 'string' ? shipping.last_name : ''
+    const shippingName = `${shippingFirst} ${shippingLast}`.trim()
+    if (shippingName) return shippingName
+  }
+
   return null
 }
 
@@ -508,9 +516,9 @@ async function handleCartWebhook(storeId: string, payload: any) {
       await supabaseAdmin
         .from('abandoned_carts')
         .update({
-          customer_phone: customer.phone || null,
-          customer_email: customer.email || payload.email || null,
-          customer_name: `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || null,
+          customer_phone: extractCustomerPhone(payload, customer),
+          customer_email: extractCustomerEmail(payload, customer),
+          customer_name: extractCustomerName(customer, payload),
           cart_value: cartValue,
           items,
           updated_at: new Date().toISOString(),
@@ -527,9 +535,9 @@ async function handleCartWebhook(storeId: string, payload: any) {
       .insert({
         store_id: storeId,
         shopify_cart_token: token,
-        customer_phone: customer.phone || null,
-        customer_email: customer.email || payload.email || null,
-        customer_name: `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || null,
+        customer_phone: extractCustomerPhone(payload, customer),
+        customer_email: extractCustomerEmail(payload, customer),
+        customer_name: extractCustomerName(customer, payload),
         cart_value: cartValue,
         items,
         checkout_url: payload.abandoned_checkout_url || null,
@@ -567,7 +575,11 @@ async function handleCartWebhook(storeId: string, payload: any) {
 async function handleCheckoutWebhook(storeId: string, payload: any) {
   const token = payload.token || payload.id
   const customer = payload.customer || {}
-  
+
+  const customerPhone = extractCustomerPhone(payload, customer)
+  const customerEmail = extractCustomerEmail(payload, customer)
+  const customerName = extractCustomerName(customer, payload)
+
   const items = (payload.line_items || []).map((item: any) => ({
     title: item.title,
     quantity: item.quantity,
@@ -575,30 +587,29 @@ async function handleCheckoutWebhook(storeId: string, payload: any) {
     variant_id: item.variant_id,
     product_id: item.product_id,
   }))
-  
+
   const cartValue = items.reduce((sum: number, item: any) => {
     return sum + (parseFloat(item.price || 0) * (item.quantity || 1))
   }, 0)
-  
-  // Upsert abandoned cart
+
   const { data: existingCart } = await supabaseAdmin
     .from('abandoned_carts')
-    .select('id, status')
+    .select('id, status, customer_phone')
     .eq('store_id', storeId)
     .eq('shopify_cart_token', token)
     .single()
-  
+
   if (!existingCart) {
     const scheduledAt = new Date(Date.now() + 60 * 60000)
-    
+
     const { data: insertedCart, error: insertError } = await supabaseAdmin
       .from('abandoned_carts')
       .insert({
         store_id: storeId,
         shopify_cart_token: token,
-        customer_phone: customer.phone || null,
-        customer_email: customer.email || payload.email || null,
-        customer_name: `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || null,
+        customer_phone: customerPhone,
+        customer_email: customerEmail,
+        customer_name: customerName,
         cart_value: cartValue,
         items,
         checkout_url: payload.abandoned_checkout_url || null,
@@ -624,8 +635,57 @@ async function handleCheckoutWebhook(storeId: string, payload: any) {
         cartToken: token,
       })
     }
-    
+
     await incrementAnalytics(storeId, 'carts_created')
+    return
+  }
+
+  // checkouts/update — merge contact info into the existing cart. If the phone
+  // just arrived for the first time, dispatch the WhatsApp recovery immediately
+  // instead of waiting for the cron.
+  const updates: Record<string, any> = {
+    cart_value: cartValue,
+    items,
+    updated_at: new Date().toISOString(),
+  }
+  if (customerPhone) updates.customer_phone = customerPhone
+  if (customerEmail) updates.customer_email = customerEmail
+  if (customerName) updates.customer_name = customerName
+  if (payload.abandoned_checkout_url) {
+    updates.checkout_url = payload.abandoned_checkout_url
+  }
+
+  const { error: updateError } = await supabaseAdmin
+    .from('abandoned_carts')
+    .update(updates)
+    .eq('id', existingCart.id)
+
+  if (updateError) {
+    console.error('Failed to update abandoned checkout', updateError)
+    return
+  }
+
+  console.log('♻️ Checkout update merged into existing cart', {
+    cartId: existingCart.id,
+    phone: customerPhone ?? existingCart.customer_phone ?? null,
+    email: customerEmail ?? null,
+    name: customerName ?? null,
+  })
+
+  const phoneJustArrived = Boolean(customerPhone && !existingCart.customer_phone)
+  if (phoneJustArrived && existingCart.status === 'pending') {
+    console.log(
+      `📲 Phone just arrived for cart ${existingCart.id} — dispatching WhatsApp recovery now`
+    )
+    await dispatchWhatsAppRecovery({
+      storeId,
+      cartId: existingCart.id,
+      payload,
+      customer,
+      cartValue,
+      items,
+      cartToken: token,
+    })
   }
 }
 
