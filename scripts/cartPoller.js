@@ -60,13 +60,15 @@ cron.schedule("*/15 * * * *", async () => {
 
         console.log("WhatsApp successfully triggered to " + targetPhone);
 
-        // Update tracking grid status internally to absolute true flag
+        // Ensure standard accurate dynamic system parameters pass variables cleanly
         await prisma.cart.update({
           where: { id: cart.id },
-          data: { 
+          data: {
             notified: true,
-            status: "AI_SENT" // Match database telemetry timeline view states
-          }
+            status: "AI_SENT",
+            // Prisma Cart has recoveryMessageAt (not message_sent_at — that is Supabase abandoned_carts)
+            recoveryMessageAt: new Date(), // Strict actual live execution time
+          },
         });
 
       } catch (apiErr) {
