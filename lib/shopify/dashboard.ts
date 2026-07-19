@@ -131,6 +131,20 @@ export async function loadShopifyStoreDashboard(
     );
 
     if (metrics.trackedCarts === 0 && carts.length > 0) {
+      console.log(
+        "🔍 DEBUG CARTS DATA:",
+        JSON.stringify(
+          carts.map((c) => ({
+            status: c.status,
+            val1: (c as { cartValue?: number }).cartValue,
+            val2: c.cart_value,
+            raw: c,
+          })),
+          null,
+          2
+        )
+      );
+
       // Case-insensitive: accepts "recovered" | "RECOVERED" | mixed
       const recoveredCarts = carts.filter(
         (cart) => cart.status && cart.status.toLowerCase() === "recovered"
