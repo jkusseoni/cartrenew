@@ -48,6 +48,7 @@ export async function GET(request: NextRequest) {
       hasTwilioWhatsAppCredentials,
       getTwilioContentSid,
       buildRecoveryWhatsAppBody,
+      isValidWhatsAppPhone,
     } = await import("@/lib/services/twilio-whatsapp");
     const { getTrackedRecoveryUrl } = await import("@/lib/recovery-link");
 
@@ -122,6 +123,27 @@ export async function GET(request: NextRequest) {
           cartId: cart.id,
           status: "skipped",
           reason: "missing_phone",
+        });
+        continue;
+      }
+
+      // Shopify often stores placeholder phones like +15551212 — Twilio 21211.
+      // Mark lost so cron does not infinite-retry invalid numbers.
+      if (!isValidWhatsAppPhone(customerPhone)) {
+        console.warn("⚠️ Skipping cart with invalid/placeholder phone", {
+          cartId: cart.id,
+          to: customerPhone,
+        });
+
+        await supabaseAdmin
+          .from("abandoned_carts")
+          .update({ status: "lost", updated_at: new Date().toISOString() })
+          .eq("id", cart.id);
+
+        results.push({
+          cartId: cart.id,
+          status: "skipped",
+          reason: "invalid_phone",
         });
         continue;
       }

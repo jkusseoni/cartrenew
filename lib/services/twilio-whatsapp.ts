@@ -78,8 +78,8 @@ function buildTwilioApiHostname(edge?: string, region?: string): string {
   return parts.filter(Boolean).join('.')
 }
 
-/** Normalize customer phone to Twilio WhatsApp address (whatsapp:+E164). */
-export function formatWhatsAppAddress(phone: string): string {
+/** Strip to digits and apply the same local→E.164 rules as formatWhatsAppAddress. */
+export function normalizePhoneDigits(phone: string): string {
   let digits = phone.trim()
   if (digits.startsWith('whatsapp:')) {
     digits = digits.slice('whatsapp:'.length)
@@ -88,7 +88,25 @@ export function formatWhatsAppAddress(phone: string): string {
   if (digits.length === 10) {
     digits = `91${digits}`
   }
-  return `whatsapp:+${digits}`
+  return digits
+}
+
+/**
+ * True when the number looks like a real E.164 mobile Twilio can dial.
+ * Rejects short/placeholder Shopify fakes like +15551212 (Twilio error 21211).
+ */
+export function isValidWhatsAppPhone(phone: string): boolean {
+  const digits = normalizePhoneDigits(phone)
+  if (digits.length < 10 || digits.length > 15) return false
+  // US fictional 555 exchange / classic Shopify sample numbers
+  if (/^1?555\d{0,7}$/.test(digits)) return false
+  if (digits.includes('5551212')) return false
+  return true
+}
+
+/** Normalize customer phone to Twilio WhatsApp address (whatsapp:+E164). */
+export function formatWhatsAppAddress(phone: string): string {
+  return `whatsapp:+${normalizePhoneDigits(phone)}`
 }
 
 export function getTwilioWhatsAppFrom(): string {
@@ -232,6 +250,19 @@ export async function sendTwilioWhatsAppMessage(
 
   const options: SendTwilioWhatsAppOptions =
     typeof bodyOrOptions === 'string' ? { body: bodyOrOptions } : bodyOrOptions
+
+  if (!isValidWhatsAppPhone(toPhone)) {
+    console.error('❌ Invalid WhatsApp destination phone (Twilio would return 21211):', {
+      raw: toPhone,
+      normalized: normalizePhoneDigits(toPhone),
+    })
+    return {
+      success: false,
+      error: `Invalid phone number: ${toPhone}`,
+      to: toPhone,
+      apiHost: diagnostics.apiHost,
+    }
+  }
 
   const contentSid = cleanEnv(options.contentSid) || getTwilioContentSid()
   const contentVariables = options.contentVariables

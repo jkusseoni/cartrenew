@@ -122,16 +122,20 @@ export default function CartRow({ cart }: CartRowProps) {
         <button
           type="button"
           onClick={handleAIRecovery}
-          disabled={loading || status === 'RECOVERED'}
+          disabled={loading || status.toUpperCase() === 'RECOVERED'}
           className={`rounded-lg px-4 py-2 text-xs font-bold uppercase transition-all shadow-sm ${
-            status === 'RECOVERED'
+            status.toUpperCase() === 'RECOVERED'
               ? 'cursor-not-allowed bg-gray-100 text-gray-400'
               : loading
                 ? 'cursor-wait bg-indigo-200 text-indigo-700'
                 : 'bg-indigo-600 text-white hover:bg-indigo-700 active:scale-95'
           }`}
         >
-          {loading ? 'Processing...' : status === 'PENDING' ? 'Open WhatsApp' : 'Send AI Recovery'}
+          {loading
+            ? 'Processing...'
+            : status.toUpperCase() === 'PENDING'
+              ? 'Open WhatsApp'
+              : 'Send AI Recovery'}
         </button>
       </td>
     </tr>

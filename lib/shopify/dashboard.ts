@@ -131,11 +131,16 @@ export async function loadShopifyStoreDashboard(
     );
 
     if (metrics.trackedCarts === 0 && carts.length > 0) {
-      const recoveredCarts = carts.filter((cart) => cart.status === "recovered");
+      // Case-insensitive: accepts "recovered" | "RECOVERED" | mixed
+      const recoveredCarts = carts.filter(
+        (cart) => cart.status && cart.status.toLowerCase() === "recovered"
+      );
       metrics.trackedCarts = carts.length;
       metrics.recovered = recoveredCarts.length;
+      // Revenue mapping — support cart_value (Supabase) and cartValue (camelCase)
       metrics.recoveredValue = recoveredCarts.reduce(
-        (sum, cart) => sum + (Number(cart.cart_value) || 0),
+        (sum, cart) =>
+          sum + Number((cart as { cartValue?: number }).cartValue ?? cart.cart_value ?? 0),
         0
       );
     }

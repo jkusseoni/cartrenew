@@ -95,8 +95,8 @@ function Console({
   host?: string;
   embedded: boolean;
 }) {
-  const pending = rows.filter((c) => c.status === "pending");
-  const recoveredRows = rows.filter((c) => c.status === "recovered");
+  const pending = rows.filter((c) => c.status && c.status.toLowerCase() === "pending");
+  const recoveredRows = rows.filter((c) => c.status && c.status.toLowerCase() === "recovered");
 
   return (
     <Shell host={host} embedded={embedded}>
@@ -160,9 +160,9 @@ function Console({
                   <td className="p-4 text-right">
                     <span
                       className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                        cart.status === "recovered"
+                        cart.status && cart.status.toLowerCase() === "recovered"
                           ? "bg-emerald-950/40 text-[#00DF89] border border-emerald-900/30"
-                          : cart.status === "pending"
+                          : cart.status && cart.status.toLowerCase() === "pending"
                           ? "bg-amber-950/40 text-amber-400 border border-amber-900/30"
                           : "bg-neutral-900 text-neutral-500 border border-neutral-800"
                       }`}
