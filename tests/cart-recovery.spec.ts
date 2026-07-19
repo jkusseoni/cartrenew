@@ -8,7 +8,7 @@ test.describe('CartRenew Automated Handshake Flow', () => {
     await page.goto(`/${DEFAULT_LOCALE}`);
 
     // 2. Hero + navigation copy from the current landing page
-    await expect(page.getByText('Shopify Native Recovery System')).toBeVisible();
+    await expect(page.locator('h1')).toContainText('CartRenew Public');
     await expect(
       page.getByRole('heading', {
         name: /Recover\s+68% of Abandoned Carts/i,
