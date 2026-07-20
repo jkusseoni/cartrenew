@@ -20,8 +20,9 @@ export async function GET(request: NextRequest) {
       return new NextResponse('Forbidden', { status: 403 });
     }
     return new NextResponse('Bad Request', { status: 400 });
-  } catch (error: any) {
-    console.error("❌ WhatsApp Webhook GET Verification Error:", error.message);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Unknown verification error";
+    console.error("❌ WhatsApp Webhook GET Verification Error:", message);
     return new NextResponse('Internal Server Error', { status: 500 });
   }
 }
@@ -110,11 +111,12 @@ export async function POST(request: Request) {
       deliveryStatus: result.status
     });
 
-  } catch (error: any) {
-    console.error("❌ Send WhatsApp API Route Node Collision Error:", error.message);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Internal network delivery pipe exception";
+    console.error("❌ Send WhatsApp API Route Node Collision Error:", message);
     return NextResponse.json({ 
       success: false, 
-      error: error.message || "Internal network delivery pipe exception" 
+      error: message
     }, { status: 500 });
   }
 }
