@@ -5,9 +5,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getTrackedRecoveryUrl } from '@/lib/recovery-link'
 import { supabaseAdmin } from '@/lib/supabase'
 import {
+  buildAbandonedCartContentVariables,
   buildRecoveryWhatsAppBody,
-  getTwilioContentSid,
+  getTwilioAbandonedCartContentSid,
   hasTwilioWhatsAppCredentials,
+  resolveRecoveryCustomerName,
   sendTwilioWhatsAppMessage,
 } from '@/lib/services/twilio-whatsapp'
 import {
@@ -350,7 +352,7 @@ async function dispatchWhatsAppRecovery({
 
   // Prefer shipping_address.phone, then customer.phone (see extractCustomerPhone).
   const customerPhone = extractCustomerPhone(payload, customer)
-  const customerName = extractCustomerName(customer, payload) || 'there'
+  const customerName = resolveRecoveryCustomerName(extractCustomerName(customer, payload))
   const currency =
     (typeof payload.currency === 'string' && payload.currency) ||
     (typeof payload.presentment_currency === 'string' && payload.presentment_currency) ||
@@ -359,11 +361,20 @@ async function dispatchWhatsAppRecovery({
   const checkoutUrl =
     (typeof payload.abandoned_checkout_url === 'string' && payload.abandoned_checkout_url) ||
     recoveryLink
-  const contentSid = getTwilioContentSid()
-  const contentVariables = {
-    '1': customerName,
-    '2': checkoutUrl,
-  }
+  const contentSid = getTwilioAbandonedCartContentSid()
+  const contentVariables = buildAbandonedCartContentVariables({
+    customerName,
+    checkoutUrl,
+    itemSummary: Array.isArray(items)
+      ? items
+          .slice(0, 3)
+          .map((item) => {
+            const row = item as { title?: string; quantity?: number }
+            return `${row.title || 'item'} x${row.quantity || 1}`
+          })
+          .join(', ') || 'saved cart items'
+      : 'saved cart items',
+  })
   const messageBody = buildRecoveryWhatsAppBody({
     customerName,
     cartValue,
@@ -389,7 +400,7 @@ async function dispatchWhatsAppRecovery({
 
   if (!contentSid) {
     console.error(
-      `TWILIO_CONTENT_SID missing — cannot send Content template for cart ${cartId}. Set it in .env to the ContentSid you tested in the Twilio Sandbox.`
+      `TWILIO_ABANDONED_CART_CONTENT_SID (or TWILIO_CONTENT_SID) missing — cannot send Abandoned Cart Content template for cart ${cartId}. Set the dedicated abandoned-cart ContentSid in env (not the appointment reminder template).`
     )
     return
   }

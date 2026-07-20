@@ -46,8 +46,10 @@ export async function GET(request: NextRequest) {
     const {
       sendTwilioWhatsAppMessage,
       hasTwilioWhatsAppCredentials,
-      getTwilioContentSid,
+      getTwilioAbandonedCartContentSid,
+      buildAbandonedCartContentVariables,
       buildRecoveryWhatsAppBody,
+      resolveRecoveryCustomerName,
       isValidWhatsAppPhone,
     } = await import("@/lib/services/twilio-whatsapp");
     const { getTrackedRecoveryUrl } = await import("@/lib/recovery-link");
@@ -149,11 +151,25 @@ export async function GET(request: NextRequest) {
       }
 
       try {
-        const customerName = cart.customer_name?.trim() || "there";
+        const customerName = resolveRecoveryCustomerName(cart.customer_name);
         const checkoutUrl =
           (typeof cart.checkout_url === "string" && cart.checkout_url) ||
           getTrackedRecoveryUrl(cart.id);
-        const contentSid = getTwilioContentSid();
+        const contentSid = getTwilioAbandonedCartContentSid();
+        const itemSummary = Array.isArray(cart.items)
+          ? cart.items
+              .slice(0, 3)
+              .map((item: unknown) => {
+                const row = item as { title?: string; quantity?: number };
+                return `${row.title || "item"} x${row.quantity || 1}`;
+              })
+              .join(", ") || "saved cart items"
+          : "saved cart items";
+        const contentVariables = buildAbandonedCartContentVariables({
+          customerName,
+          checkoutUrl,
+          itemSummary,
+        });
         const messageBody = buildRecoveryWhatsAppBody({
           customerName,
           cartValue: Number(cart.cart_value) || 0,
@@ -164,10 +180,7 @@ export async function GET(request: NextRequest) {
         const sendPayload = contentSid
           ? {
               contentSid,
-              contentVariables: {
-                "1": customerName,
-                "2": checkoutUrl,
-              },
+              contentVariables,
             }
           : { body: messageBody };
 
@@ -175,6 +188,8 @@ export async function GET(request: NextRequest) {
           cartId: cart.id,
           to: customerPhone,
           status: cart.status,
+          contentSid: contentSid || null,
+          contentVariables,
           hasContentSid: Boolean(contentSid),
         });
 

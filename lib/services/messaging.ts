@@ -1,6 +1,9 @@
 import { supabaseAdmin } from '@/lib/supabase'
 import {
+  buildAbandonedCartContentVariables,
+  getTwilioAbandonedCartContentSid,
   hasTwilioWhatsAppCredentials,
+  resolveRecoveryCustomerName,
   sendTwilioWhatsAppMessage,
 } from '@/lib/services/twilio-whatsapp'
 import { sendMessage } from '@/lib/services/provider'
@@ -126,7 +129,7 @@ export async function triggerWhatsAppRecoveryForCart({
   try {
     const { messageBody, templateName } = await buildRecoveryMessageBody({
       storeId,
-      customerName,
+      customerName: resolveRecoveryCustomerName(customerName),
       checkoutUrl: getTrackedRecoveryUrl(cartId),
       cartValue,
       items,
@@ -135,13 +138,21 @@ export async function triggerWhatsAppRecoveryForCart({
       cartToken,
     })
 
+    const trackedCheckoutUrl = getTrackedRecoveryUrl(cartId)
+    const safeName = resolveRecoveryCustomerName(customerName)
+    const contentSid = getTwilioAbandonedCartContentSid()
+    const contentVariables = buildAbandonedCartContentVariables({
+      customerName: safeName,
+      checkoutUrl: trackedCheckoutUrl,
+    })
+
     const { data: messageRow, error: insertError } = await supabaseAdmin
       .from('messages')
       .insert({
         cart_id: cartId,
         store_id: storeId,
         phone: customerPhone,
-        template_name: templateName,
+        template_name: contentSid || templateName,
         body: messageBody,
         status: 'queued',
         attempt_count: 0,
@@ -155,13 +166,30 @@ export async function triggerWhatsAppRecoveryForCart({
       return { queued: false, sent: false, error: insertError?.message || 'insert_failed' }
     }
 
+    console.log('📤 triggerWhatsAppRecoveryForCart Twilio payload', {
+      cartId,
+      to: customerPhone,
+      contentSid: contentSid || null,
+      contentVariables,
+    })
+
     const dispatch = hasTwilioWhatsAppCredentials()
-      ? await sendTwilioWhatsAppMessage(customerPhone, messageBody).then((result) => ({
-          success: result.success,
-          providerId: result.messageSid,
-          error: result.error,
-          provider: 'twilio_whatsapp' as const,
-        }))
+      ? contentSid
+        ? await sendTwilioWhatsAppMessage(customerPhone, {
+            contentSid,
+            contentVariables,
+          }).then((result) => ({
+            success: result.success,
+            providerId: result.messageSid,
+            error: result.error,
+            provider: 'twilio_whatsapp' as const,
+          }))
+        : await sendTwilioWhatsAppMessage(customerPhone, messageBody).then((result) => ({
+            success: result.success,
+            providerId: result.messageSid,
+            error: result.error,
+            provider: 'twilio_whatsapp' as const,
+          }))
       : await sendMessage({
           id: messageRow.id,
           to: customerPhone,

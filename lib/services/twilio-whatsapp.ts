@@ -46,9 +46,11 @@ export function getTwilioCredentialDiagnostics() {
   const accountSid = cleanEnv(process.env.TWILIO_ACCOUNT_SID)
   const authToken = cleanEnv(process.env.TWILIO_AUTH_TOKEN)
   const fromNumber = cleanEnv(process.env.TWILIO_WHATSAPP_NUMBER)
+  const abandonedCartContentSid = cleanEnv(process.env.TWILIO_ABANDONED_CART_CONTENT_SID)
   const contentSid = cleanEnv(process.env.TWILIO_CONTENT_SID)
   const edge = cleanEnv(process.env.TWILIO_EDGE)
   const region = cleanEnv(process.env.TWILIO_REGION)
+  const resolvedContentSid = getTwilioAbandonedCartContentSid()
 
   return {
     TWILIO_ACCOUNT_SID: accountSid
@@ -60,9 +62,16 @@ export function getTwilioCredentialDiagnostics() {
     TWILIO_WHATSAPP_NUMBER: fromNumber
       ? { present: true, value: fromNumber }
       : { present: false },
+    TWILIO_ABANDONED_CART_CONTENT_SID: abandonedCartContentSid
+      ? { present: true, prefix: abandonedCartContentSid.slice(0, 4), length: abandonedCartContentSid.length }
+      : { present: false },
     TWILIO_CONTENT_SID: contentSid
       ? { present: true, prefix: contentSid.slice(0, 4), length: contentSid.length }
       : { present: false },
+    resolvedAbandonedCartContentSid: resolvedContentSid
+      ? { present: true, prefix: resolvedContentSid.slice(0, 4), length: resolvedContentSid.length }
+      : { present: false },
+    TWILIO_SANDBOX_TEMPLATE_MODE: getTwilioSandboxTemplateMode(),
     TWILIO_EDGE: edge || null,
     TWILIO_REGION: region || null,
     timeoutMs: TWILIO_REQUEST_TIMEOUT_MS,
@@ -147,8 +156,102 @@ export type SendTwilioWhatsAppOptions = {
   contentVariables?: Record<string, string>
 }
 
+/**
+ * Prefer the dedicated Abandoned Cart Content template SID.
+ * Falls back to TWILIO_CONTENT_SID for backwards compatibility.
+ *
+ * Sandbox note: custom abandoned-cart templates are NOT allowed in WhatsApp Sandbox.
+ * Use TWILIO_SANDBOX_TEMPLATE_MODE=appointment|order to map variables onto the
+ * pre-approved sandbox templates until a production WhatsApp sender is approved.
+ */
+export function getTwilioAbandonedCartContentSid(): string {
+  return (
+    cleanEnv(process.env.TWILIO_ABANDONED_CART_CONTENT_SID) ||
+    cleanEnv(process.env.TWILIO_CONTENT_SID)
+  )
+}
+
+/** @deprecated Prefer getTwilioAbandonedCartContentSid for cart recovery. */
 export function getTwilioContentSid(): string {
-  return cleanEnv(process.env.TWILIO_CONTENT_SID)
+  return getTwilioAbandonedCartContentSid()
+}
+
+/** Normalize customer name for WhatsApp templates — Guest/missing → friendly fallback. */
+export function resolveRecoveryCustomerName(name?: string | null): string {
+  const trimmed = name?.trim()
+  if (!trimmed) return 'there'
+  if (/^(guest|unknown|n\/?a|null|undefined)$/i.test(trimmed)) return 'there'
+  return trimmed
+}
+
+export type TwilioSandboxTemplateMode = 'appointment' | 'order' | 'custom'
+
+/**
+ * Which pre-approved Sandbox template variable layout to use.
+ * - appointment: "Your appointment is coming up on {{1}} at {{2}}"
+ * - order: "Your {{1}} order of {{2}} has shipped and should be delivered on {{3}}. Details: {{4}}"
+ * - custom: {{1}}=name, {{2}}=checkout link (production abandoned-cart template)
+ */
+export function getTwilioSandboxTemplateMode(): TwilioSandboxTemplateMode {
+  const mode = cleanEnv(process.env.TWILIO_SANDBOX_TEMPLATE_MODE).toLowerCase()
+  if (mode === 'order' || mode === 'appointment' || mode === 'custom') {
+    return mode
+  }
+  // Default: appointment — matches the usual Sandbox ContentSid already in many .env files
+  return 'appointment'
+}
+
+/**
+ * Content template variables for cart recovery, shaped for the active template mode.
+ *
+ * Appointment (Sandbox default):
+ *   {{1}} = "today (cart for {name})"
+ *   {{2}} = checkout / recovery link
+ *   → "Your appointment is coming up on today (cart for Rahul) at https://…"
+ *
+ * Order (better Sandbox fit — switch ContentSid to Order Notifications):
+ *   {{1}} = brand/store, {{2}} = item summary, {{3}} = timing hint, {{4}} = link
+ *
+ * Custom (production abandoned-cart template):
+ *   {{1}} = customer name, {{2}} = checkout link
+ */
+export function buildAbandonedCartContentVariables({
+  customerName,
+  checkoutUrl,
+  storeName,
+  itemSummary,
+}: {
+  customerName?: string | null
+  checkoutUrl: string
+  storeName?: string | null
+  itemSummary?: string | null
+}): Record<string, string> {
+  const name = resolveRecoveryCustomerName(customerName)
+  const brand = storeName?.trim() || 'CartRenew'
+  const items = itemSummary?.trim() || 'saved cart items'
+  const mode = getTwilioSandboxTemplateMode()
+
+  if (mode === 'order') {
+    return {
+      '1': brand,
+      '2': items,
+      '3': 'today if you complete checkout',
+      '4': checkoutUrl,
+    }
+  }
+
+  if (mode === 'custom') {
+    return {
+      '1': name,
+      '2': checkoutUrl,
+    }
+  }
+
+  // appointment (default sandbox)
+  return {
+    '1': `today (cart for ${name})`,
+    '2': checkoutUrl,
+  }
 }
 
 function serializeNetworkError(err: unknown): Record<string, unknown> {
@@ -264,7 +367,7 @@ export async function sendTwilioWhatsAppMessage(
     }
   }
 
-  const contentSid = cleanEnv(options.contentSid) || getTwilioContentSid()
+  const contentSid = cleanEnv(options.contentSid) || getTwilioAbandonedCartContentSid()
   const contentVariables = options.contentVariables
   const body = options.body
   const to = formatWhatsAppAddress(toPhone)
@@ -299,16 +402,20 @@ export async function sendTwilioWhatsAppMessage(
     createParams.body = body
   }
 
-  console.log('🌐 Twilio Messages API request', {
+  const requestPayload = {
     endpoint: `https://${apiHost}/2010-04-01/Accounts/{AccountSid}/Messages.json`,
     apiHost,
     timeoutMs: TWILIO_REQUEST_TIMEOUT_MS,
     from,
     to,
     contentSid: contentSid || null,
+    contentVariables: contentVariables ?? null,
     hasBody: Boolean(body),
+    bodyPreview: body ? body.slice(0, 120) : null,
     sandboxFrom: from.includes('14155238886'),
-  })
+  }
+
+  console.log('🌐 Twilio Messages API request payload:', JSON.stringify(requestPayload, null, 2))
 
   try {
     const message = await client.messages.create(createParams)
@@ -316,18 +423,26 @@ export async function sendTwilioWhatsAppMessage(
 
     // Dedicated line for Twilio Console lookup: Monitor → Logs → Messaging → search SID
     console.log(`📌 Twilio message_sid: ${messageSid}`)
-    console.log('✅ Twilio Messages API response', {
-      message_sid: messageSid,
-      status: message.status,
-      to: message.to,
-      from: message.from,
-      errorCode: message.errorCode ?? null,
-      errorMessage: message.errorMessage ?? null,
-      apiHost,
-      consoleUrl: messageSid
-        ? `https://console.twilio.com/us1/monitor/logs/sms/${messageSid}`
-        : null,
-    })
+    console.log(
+      '✅ Twilio Messages API response:',
+      JSON.stringify(
+        {
+          message_sid: messageSid,
+          status: message.status,
+          to: message.to,
+          from: message.from,
+          errorCode: message.errorCode ?? null,
+          errorMessage: message.errorMessage ?? null,
+          contentSid: contentSid || null,
+          apiHost,
+          consoleUrl: messageSid
+            ? `https://console.twilio.com/us1/monitor/logs/sms/${messageSid}`
+            : null,
+        },
+        null,
+        2
+      )
+    )
 
     return {
       success: true,
@@ -340,6 +455,7 @@ export async function sendTwilioWhatsAppMessage(
   } catch (err: unknown) {
     const details = serializeNetworkError(err)
     console.error('❌ Twilio Messages API connection/send failed — full error:', details)
+    console.error('❌ Twilio failed request payload was:', JSON.stringify(requestPayload, null, 2))
     if (err instanceof Error && err.stack) {
       console.error('❌ Twilio error stack:\n', err.stack)
     }
@@ -381,7 +497,7 @@ export function buildRecoveryWhatsAppBody({
     : ''
 
   const formattedValue = formatCartValue(cartValue, currency)
-  const greeting = customerName?.trim() || 'there'
+  const greeting = resolveRecoveryCustomerName(customerName)
 
   return [
     `Hi ${greeting}! 👋`,
