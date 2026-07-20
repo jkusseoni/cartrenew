@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+import { requireAdmin } from '@/lib/api-auth';
+
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
@@ -26,6 +28,11 @@ export async function GET(request: NextRequest) {
 
 // 2. Upgraded Twilio Engine Trigger Handler (POST Method)
 export async function POST(request: Request) {
+  const unauthorized = await requireAdmin(request);
+  if (unauthorized) {
+    return unauthorized;
+  }
+
   try {
     const body = await request.json();
     

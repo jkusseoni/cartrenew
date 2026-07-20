@@ -53,12 +53,18 @@ const checkAbandonedCartsNow = async () => {
       console.log("TARGET: " + targetPhone + " | AMOUNT: Rs. " + cart.totalAmount);
 
       try {
-        await axios.post("http://localhost:3000/api/whatsapp/send", {
-          customerName: cart.customerName || "Customer",
-          phoneNumber: targetPhone,
-          cartTotalAmount: cart.totalAmount,
-          abandonedCartUrl: cart.cartUrl,
-        });
+        await axios.post(
+          "http://localhost:3000/api/whatsapp/send",
+          {
+            customerName: cart.customerName || "Customer",
+            phoneNumber: targetPhone,
+            cartTotalAmount: cart.totalAmount,
+            abandonedCartUrl: cart.cartUrl,
+          },
+          process.env.ADMIN_PROCESS_SECRET
+            ? { headers: { "x-admin-secret": process.env.ADMIN_PROCESS_SECRET } }
+            : undefined
+        );
 
         console.log("WhatsApp successfully triggered to " + targetPhone);
 
