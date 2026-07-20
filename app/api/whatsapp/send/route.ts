@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+import { requireAdmin } from '@/lib/api-auth';
+
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
@@ -18,14 +20,19 @@ export async function GET(request: NextRequest) {
       return new NextResponse('Forbidden', { status: 403 });
     }
     return new NextResponse('Bad Request', { status: 400 });
-  } catch (error: any) {
-    console.error("❌ WhatsApp Webhook GET Verification Error:", error.message);
+  } catch (error: unknown) {
+    console.error("❌ WhatsApp Webhook GET Verification Error:", getErrorMessage(error));
     return new NextResponse('Internal Server Error', { status: 500 });
   }
 }
 
 // 2. Upgraded Twilio Engine Trigger Handler (POST Method)
 export async function POST(request: Request) {
+  const unauthorized = await requireAdmin(request);
+  if (unauthorized) {
+    return unauthorized;
+  }
+
   try {
     const body = await request.json();
     
@@ -105,11 +112,16 @@ export async function POST(request: Request) {
       deliveryStatus: result.status
     });
 
-  } catch (error: any) {
-    console.error("❌ Send WhatsApp API Route Node Collision Error:", error.message);
+  } catch (error: unknown) {
+    const errorMessage = getErrorMessage(error);
+    console.error("❌ Send WhatsApp API Route Node Collision Error:", errorMessage);
     return NextResponse.json({ 
       success: false, 
-      error: error.message || "Internal network delivery pipe exception" 
+      error: errorMessage || "Internal network delivery pipe exception"
     }, { status: 500 });
   }
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
