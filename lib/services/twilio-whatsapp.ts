@@ -204,7 +204,7 @@ export function getTwilioSandboxTemplateMode(): TwilioSandboxTemplateMode {
 /**
  * Content template variables for cart recovery, shaped for the active template mode.
  *
- * Appointment (Sandbox default):
+ * Appointment (Sandbox Option A — default):
  *   {{1}} = "today (cart for {name})"
  *   {{2}} = checkout / recovery link
  *   → "Your appointment is coming up on today (cart for Rahul) at https://…"
@@ -215,26 +215,54 @@ export function getTwilioSandboxTemplateMode(): TwilioSandboxTemplateMode {
  * Custom (production abandoned-cart template):
  *   {{1}} = customer name, {{2}} = checkout link
  */
+export function formatAbandonedCartItemSummary(items?: unknown[] | null): string {
+  if (!Array.isArray(items) || items.length === 0) return 'saved cart items'
+  const summary = items
+    .slice(0, 3)
+    .map((item) => {
+      const row = item as { title?: string; name?: string; quantity?: number }
+      return `${row.title || row.name || 'item'} x${row.quantity || 1}`
+    })
+    .join(', ')
+  return summary || 'saved cart items'
+}
+
+/** Human-readable preview of how the Sandbox/Content template will render. */
+export function previewAbandonedCartTemplateMessage(
+  contentVariables: Record<string, string>,
+  mode: TwilioSandboxTemplateMode = getTwilioSandboxTemplateMode()
+): string {
+  if (mode === 'order') {
+    return `Your ${contentVariables['1'] || 'CartRenew'} order of ${contentVariables['2'] || 'saved cart items'} has shipped and should be delivered on ${contentVariables['3'] || 'today if you complete checkout'}. Details: ${contentVariables['4'] || ''}`
+  }
+  if (mode === 'custom') {
+    return `Hi ${contentVariables['1'] || 'there'} — complete your cart: ${contentVariables['2'] || ''}`
+  }
+  return `Your appointment is coming up on ${contentVariables['1'] || 'today'} at ${contentVariables['2'] || ''}`
+}
+
 export function buildAbandonedCartContentVariables({
   customerName,
   checkoutUrl,
   storeName,
   itemSummary,
+  items,
 }: {
   customerName?: string | null
   checkoutUrl: string
   storeName?: string | null
   itemSummary?: string | null
+  items?: unknown[] | null
 }): Record<string, string> {
   const name = resolveRecoveryCustomerName(customerName)
   const brand = storeName?.trim() || 'CartRenew'
-  const items = itemSummary?.trim() || 'saved cart items'
+  const itemsText = itemSummary?.trim() || formatAbandonedCartItemSummary(items)
   const mode = getTwilioSandboxTemplateMode()
 
   if (mode === 'order') {
     return {
       '1': brand,
-      '2': items,
+      '2': itemsText,
       '3': 'today if you complete checkout',
       '4': checkoutUrl,
     }
@@ -247,7 +275,7 @@ export function buildAbandonedCartContentVariables({
     }
   }
 
-  // appointment (default sandbox)
+  // Option A — appointment (default sandbox fallback)
   return {
     '1': `today (cart for ${name})`,
     '2': checkoutUrl,
@@ -410,6 +438,10 @@ export async function sendTwilioWhatsAppMessage(
     to,
     contentSid: contentSid || null,
     contentVariables: contentVariables ?? null,
+    sandboxTemplateMode: getTwilioSandboxTemplateMode(),
+    renderedPreview: contentVariables
+      ? previewAbandonedCartTemplateMessage(contentVariables)
+      : null,
     hasBody: Boolean(body),
     bodyPreview: body ? body.slice(0, 120) : null,
     sandboxFrom: from.includes('14155238886'),

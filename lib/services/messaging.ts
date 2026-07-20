@@ -144,6 +144,7 @@ export async function triggerWhatsAppRecoveryForCart({
     const contentVariables = buildAbandonedCartContentVariables({
       customerName: safeName,
       checkoutUrl: trackedCheckoutUrl,
+      items,
     })
 
     const { data: messageRow, error: insertError } = await supabaseAdmin

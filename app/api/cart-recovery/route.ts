@@ -156,19 +156,10 @@ export async function GET(request: NextRequest) {
           (typeof cart.checkout_url === "string" && cart.checkout_url) ||
           getTrackedRecoveryUrl(cart.id);
         const contentSid = getTwilioAbandonedCartContentSid();
-        const itemSummary = Array.isArray(cart.items)
-          ? cart.items
-              .slice(0, 3)
-              .map((item: unknown) => {
-                const row = item as { title?: string; quantity?: number };
-                return `${row.title || "item"} x${row.quantity || 1}`;
-              })
-              .join(", ") || "saved cart items"
-          : "saved cart items";
         const contentVariables = buildAbandonedCartContentVariables({
           customerName,
           checkoutUrl,
-          itemSummary,
+          items: Array.isArray(cart.items) ? cart.items : [],
         });
         const messageBody = buildRecoveryWhatsAppBody({
           customerName,

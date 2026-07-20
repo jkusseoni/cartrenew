@@ -3,6 +3,7 @@ import {
   buildAbandonedCartContentVariables,
   buildRecoveryWhatsAppBody,
   getTwilioAbandonedCartContentSid,
+  getTwilioSandboxTemplateMode,
   hasTwilioWhatsAppCredentials,
   resolveRecoveryCustomerName,
   sendTwilioWhatsAppMessage,
@@ -68,11 +69,14 @@ export async function POST(request: Request) {
     const contentVariables = buildAbandonedCartContentVariables({
       customerName,
       checkoutUrl,
+      itemSummary: body.itemSummary || body.itemsSummary || undefined,
+      items: Array.isArray(body.items) ? body.items : undefined,
     })
     const messageBody = buildRecoveryWhatsAppBody({
       customerName,
       cartValue,
       recoveryLink: checkoutUrl,
+      items: Array.isArray(body.items) ? body.items : undefined,
     })
 
     console.log('📤 /api/whatsapp/send abandoned-cart payload', {
@@ -81,6 +85,7 @@ export async function POST(request: Request) {
       checkoutUrl,
       contentSid: contentSid || null,
       contentVariables,
+      sandboxTemplateMode: getTwilioSandboxTemplateMode(),
     })
 
     const sendResult = contentSid
