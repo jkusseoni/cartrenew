@@ -6,7 +6,8 @@ import crypto from "crypto";
  * Reads the canonical env names first, falling back to the legacy names so
  * existing routes keep working regardless of which set is populated:
  *   - Client ID:     NEXT_PUBLIC_SHOPIFY_CLIENT_ID  -> SHOPIFY_API_KEY -> NEXT_PUBLIC_SHOPIFY_APP_API_KEY
- *   - Client Secret: SHOPIFY_CLIENT_SECRET          -> SHOPIFY_API_SECRET -> SHOPIFY_APP_API_SECRET
+ *   - Client Secret: SHOPIFY_CLIENT_SECRET -> SHOPIFY_API_SECRET -> SHOPIFY_APP_API_SECRET
+ *                    (webhook HMAC must use the app API secret Shopify signs with)
  *   - App URL:       SHOPIFY_APP_URL                -> NEXT_PUBLIC_APP_URL
  */
 
@@ -30,6 +31,31 @@ export function getShopifyClientSecret(): string {
       process.env.SHOPIFY_API_SECRET ||
       process.env.SHOPIFY_APP_API_SECRET
   );
+}
+
+/**
+ * Secret Shopify uses to sign webhook HMAC (X-Shopify-Hmac-SHA256).
+ * Prefer SHOPIFY_API_SECRET explicitly — do not use SHOPIFY_WEBHOOK_SECRET.
+ */
+export function getShopifyWebhookSecret(): string {
+  return clean(
+    process.env.SHOPIFY_API_SECRET ||
+      process.env.SHOPIFY_CLIENT_SECRET ||
+      process.env.SHOPIFY_APP_API_SECRET
+  );
+}
+
+/** Which env key supplied the webhook HMAC secret (never logs the value). */
+export function getShopifyWebhookSecretSource(): string | null {
+  if (clean(process.env.SHOPIFY_API_SECRET)) return "SHOPIFY_API_SECRET";
+  if (clean(process.env.SHOPIFY_CLIENT_SECRET)) return "SHOPIFY_CLIENT_SECRET";
+  if (clean(process.env.SHOPIFY_APP_API_SECRET)) return "SHOPIFY_APP_API_SECRET";
+  return null;
+}
+
+/** @deprecated Use getShopifyWebhookSecretSource for webhook HMAC diagnostics. */
+export function getShopifyClientSecretSource(): string | null {
+  return getShopifyWebhookSecretSource();
 }
 
 export function getShopifyAppUrl(): string {
@@ -74,6 +100,46 @@ export function verifyOAuthHmac(
   return timingSafeEqual(generated, hmac, "hex");
 }
 
+export type WebhookHmacVerifyResult = {
+  ok: boolean;
+  reason?:
+    | "missing_secret"
+    | "missing_hmac_header"
+    | "hmac_mismatch";
+  secretSource?: string | null;
+};
+
+/**
+ * Verify an incoming webhook payload against the `X-Shopify-Hmac-SHA256`
+ * header (base64 digest over the raw request body), using SHOPIFY_API_SECRET.
+ */
+export function verifyWebhookHmacDetailed(
+  rawBody: string,
+  hmacHeader: string | null | undefined,
+  secret: string = getShopifyWebhookSecret()
+): WebhookHmacVerifyResult {
+  const secretSource = getShopifyWebhookSecretSource();
+  const normalizedHmac = clean(hmacHeader);
+
+  if (!secret) {
+    return { ok: false, reason: "missing_secret", secretSource };
+  }
+  if (!normalizedHmac) {
+    return { ok: false, reason: "missing_hmac_header", secretSource };
+  }
+
+  const generated = crypto
+    .createHmac("sha256", secret)
+    .update(rawBody, "utf8")
+    .digest("base64");
+
+  if (!timingSafeEqual(generated, normalizedHmac, "base64")) {
+    return { ok: false, reason: "hmac_mismatch", secretSource };
+  }
+
+  return { ok: true, secretSource };
+}
+
 /**
  * Verify an incoming webhook payload against the `X-Shopify-Hmac-SHA256`
  * header (base64 digest over the raw request body).
@@ -81,17 +147,9 @@ export function verifyOAuthHmac(
 export function verifyWebhookHmac(
   rawBody: string,
   hmacHeader: string | null | undefined,
-  secret: string = getShopifyClientSecret()
+  secret: string = getShopifyWebhookSecret()
 ): boolean {
-  const normalizedHmac = clean(hmacHeader);
-  if (!secret || !normalizedHmac) return false;
-
-  const generated = crypto
-    .createHmac("sha256", secret)
-    .update(rawBody, "utf8")
-    .digest("base64");
-
-  return timingSafeEqual(generated, normalizedHmac, "base64");
+  return verifyWebhookHmacDetailed(rawBody, hmacHeader, secret).ok;
 }
 
 export function hasShopifyClientSecret(): boolean {

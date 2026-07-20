@@ -18,7 +18,35 @@ function normalizeSupabaseUrl(value?: string): string {
   }
 }
 
-const SUPABASE_URL = normalizeSupabaseUrl(process.env.NEXT_PUBLIC_SUPABASE_URL);
+/**
+ * Derive https://<project-ref>.supabase.co from DATABASE_URL when the dedicated
+ * NEXT_PUBLIC_SUPABASE_URL var is missing (common local-dev gap).
+ */
+function deriveSupabaseUrlFromDatabaseUrl(databaseUrl?: string): string {
+  const raw = normalizeEnvVar(databaseUrl);
+  if (!raw) return '';
+
+  try {
+    const parsed = new URL(raw.replace(/^postgresql:/i, 'http:'));
+    const userRef = parsed.username.match(/^postgres\.([a-z0-9]+)$/i)?.[1];
+    if (userRef) {
+      return `https://${userRef}.supabase.co`;
+    }
+
+    const hostRef = parsed.hostname.match(/^db\.([a-z0-9]+)\.supabase\.co$/i)?.[1];
+    if (hostRef) {
+      return `https://${hostRef}.supabase.co`;
+    }
+  } catch {
+    return '';
+  }
+
+  return '';
+}
+
+const SUPABASE_URL =
+  normalizeSupabaseUrl(process.env.NEXT_PUBLIC_SUPABASE_URL) ||
+  deriveSupabaseUrlFromDatabaseUrl(process.env.DATABASE_URL);
 const SUPABASE_SERVICE_ROLE_KEY = normalizeEnvVar(process.env.SUPABASE_SERVICE_ROLE_KEY);
 
 // Placeholders keep the module importable at build time, but a misconfigured

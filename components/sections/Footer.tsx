@@ -56,6 +56,9 @@ export default function Footer() {
           <Link href="/refund" className="hover:text-slate-900 transition-colors">
             Refund Policy
           </Link>
+          <Link href="/support" className="hover:text-slate-900 transition-colors">
+            Support
+          </Link>
           <a href="mailto:contact@cartrenew.com" className="text-indigo-600 hover:text-indigo-500 transition-colors font-extrabold">
             Contact Support
           </a>

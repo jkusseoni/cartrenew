@@ -22,6 +22,7 @@ const localePublicRoutes = locales.flatMap((locale) => [
   `/${locale}/terms(.*)`,
   `/${locale}/privacy(.*)`,
   `/${locale}/refund(.*)`,
+  `/${locale}/support(.*)`,
   `/${locale}/marketing-hub(.*)`,
 ]);
 
@@ -35,6 +36,7 @@ const isPublicRoute = createRouteMatcher([
   "/terms(.*)",
   "/privacy(.*)",
   "/refund(.*)",
+  "/support(.*)",
   "/marketing-hub(.*)",
   ...localePublicRoutes,
   "/__clerk/(.*)",
@@ -49,6 +51,8 @@ const isPublicRoute = createRouteMatcher([
   "/api/orders/webhook(.*)",
   "/api/shopify/callback(.*)",
   "/api/shopify/webhook(.*)",
+  "/api/shopify/billing(.*)",
+  "/api/shopify/dashboard(.*)",
   "/api/auth/shopify(.*)",
   "/api/cron(.*)",
   "/shopify(.*)",

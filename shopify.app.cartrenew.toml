@@ -1,18 +1,9 @@
-# CartRenew — Public distribution app (App Store listing enabled)
-# Learn more: https://shopify.dev/docs/apps/tools/cli/configuration
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "b0d8dbf013b051fc9ba20c1c5df304ca"
-name = "CartRenew Public"
-# Embedded console entry inside Shopify Admin (App Bridge).
+name = "CartRenew"
 application_url = "https://www.cartrenew.com/shopify"
 embedded = true
-
-[webhooks]
-api_version = "2026-07"
-
-[[webhooks.subscriptions]]
-compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]
-uri = "/api/webhooks"
 
 [access_scopes]
 scopes = "read_checkouts,read_orders,write_orders"
@@ -20,8 +11,31 @@ scopes = "read_checkouts,read_orders,write_orders"
 [auth]
 redirect_urls = [
   "https://www.cartrenew.com/api/auth/shopify/callback",
-  "https://www.cartrenew.com/api/shopify/callback"
+  "https://www.cartrenew.com/api/shopify/callback",
+  "https://www.cartrenew.com/api/shopify/billing/callback"
 ]
+
+[webhooks]
+api_version = "2026-07"
+
+# HTTP only — no pubsub:// Google Pub/Sub URIs.
+
+[[webhooks.subscriptions]]
+topics = [
+  "checkouts/create",
+  "checkouts/update",
+  "carts/create",
+  "carts/update",
+  "orders/create",
+  "orders/paid",
+  "app/uninstalled",
+  "app_subscriptions/update"
+]
+uri = "https://www.cartrenew.com/api/webhooks/shopify"
+
+[[webhooks.subscriptions]]
+compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]
+uri = "https://www.cartrenew.com/api/webhooks"
 
 [build]
 automatically_update_urls_on_dev = true

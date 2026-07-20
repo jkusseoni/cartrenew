@@ -100,7 +100,8 @@ export function RecentCartsTable({ carts, onRefresh }: RecentCartsTableProps) {
         </thead>
         <tbody className="divide-y divide-gray-100">
           {carts.map((cart) => {
-            const status = statusConfig[cart.status] || statusConfig.pending
+            const statusKey = cart.status?.trim().toLowerCase() || 'pending'
+            const status = statusConfig[statusKey] || statusConfig.pending
             const items = Array.isArray(cart.items) ? cart.items : []
 
             return (
@@ -135,7 +136,7 @@ export function RecentCartsTable({ carts, onRefresh }: RecentCartsTableProps) {
                   {formatDate(cart.created_at)}
                 </td>
                 <td className="px-6 py-4">
-                  {cart.status === 'pending' && cart.customer_phone && (
+                  {statusKey === 'pending' && cart.customer_phone && (
                     <button
                       onClick={() => sendMessage(cart.id)}
                       disabled={sendingId === cart.id}
@@ -159,10 +160,10 @@ export function RecentCartsTable({ carts, onRefresh }: RecentCartsTableProps) {
                       )}
                     </button>
                   )}
-                  {cart.status === 'messaged' && (
+                  {statusKey === 'messaged' && (
                     <span className="text-xs text-gray-400">Sent</span>
                   )}
-                  {cart.status === 'recovered' && (
+                  {statusKey === 'recovered' && (
                     <span className="inline-flex items-center gap-1 text-green-600 text-xs font-medium">
                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />

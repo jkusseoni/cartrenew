@@ -1,6 +1,5 @@
 /**
- * CartRenew - WhatsApp Automation Service Helper
- * Language Focus: Localized Hinglish Recovery Sequences
+ * CartRenew - Live WhatsApp Automation Service
  */
 
 interface WhatsAppResponse {
@@ -9,30 +8,48 @@ interface WhatsAppResponse {
   error?: string;
 }
 
-/**
- * Prepares a localized Hinglish string and simulates/logs transmission to prevent validation errors.
- */
 export async function sendRecoveryMessage(
   phone: string,
   customerName: string,
   cartUrl: string,
   totalAmount: number
 ): Promise<WhatsAppResponse> {
+  // Environment Variables से API डिटेल्स लें
+  const token = process.env.WHATSAPP_TOKEN;
+  const phoneNumberId = process.env.PHONE_NUMBER_ID;
+
+  if (!token || !phoneNumberId) {
+    console.error("❌ WhatsApp API missing credentials in environment variables");
+    return { success: false, error: "Configuration error" };
+  }
+
   try {
-    // High-converting dynamic Hinglish cart recovery sequence text template
     const message = `Hey ${customerName}! 👋 Humne dekha ki aapka checkout miss ho gaya hai. Aapke cart me products ready hain aur order total ₹${totalAmount} hai. Is deal ko miss mat kijiye aur apna order yahan click karke complete karein: ${cartUrl}`;
 
-    console.log("==================================================");
-    console.log("🚀 CARTRENEW AUTOMATION ENGINE TRIGGERED");
-    console.log(`📱 TARGET PHONE : ${phone}`);
-    console.log(`💬 MESSAGE BODY  : ${message}`);
-    console.log("==================================================");
+    // Meta Graph API को कॉल करें
+    const response = await fetch(`https://graph.facebook.com/v20.0/${phoneNumberId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to: phone, // यह नंबर इंटरनेशनल फॉर्मेट में होना चाहिए (जैसे: 919876543210)
+        type: 'text',
+        text: { body: message }
+      }),
+    });
 
-    // Mock response setup - ready for Meta API, Sarvam AI, or live webhook drop-ins
-    return {
-      success: true,
-      messageId: `msg_mock_${Math.random().toString(36).substring(2, 11)}`
-    };
+    const data = await response.json();
+
+    if (response.ok) {
+      console.log("✅ WhatsApp Message Sent Successfully:", data.messages[0].id);
+      return { success: true, messageId: data.messages[0].id };
+    } else {
+      console.error("❌ WhatsApp API Error:", data.error);
+      return { success: false, error: data.error?.message || "Unknown error" };
+    }
   } catch (error) {
     console.error("❌ WhatsApp transmission failed:", error);
     return {

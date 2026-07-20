@@ -21,6 +21,10 @@ const REQUIRED = [
   "DATABASE_URL",
   "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
   "CLERK_SECRET_KEY",
+  "TWILIO_ACCOUNT_SID",
+  "TWILIO_AUTH_TOKEN",
+  "TWILIO_WHATSAPP_NUMBER",
+  "TWILIO_CONTENT_SID",
 ] as const;
 
 function listedVars(): Set<string> {
