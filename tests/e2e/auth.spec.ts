@@ -5,6 +5,15 @@ const loginPath = "/sign-in";
 const testEmail = process.env.E2E_TEST_EMAIL ?? "testmerchant@cartrenew.com";
 const testPassword = process.env.E2E_TEST_PASSWORD ?? "SecureDevPass123!";
 
+const isCI = !!process.env.CI;
+const hasClerkSecrets = Boolean(
+  process.env.CLERK_SECRET_KEY?.trim() &&
+    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim()
+);
+
+// In CI, skip auth e2e when Clerk credentials are not injected via secrets.
+test.skip(isCI && !hasClerkSecrets, "Clerk secrets missing in CI environment");
+
 const clerkReadySelector = [
   ".cl-rootBox",
   "form",
