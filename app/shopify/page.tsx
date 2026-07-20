@@ -32,6 +32,18 @@ type DashboardData = {
   metrics: DashboardMetrics;
 };
 
+function normalizeCartStatus(status: string): string {
+  return status.trim().toLowerCase();
+}
+
+function isRecoveredStatus(status: string): boolean {
+  return normalizeCartStatus(status) === "recovered";
+}
+
+function isPendingStatus(status: string): boolean {
+  return normalizeCartStatus(status) === "pending";
+}
+
 function describeSupabaseError(error: unknown): string {
   if (!error) return "";
   if (error instanceof Error) return error.message;
@@ -131,7 +143,7 @@ async function loadStoreDashboard(shop: string, options?: { autoProvision?: bool
 
     // Fall back to live cart rows when analytics_daily has not been populated yet.
     if (metrics.trackedCarts === 0 && carts.length > 0) {
-      const recoveredCarts = carts.filter((c) => c.status === "recovered");
+      const recoveredCarts = carts.filter((c) => isRecoveredStatus(c.status));
       metrics.trackedCarts = carts.length;
       metrics.recovered = recoveredCarts.length;
       metrics.recoveredValue = recoveredCarts.reduce(
@@ -225,8 +237,8 @@ function Console({
   host?: string;
   embedded: boolean;
 }) {
-  const pending = rows.filter((c) => c.status === "pending");
-  const recoveredRows = rows.filter((c) => c.status === "recovered");
+  const pending = rows.filter((c) => isPendingStatus(c.status));
+  const recoveredRows = rows.filter((c) => isRecoveredStatus(c.status));
 
   return (
     <Shell host={host} embedded={embedded}>
@@ -283,9 +295,9 @@ function Console({
                   <td className="p-4 text-right">
                     <span
                       className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                        cart.status === "recovered"
+                        isRecoveredStatus(cart.status)
                           ? "bg-emerald-950/40 text-[#00DF89] border border-emerald-900/30"
-                          : cart.status === "pending"
+                          : isPendingStatus(cart.status)
                           ? "bg-amber-950/40 text-amber-400 border border-amber-900/30"
                           : "bg-neutral-900 text-neutral-500 border border-neutral-800"
                       }`}

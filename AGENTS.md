@@ -20,4 +20,4 @@ CartRenew is a Shopify abandoned-cart-recovery SaaS: a Next.js 16 (Turbopack) ap
 
 ### Lint / test
 - Lint: `npm run lint` (eslint). The repo has pre-existing lint errors/warnings unrelated to environment setup.
-- E2E: `npm run test:e2e` (Playwright; `playwright.config.ts` auto-starts `npm run dev` and reuses a running one). Caveats: `tests/e2e/auth.spec.ts` requires Clerk keys; `tests/cart-recovery.spec.ts` asserts a landing hero badge ("Shopify Native Recovery System") that no longer exists in the current landing copy, so it fails against the current UI.
+- E2E: `npm run test:e2e` (Playwright; `playwright.config.ts` auto-starts `npm run dev` and reuses a running one). Caveats: `tests/e2e/auth.spec.ts` requires Clerk keys.
