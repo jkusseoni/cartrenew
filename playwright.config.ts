@@ -1,18 +1,23 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const isCI = !!process.env.CI;
+const baseURL = isCI
+  ? 'https://cartrenew.vercel.app'
+  : 'http://localhost:3000';
+
 export default defineConfig({
   testDir: './tests',
   fullyParallel: true,
-  forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
-  reporter: process.env.CI
+  forbidOnly: isCI,
+  retries: isCI ? 2 : 0,
+  workers: isCI ? 1 : undefined,
+  reporter: isCI
     ? [['github'], ['html', { open: 'never' }]]
     : 'html',
   use: {
-    baseURL: 'http://localhost:3000', 
+    baseURL,
     trace: 'on-first-retry',
-  }, 
+  },
   projects: [
     {
       name: 'chromium',
@@ -20,12 +25,15 @@ export default defineConfig({
     },
   ],
 
-  /* 🚀 Yeh block Playwright ko bolega ki test shuru karne se pehle 
-     Next.js server ko background mein khud start kare */
-  webServer: {
-    command: 'npm run dev',
-    url: 'http://localhost:3000',
-    reuseExistingServer: !process.env.CI, // Local par chalte hue server ko reuse karega
-    timeout: 120 * 1000,                  // Server start hone ke liye 2 mins ka wait karega
-  },
+  // Local: spin up Next.js. CI: hit the deployed Vercel app (no local webServer).
+  ...(isCI
+    ? {}
+    : {
+        webServer: {
+          command: 'npm run dev',
+          url: 'http://localhost:3000',
+          reuseExistingServer: true,
+          timeout: 120 * 1000,
+        },
+      }),
 });

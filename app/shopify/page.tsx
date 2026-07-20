@@ -20,6 +20,18 @@ type CartRow = ShopifyCartRow;
 type StoreRow = ShopifyStoreRow;
 type DashboardMetrics = ShopifyDashboardMetrics;
 
+function normalizeCartStatus(status: string): string {
+  return status.trim().toLowerCase();
+}
+
+function isRecoveredStatus(status: string): boolean {
+  return normalizeCartStatus(status) === "recovered";
+}
+
+function isPendingStatus(status: string): boolean {
+  return normalizeCartStatus(status) === "pending";
+}
+
 function toQueryString(params: SearchParams): URLSearchParams {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
@@ -95,8 +107,8 @@ function Console({
   host?: string;
   embedded: boolean;
 }) {
-  const pending = rows.filter((c) => c.status && c.status.toLowerCase() === "pending");
-  const recoveredRows = rows.filter((c) => c.status && c.status.toLowerCase() === "recovered");
+  const pending = rows.filter((c) => isPendingStatus(c.status));
+  const recoveredRows = rows.filter((c) => isRecoveredStatus(c.status));
 
   return (
     <Shell host={host} embedded={embedded}>
@@ -160,9 +172,9 @@ function Console({
                   <td className="p-4 text-right">
                     <span
                       className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                        cart.status && cart.status.toLowerCase() === "recovered"
+                        isRecoveredStatus(cart.status)
                           ? "bg-emerald-950/40 text-[#00DF89] border border-emerald-900/30"
-                          : cart.status && cart.status.toLowerCase() === "pending"
+                          : isPendingStatus(cart.status)
                           ? "bg-amber-950/40 text-amber-400 border border-amber-900/30"
                           : "bg-neutral-900 text-neutral-500 border border-neutral-800"
                       }`}
