@@ -3,6 +3,7 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getTrackedRecoveryUrl } from '@/lib/recovery-link'
+import { preserveExistingCartFields } from '@/lib/shopify/abandoned-cart-update'
 import { supabaseAdmin } from '@/lib/supabase'
 import {
   buildAbandonedCartContentVariables,
@@ -609,7 +610,7 @@ async function upsertAbandonedCartRecord({
 
     const { data, error } = await supabaseAdmin
       .from('abandoned_carts')
-      .update(baseRow)
+      .update(preserveExistingCartFields(baseRow))
       .eq('id', existing.id)
       .select('id, status, customer_phone')
       .maybeSingle()
