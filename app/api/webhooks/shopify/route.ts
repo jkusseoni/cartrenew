@@ -21,6 +21,10 @@ import {
   inferPlanIdFromSubscriptionName,
   toDbBillingStatus,
 } from '@/lib/shopify/billing'
+import {
+  buildAbandonedCartUpdate,
+  shouldDispatchCartRecovery,
+} from '@/lib/services/abandoned-cart-webhook'
 
 const SHOPIFY_WEBHOOK_VERIFY = process.env.SHOPIFY_WEBHOOK_VERIFY !== 'false'
 const SHOPIFY_WEBHOOK_BYPASS = process.env.SHOPIFY_WEBHOOK_BYPASS === 'true'
@@ -609,7 +613,7 @@ async function upsertAbandonedCartRecord({
 
     const { data, error } = await supabaseAdmin
       .from('abandoned_carts')
-      .update(baseRow)
+      .update(buildAbandonedCartUpdate(baseRow))
       .eq('id', existing.id)
       .select('id, status, customer_phone')
       .maybeSingle()
@@ -720,7 +724,14 @@ async function handleCartWebhook(storeId: string, payload: any) {
     await incrementAnalytics(storeId, 'carts_created')
   }
 
-  if (canSendWhatsApp && (!cart || cart.status === 'pending')) {
+  if (
+    shouldDispatchCartRecovery({
+      canSendWhatsApp,
+      cartExists: Boolean(cart),
+      cartStatus: cart?.status ?? null,
+      created,
+    })
+  ) {
     await dispatchWhatsAppRecovery({
       storeId,
       cartId: recoveryCartId,
