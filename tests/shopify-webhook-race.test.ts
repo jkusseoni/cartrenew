@@ -32,7 +32,7 @@ test('a concurrent first webhook cannot upsert the cart or send twice', async ()
 
     if (url.hostname === 'api.twilio.com') {
       twilioSendCount += 1
-      return json({ sid: 'SMtest', status: 'queued', to: 'whatsapp:+15555550100' }, 201)
+      return json({ sid: 'SMtest', status: 'queued', to: 'whatsapp:+14155550100' }, 201)
     }
 
     assert.equal(url.hostname, 'test-project.supabase.co')
@@ -53,7 +53,7 @@ test('a concurrent first webhook cannot upsert the cart or send twice', async ()
         {
           id: 'cart-1',
           status: 'pending',
-          customer_phone: '+15555550100',
+          customer_phone: '+14155550100',
         },
       ])
     }
@@ -66,7 +66,7 @@ test('a concurrent first webhook cannot upsert the cart or send twice', async ()
           {
             id: 'cart-1',
             status: 'pending',
-            customer_phone: '+15555550100',
+            customer_phone: '+14155550100',
           },
         ], 201)
       }
@@ -106,7 +106,7 @@ test('a concurrent first webhook cannot upsert the cart or send twice', async ()
       line_items: [{ title: 'Shirt', quantity: 1, price: '42.00' }],
       customer: {
         first_name: 'Customer',
-        phone: '+15555550100',
+        phone: '+14155550100',
       },
     })
     const makeRequest = () =>
