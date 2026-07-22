@@ -3,6 +3,7 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getTrackedRecoveryUrl } from '@/lib/recovery-link'
+import { shouldDispatchImmediateRecovery } from '@/lib/services/recovery-dispatch'
 import { supabaseAdmin } from '@/lib/supabase'
 import {
   buildAbandonedCartContentVariables,
@@ -578,7 +579,12 @@ async function upsertAbandonedCartRecord({
   cartValue: number
   items: unknown[]
   checkoutUrl: string | null
-}): Promise<{ cart: AbandonedCartRow | null; error: unknown | null; created: boolean }> {
+}): Promise<{
+  cart: AbandonedCartRow | null
+  error: unknown | null
+  created: boolean
+  previousPhone: string | null
+}> {
   const safeItems = Array.isArray(items) ? items : []
   const safeValue = Number.isFinite(cartValue) ? cartValue : 0
 
@@ -604,7 +610,12 @@ async function upsertAbandonedCartRecord({
   if (existing?.id) {
     // Don't overwrite terminal statuses with fresh checkout noise beyond contact/items.
     if (existing.status !== 'pending' && existing.status !== 'messaged') {
-      return { cart: existing as AbandonedCartRow, error: null, created: false }
+      return {
+        cart: existing as AbandonedCartRow,
+        error: null,
+        created: false,
+        previousPhone: existing.customer_phone ?? null,
+      }
     }
 
     const { data, error } = await supabaseAdmin
@@ -616,13 +627,19 @@ async function upsertAbandonedCartRecord({
 
     if (error) {
       logSupabaseError('Failed to update abandoned cart', error)
-      return { cart: existing as AbandonedCartRow, error, created: false }
+      return {
+        cart: existing as AbandonedCartRow,
+        error,
+        created: false,
+        previousPhone: existing.customer_phone ?? null,
+      }
     }
 
     return {
       cart: (data as AbandonedCartRow | null) ?? (existing as AbandonedCartRow),
       error: null,
       created: false,
+      previousPhone: existing.customer_phone ?? null,
     }
   }
 
@@ -660,6 +677,7 @@ async function upsertAbandonedCartRecord({
       cart: (raced as AbandonedCartRow | null) ?? null,
       error,
       created: false,
+      previousPhone: (raced as AbandonedCartRow | null)?.customer_phone ?? null,
     }
   }
 
@@ -667,6 +685,7 @@ async function upsertAbandonedCartRecord({
     cart: (data as AbandonedCartRow | null) ?? null,
     error: null,
     created: !existing,
+    previousPhone: null,
   }
 }
 
@@ -694,7 +713,7 @@ async function handleCartWebhook(storeId: string, payload: any) {
     (typeof payload.abandoned_checkout_url === 'string' && payload.abandoned_checkout_url) ||
     null
 
-  const { cart, error, created } = await upsertAbandonedCartRecord({
+  const { cart, error, created, previousPhone } = await upsertAbandonedCartRecord({
     storeId,
     token,
     customerPhone,
@@ -706,7 +725,13 @@ async function handleCartWebhook(storeId: string, payload: any) {
   })
 
   const recoveryCartId = cart?.id || token
-  const canSendWhatsApp = Boolean(customerPhone && (checkoutUrl || cart?.id))
+  const shouldDispatch = shouldDispatchImmediateRecovery({
+    cart,
+    created,
+    customerPhone,
+    previousPhone,
+    checkoutUrl,
+  })
 
   if (error && !cart) {
     console.error('Abandoned cart upsert failed — continuing WhatsApp if contact is valid', {
@@ -720,7 +745,7 @@ async function handleCartWebhook(storeId: string, payload: any) {
     await incrementAnalytics(storeId, 'carts_created')
   }
 
-  if (canSendWhatsApp && (!cart || cart.status === 'pending')) {
+  if (shouldDispatch) {
     await dispatchWhatsAppRecovery({
       storeId,
       cartId: recoveryCartId,
@@ -758,16 +783,7 @@ async function handleCheckoutWebhook(storeId: string, payload: any) {
     (typeof payload.abandoned_checkout_url === 'string' && payload.abandoned_checkout_url) ||
     null
 
-  const previousPhone = (
-    await supabaseAdmin
-      .from('abandoned_carts')
-      .select('customer_phone')
-      .eq('store_id', storeId)
-      .eq('shopify_cart_token', token)
-      .maybeSingle()
-  ).data?.customer_phone as string | null | undefined
-
-  const { cart, error, created } = await upsertAbandonedCartRecord({
+  const { cart, error, created, previousPhone } = await upsertAbandonedCartRecord({
     storeId,
     token,
     customerPhone,
@@ -796,10 +812,13 @@ async function handleCheckoutWebhook(storeId: string, payload: any) {
 
   const recoveryCartId = cart?.id || token
   const phoneJustArrived = Boolean(customerPhone && !previousPhone)
-  const shouldDispatch =
-    Boolean(customerPhone && (checkoutUrl || cart?.id)) &&
-    (!cart || cart.status === 'pending') &&
-    (created || phoneJustArrived || !previousPhone)
+  const shouldDispatch = shouldDispatchImmediateRecovery({
+    cart,
+    created,
+    customerPhone,
+    previousPhone,
+    checkoutUrl,
+  })
 
   if (shouldDispatch) {
     console.log(
