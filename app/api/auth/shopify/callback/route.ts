@@ -134,7 +134,7 @@ export async function GET(req: NextRequest) {
     const returnParams = new URLSearchParams({ shop, billing: "setup_failed" });
     if (host) returnParams.set("host", host);
     const response = NextResponse.redirect(
-      `${getShopifyAppUrl()}/shopify?${returnParams.toString()}`
+      `${getShopifyAppUrl()}/app?${returnParams.toString()}`
     );
     response.cookies.delete(STATE_COOKIE);
     return response;

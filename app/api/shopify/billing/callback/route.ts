@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
   const chargeId = url.searchParams.get("charge_id");
 
   if (!isValidShopDomain(shop)) {
-    return NextResponse.redirect(`${getShopifyAppUrl()}/shopify?billing=invalid_shop`);
+    return NextResponse.redirect(`${getShopifyAppUrl()}/app?billing=invalid_shop`);
   }
 
   try {
@@ -68,5 +68,5 @@ export async function GET(req: NextRequest) {
   if (host) returnParams.set("host", host);
   if (plan) returnParams.set("plan", plan);
 
-  return NextResponse.redirect(`${getShopifyAppUrl()}/shopify?${returnParams.toString()}`);
+  return NextResponse.redirect(`${getShopifyAppUrl()}/app?${returnParams.toString()}`);
 }

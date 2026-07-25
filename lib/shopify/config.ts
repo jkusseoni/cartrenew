@@ -19,7 +19,8 @@ function clean(value?: string | null): string {
 
 export function getShopifyClientId(): string {
   return clean(
-    process.env.NEXT_PUBLIC_SHOPIFY_CLIENT_ID ||
+    process.env.NEXT_PUBLIC_SHOPIFY_API_KEY ||
+      process.env.NEXT_PUBLIC_SHOPIFY_CLIENT_ID ||
       process.env.SHOPIFY_API_KEY ||
       process.env.NEXT_PUBLIC_SHOPIFY_APP_API_KEY
   );

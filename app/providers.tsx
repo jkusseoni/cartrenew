@@ -4,7 +4,12 @@ import { ClerkProvider } from '@clerk/nextjs'
 import { usePathname } from 'next/navigation'
 
 function isShopifyEmbeddedRoute(pathname: string) {
-  return pathname === '/shopify' || pathname.startsWith('/shopify/')
+  return (
+    pathname === '/app' ||
+    pathname.startsWith('/app/') ||
+    pathname === '/shopify' ||
+    pathname.startsWith('/shopify/')
+  )
 }
 
 export default function AppProviders({ children }: { children: React.ReactNode }) {

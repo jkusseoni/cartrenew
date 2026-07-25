@@ -4,7 +4,7 @@
 
 client_id = "b0d8dbf013b051fc9ba20c1c5df304ca"
 name = "CartRenew Public"
-application_url = "https://www.cartrenew.com/shopify"
+application_url = "https://www.cartrenew.com/app"
 embedded = true
 
 [access_scopes]

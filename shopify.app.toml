@@ -1,12 +1,13 @@
-# Default Shopify CLI config — synced with shopify.app.cartrenew-public.toml (Public app)
+# CartRenew Public — Shopify app configuration
 # Docs: https://shopify.dev/docs/apps/tools/cli/configuration
 #
-# Iframe-based App Home: merchants open CartRenew Public in Shopify Admin and load
-# the embedded console at application_url (no App Home UI extension).
+# NOTE: This is the ONLY config file for this app.
+# Do not keep shopify.app.<name>.toml variants alongside it — multiple
+# config files are what caused the duplicate-app confusion.
 
 name = "CartRenew Public"
 client_id = "b0d8dbf013b051fc9ba20c1c5df304ca"
-application_url = "https://www.cartrenew.com/shopify"
+application_url = "https://www.cartrenew.com/app"
 embedded = true
 
 [access_scopes]
@@ -22,14 +23,12 @@ redirect_urls = [
 [webhooks]
 api_version = "2026-07"
 
-# HTTP delivery (not Google Pub/Sub / EventBridge).
-# Shopify selects the delivery method from the URI scheme:
-#   - https://… or /relative/path  → HTTP
-#   - pubsub://project:topic       → Google Pub/Sub  (do not use)
-#   - arn:aws:events:…             → Amazon EventBridge (do not use)
-# There is no separate delivery_method field in shopify.app.toml.
+# HTTP delivery. Shopify picks the delivery method from the URI scheme:
+#   https://…            -> HTTP
+#   pubsub://project:top -> Google Pub/Sub      (not used)
+#   arn:aws:events:…     -> Amazon EventBridge  (not used)
 
-# Abandoned checkout + cart + order lifecycle → Vercel HTTP handler
+# Cart / checkout / order lifecycle
 [[webhooks.subscriptions]]
 topics = [
   "checkouts/create",
@@ -43,7 +42,7 @@ topics = [
 ]
 uri = "https://www.cartrenew.com/api/webhooks/shopify"
 
-# Mandatory compliance topics (HTTP)
+# Mandatory GDPR / compliance topics
 [[webhooks.subscriptions]]
 compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]
 uri = "https://www.cartrenew.com/api/webhooks"
@@ -52,4 +51,8 @@ uri = "https://www.cartrenew.com/api/webhooks"
 embedded = false
 
 [build]
-automatically_update_urls_on_dev = true
+# MUST stay false.
+# When true, `shopify app dev` overwrites application_url and redirect_urls
+# with the temporary tunnel URL and pushes that to Shopify — which breaks
+# the embedded app checks every time you run dev.
+automatically_update_urls_on_dev = false

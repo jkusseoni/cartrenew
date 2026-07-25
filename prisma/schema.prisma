@@ -20,6 +20,8 @@ model Merchant {
   id                       String            @id @default(uuid())
   userId                   String
   storeName                String
+  /// Shopify *.myshopify.com domain — unique tenant key for embedded app session auth.
+  shopDomain               String?           @unique
   whatsappNum              String?
   subscriptionTier         LifetimeDealTier?
   lifetimeDealActive       Boolean           @default(false)

@@ -12,6 +12,32 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  async headers() {
+    return [
+      {
+        // Embedded App Home — allow Shopify Admin iframe.
+        // Do NOT set X-Frame-Options (it would override CSP frame-ancestors).
+        source: "/app",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value:
+              "frame-ancestors https://admin.shopify.com https://*.myshopify.com;",
+          },
+        ],
+      },
+      {
+        source: "/app/:path*",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value:
+              "frame-ancestors https://admin.shopify.com https://*.myshopify.com;",
+          },
+        ],
+      },
+    ];
+  },
 };
 
 export default withNextIntl(nextConfig);

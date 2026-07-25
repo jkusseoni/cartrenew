@@ -1,3 +1,8 @@
+/**
+ * Legacy sync session-token helpers.
+ * Prefer `verifySessionToken` (jose, async) for new `/api/app/*` routes.
+ * This module remains for `/api/shopify/dashboard` compatibility.
+ */
 import crypto from "crypto";
 
 import {
@@ -5,6 +10,8 @@ import {
   getShopifyClientSecret,
   isValidShopDomain,
 } from "@/lib/shopify/config";
+
+export { getBearerToken } from "@/lib/shopify/verifySessionToken";
 
 type ShopifySessionPayload = {
   iss?: string;
@@ -71,9 +78,13 @@ function audienceMatches(aud: string | string[] | undefined, clientId: string): 
   return aud === clientId;
 }
 
+/** @deprecated Prefer async verifySessionToken from verifySessionToken.ts */
 export function verifyShopifySessionToken(token: string): { shop: string } | null {
-  const secret = getShopifyClientSecret();
-  const clientId = getShopifyClientId();
+  const secret = process.env.SHOPIFY_API_SECRET || getShopifyClientSecret();
+  const clientId =
+    process.env.SHOPIFY_API_KEY ||
+    process.env.NEXT_PUBLIC_SHOPIFY_API_KEY ||
+    getShopifyClientId();
   if (!secret || !clientId) return null;
 
   const payload = parsePayload(token);
@@ -100,10 +111,4 @@ export function verifyShopifySessionToken(token: string): { shop: string } | nul
   if (!verifyHs256Signature(token, secret)) return null;
 
   return { shop };
-}
-
-export function getBearerToken(authHeader: string | null): string | null {
-  if (!authHeader) return null;
-  const match = authHeader.match(/^Bearer\s+(.+)$/i);
-  return match?.[1]?.trim() ?? null;
 }

@@ -112,7 +112,7 @@ export async function GET(req: NextRequest) {
 
     const returnParams = new URLSearchParams({ shop, billing: "setup_failed" });
     if (host) returnParams.set("host", host);
-    return NextResponse.redirect(`${getShopifyAppUrl()}/shopify?${returnParams.toString()}`);
+    return NextResponse.redirect(`${getShopifyAppUrl()}/app?${returnParams.toString()}`);
   } catch (error) {
     console.error("Shopify OAuth callback error", error);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });

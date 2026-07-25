@@ -20,7 +20,7 @@ export default async function RootPage({
       if (typeof value === "string") query.set(key, value);
       else if (Array.isArray(value) && value[0] != null) query.set(key, value[0]);
     }
-    redirect(`/shopify?${query.toString()}`);
+    redirect(`/app?${query.toString()}`);
   }
 
   redirect(`/${routing.defaultLocale}`);

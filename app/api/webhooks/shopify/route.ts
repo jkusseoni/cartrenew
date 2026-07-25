@@ -83,8 +83,7 @@ export async function POST(req: NextRequest) {
       const secretValue = getShopifyWebhookSecret()
       console.log('🔐 Shopify webhook HMAC check', {
         envVar: secretSource ?? '(none loaded)',
-        secretPrefix: secretValue ? `${secretValue.slice(0, 4)}…` : '(empty)',
-        secretLength: secretValue.length,
+        secretConfigured: Boolean(secretValue),
         hmacHeaderPresent: Boolean(hmac),
         bodyBytes: Buffer.byteLength(body, 'utf8'),
       })

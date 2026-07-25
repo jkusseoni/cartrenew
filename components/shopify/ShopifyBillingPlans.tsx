@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { authFetch } from "@/lib/shopify/authFetch";
 import {
   SHOPIFY_BILLING_PLANS,
   type ShopifyBillingPlanId,
@@ -32,10 +33,10 @@ export default function ShopifyBillingPlans({
     setLoadingPlan(planId);
 
     try {
-      const res = await fetch("/api/shopify/billing/subscribe", {
+      const res = await authFetch("/api/app/billing/subscribe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ shop, planId, host }),
+        body: JSON.stringify({ planId, host, shop }),
       });
 
       const data = (await res.json()) as { confirmationUrl?: string; error?: string };

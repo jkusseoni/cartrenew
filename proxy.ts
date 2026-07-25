@@ -26,6 +26,10 @@ const localePublicRoutes = locales.flatMap((locale) => [
   `/${locale}/marketing-hub(.*)`,
 ]);
 
+/**
+ * Clerk public routes. Embedded App Home (`/app`, `/api/app/*`) and legacy
+ * `/shopify` are public so Clerk never gates Shopify session-token auth.
+ */
 const isPublicRoute = createRouteMatcher([
   "/",
   "/pricing(.*)",
@@ -54,14 +58,21 @@ const isPublicRoute = createRouteMatcher([
   "/api/shopify/billing(.*)",
   "/api/shopify/dashboard(.*)",
   "/api/auth/shopify(.*)",
+  "/api/app(.*)",
   "/api/cron(.*)",
+  "/app(.*)",
   "/shopify(.*)",
   "/r/(.*)",
 ]);
 
-// Standalone Shopify console: bypasses both next-intl locale routing and Clerk.
+// Embedded Shopify App Home (+ legacy /shopify): bypass next-intl + Clerk.
 const isShopifyEntry = (pathname: string) =>
-  pathname === "/shopify" || pathname.startsWith("/shopify/");
+  pathname === "/app" ||
+  pathname.startsWith("/app/") ||
+  pathname === "/shopify" ||
+  pathname.startsWith("/shopify/");
+
+const isShopifyApi = (pathname: string) => pathname.startsWith("/api/app");
 
 const isRecoveryRedirect = (pathname: string) =>
   pathname === "/r" || pathname.startsWith("/r/");
@@ -97,7 +108,7 @@ function isShopifyEmbeddedRequest(request: NextRequest): boolean {
   return Boolean(host && host.length > 0);
 }
 
-/** Embedded apps land on `/` or `/shopify` with `?shop=&host=&hmac=`. */
+/** Embedded apps land on `/`, `/app`, or `/shopify` with `?shop=&host=&hmac=`. */
 function isShopifyLaunchRequest(request: NextRequest): boolean {
   const shop = request.nextUrl.searchParams.get("shop");
   const hasShop = Boolean(shop && SHOPIFY_SHOP_RE.test(shop));
@@ -105,7 +116,12 @@ function isShopifyLaunchRequest(request: NextRequest): boolean {
 }
 
 function shouldBypassAuthForShopify(request: NextRequest): boolean {
-  return isShopifyEntry(request.nextUrl.pathname) || isShopifyLaunchRequest(request);
+  const { pathname } = request.nextUrl;
+  return (
+    isShopifyEntry(pathname) ||
+    isShopifyApi(pathname) ||
+    isShopifyLaunchRequest(request)
+  );
 }
 
 const isAuthRoute = createRouteMatcher([
@@ -225,12 +241,18 @@ function handleShopifyRequest(request: NextRequest): NextResponse | null {
   const { pathname } = request.nextUrl;
 
   if (isShopifyEntry(pathname)) {
+    // Legacy /shopify → /app (preserve query string for shop/host/hmac).
+    if (pathname === "/shopify" || pathname.startsWith("/shopify/")) {
+      const url = request.nextUrl.clone();
+      url.pathname = pathname.replace(/^\/shopify/, "/app") || "/app";
+      return applyShopifyEmbedHeaders(NextResponse.redirect(url), request);
+    }
     return applyShopifyEmbedHeaders(NextResponse.next(), request);
   }
 
   if (pathname === "/" && isShopifyLaunchRequest(request)) {
     const url = request.nextUrl.clone();
-    url.pathname = "/shopify";
+    url.pathname = "/app";
     return applyShopifyEmbedHeaders(NextResponse.redirect(url), request);
   }
 
@@ -249,6 +271,11 @@ function handleRecoveryRedirectRequest(request: NextRequest): NextResponse | nul
 function handleApiRequest(request: NextRequest) {
   // Shopify (and other providers) must not be rate-limited on webhook delivery.
   if (request.nextUrl.pathname.startsWith("/api/webhooks")) {
+    return NextResponse.next();
+  }
+
+  // Session-token APIs: no Clerk, no X-Frame-Options DENY from applySecurityHeaders.
+  if (isShopifyApi(request.nextUrl.pathname)) {
     return NextResponse.next();
   }
 
@@ -362,6 +389,9 @@ async function handlePageRequest(request: NextRequest) {
 export default skipClerk
   ? async (request: NextRequest) => {
       if (request.nextUrl.pathname.startsWith("/api")) {
+        if (isShopifyApi(request.nextUrl.pathname)) {
+          return handleApiRequest(request);
+        }
         return applySecurityHeaders(handleApiRequest(request));
       }
 
@@ -382,6 +412,9 @@ export default skipClerk
     }
   : clerkMiddleware(async (auth, request: NextRequest) => {
       if (request.nextUrl.pathname.startsWith("/api")) {
+        if (isShopifyApi(request.nextUrl.pathname)) {
+          return handleApiRequest(request);
+        }
         return applySecurityHeaders(handleApiRequest(request));
       }
 
