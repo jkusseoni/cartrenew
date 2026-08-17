@@ -16,6 +16,7 @@ export interface Database {
           shopify_access_token: string | null
           webhook_ids: Json | null
           clerk_user_id: string
+          api_key: string | null
           whatsapp_phone_id: string | null
           whatsapp_access_token: string | null
           billing_plan: string | null
@@ -32,6 +33,7 @@ export interface Database {
           shopify_access_token?: string | null
           webhook_ids?: Json | null
           clerk_user_id: string
+          api_key?: string | null
           whatsapp_phone_id?: string | null
           whatsapp_access_token?: string | null
           billing_plan?: string | null
@@ -48,6 +50,7 @@ export interface Database {
           shopify_access_token?: string | null
           webhook_ids?: Json | null
           clerk_user_id?: string
+          api_key?: string | null
           whatsapp_phone_id?: string | null
           whatsapp_access_token?: string | null
           billing_plan?: string | null
@@ -63,7 +66,9 @@ export interface Database {
         Row: {
           id: string
           store_id: string
-          shopify_cart_token: string
+          shopify_cart_token: string | null
+          platform: string
+          external_cart_key: string | null
           customer_phone: string | null
           customer_email: string | null
           customer_name: string | null
@@ -81,7 +86,9 @@ export interface Database {
         Insert: {
           id?: string
           store_id: string
-          shopify_cart_token: string
+          shopify_cart_token?: string | null
+          platform?: string
+          external_cart_key?: string | null
           customer_phone?: string | null
           customer_email?: string | null
           customer_name?: string | null
@@ -99,7 +106,9 @@ export interface Database {
         Update: {
           id?: string
           store_id?: string
-          shopify_cart_token?: string
+          shopify_cart_token?: string | null
+          platform?: string
+          external_cart_key?: string | null
           customer_phone?: string | null
           customer_email?: string | null
           customer_name?: string | null

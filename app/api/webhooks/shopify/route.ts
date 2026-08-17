@@ -5,13 +5,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getTrackedRecoveryUrl } from '@/lib/recovery-link'
 import { supabaseAdmin } from '@/lib/supabase'
 import {
-  buildAbandonedCartContentVariables,
   buildRecoveryWhatsAppBody,
-  getTwilioAbandonedCartContentSid,
-  hasTwilioWhatsAppCredentials,
   resolveRecoveryCustomerName,
-  sendTwilioWhatsAppMessage,
 } from '@/lib/services/twilio-whatsapp'
+import {
+  buildAbandonedCartTemplateVariables,
+  hasWhatsAppCredentials,
+  sendWhatsAppMessage,
+} from '@/lib/services/whatsapp-meta'
 import {
   getShopifyWebhookSecret,
   getShopifyWebhookSecretSource,
@@ -362,11 +363,9 @@ async function dispatchWhatsAppRecovery({
   const checkoutUrl =
     (typeof payload.abandoned_checkout_url === 'string' && payload.abandoned_checkout_url) ||
     recoveryLink
-  const contentSid = getTwilioAbandonedCartContentSid()
-  const contentVariables = buildAbandonedCartContentVariables({
+  const bodyVariables = buildAbandonedCartTemplateVariables({
     customerName,
     checkoutUrl,
-    items,
   })
   const messageBody = buildRecoveryWhatsAppBody({
     customerName,
@@ -389,16 +388,9 @@ async function dispatchWhatsAppRecovery({
     return
   }
 
-  if (!hasTwilioWhatsAppCredentials()) {
+  if (!hasWhatsAppCredentials()) {
     console.error(
-      `Twilio WhatsApp credentials missing — cannot send recovery for cart ${cartId}`
-    )
-    return
-  }
-
-  if (!contentSid) {
-    console.error(
-      `TWILIO_ABANDONED_CART_CONTENT_SID (or TWILIO_CONTENT_SID) missing — cannot send Abandoned Cart Content template for cart ${cartId}. Set the dedicated abandoned-cart ContentSid in env (not the appointment reminder template).`
+      `WhatsApp credentials missing — cannot send recovery for cart ${cartId}`
     )
     return
   }
@@ -412,7 +404,7 @@ async function dispatchWhatsAppRecovery({
         cart_id: cartId,
         store_id: storeId,
         phone: customerPhone,
-        template_name: contentSid,
+        template_name: 'abandoned_cart_reminder',
         body: messageBody,
         status: 'queued',
         attempt_count: 0,
@@ -423,7 +415,7 @@ async function dispatchWhatsAppRecovery({
 
     if (insertError || !messageRow?.id) {
       logSupabaseError(
-        'Failed to insert recovery message row — continuing Twilio send anyway',
+        'Failed to insert recovery message row — continuing Meta WhatsApp send anyway',
         insertError
       )
     } else {
@@ -435,27 +427,26 @@ async function dispatchWhatsAppRecovery({
     )
   }
 
-  console.log('📤 Dispatching Twilio Content template WhatsApp recovery', {
+  console.log('📤 Dispatching Meta WhatsApp template recovery', {
     cartId,
     to: customerPhone,
-    contentSid,
-    contentVariables,
+    templateName: 'abandoned_cart_reminder',
+    bodyVariables,
     checkoutUrl,
   })
 
-  const sendResult = await sendTwilioWhatsAppMessage(customerPhone, {
-    contentSid,
-    contentVariables,
+  const sendResult = await sendWhatsAppMessage(customerPhone, {
+    templateName: 'abandoned_cart_reminder',
+    bodyVariables,
   })
 
-  console.log('📨 Twilio WhatsApp message status:', {
+  console.log('📨 Meta WhatsApp message status:', {
     cartId,
     success: sendResult.success,
     status: sendResult.status ?? (sendResult.success ? 'accepted' : 'failed'),
-    messageSid: sendResult.messageSid ?? null,
+    messageId: sendResult.messageId ?? null,
     to: sendResult.to ?? customerPhone,
-    contentSid: sendResult.contentSid ?? contentSid,
-    apiHost: sendResult.apiHost ?? null,
+    templateName: sendResult.templateName ?? 'abandoned_cart_reminder',
     error: sendResult.error ?? null,
   })
 
@@ -465,7 +456,7 @@ async function dispatchWhatsAppRecovery({
         .from('messages')
         .update({
           status: 'sent',
-          whatsapp_message_id: sendResult.messageSid || null,
+          whatsapp_message_id: sendResult.messageId || null,
           sent_at: new Date().toISOString(),
           attempt_count: 1,
           error_message: null,
@@ -486,7 +477,7 @@ async function dispatchWhatsAppRecovery({
     }
 
     console.log(
-      `✅ WhatsApp recovery sent for cart ${cartId} to ${customerPhone} via Twilio ContentSid ${contentSid} (${sendResult.messageSid}, status=${sendResult.status}) — link: ${checkoutUrl}`
+      `✅ WhatsApp recovery sent for cart ${cartId} to ${customerPhone} via Meta template abandoned_cart_reminder (${sendResult.messageId}, status=${sendResult.status}) — link: ${checkoutUrl}`
     )
     return
   }
@@ -496,7 +487,7 @@ async function dispatchWhatsAppRecovery({
       .from('messages')
       .update({
         status: 'pending',
-        error_message: sendResult.error || 'twilio_send_failed',
+        error_message: sendResult.error || 'whatsapp_send_failed',
         attempt_count: 1,
         next_retry_at: new Date(Date.now() + 5 * 60_000).toISOString(),
       })

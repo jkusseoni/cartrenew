@@ -1,13 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import {
-  buildAbandonedCartContentVariables,
-  buildRecoveryWhatsAppBody,
-  getTwilioAbandonedCartContentSid,
-  getTwilioSandboxTemplateMode,
-  hasTwilioWhatsAppCredentials,
+  buildAbandonedCartTemplateVariables,
   resolveRecoveryCustomerName,
-  sendTwilioWhatsAppMessage,
-} from '@/lib/services/twilio-whatsapp'
+  sendWhatsAppMessage,
+} from '@/lib/services/whatsapp-meta'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -33,7 +29,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// 2. Abandoned-cart Twilio WhatsApp send (POST)
+// 2. Abandoned-cart Meta WhatsApp send (POST)
 export async function POST(request: Request) {
   try {
     const body = await request.json()
@@ -41,7 +37,6 @@ export async function POST(request: Request) {
     const phone = body.phone || body.phoneNumber
     const checkoutUrl = body.checkoutUrl || body.abandonedCartUrl
     const customerName = resolveRecoveryCustomerName(body.customerName)
-    const cartValue = Number(body.cartTotalAmount ?? body.cartValue ?? 0) || 0
 
     if (!phone || !checkoutUrl) {
       return NextResponse.json(
@@ -54,69 +49,48 @@ export async function POST(request: Request) {
       )
     }
 
-    if (!hasTwilioWhatsAppCredentials()) {
-      console.error('❌ Twilio Credentials Missing in Environment Configurations.')
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Core Twilio authentication credentials missing inside cloud variables',
-        },
-        { status: 500 }
-      )
-    }
-
-    const contentSid = getTwilioAbandonedCartContentSid()
-    const contentVariables = buildAbandonedCartContentVariables({
+    const bodyVariables = buildAbandonedCartTemplateVariables({
       customerName,
       checkoutUrl,
-      itemSummary: body.itemSummary || body.itemsSummary || undefined,
-      items: Array.isArray(body.items) ? body.items : undefined,
-    })
-    const messageBody = buildRecoveryWhatsAppBody({
-      customerName,
-      cartValue,
-      recoveryLink: checkoutUrl,
-      items: Array.isArray(body.items) ? body.items : undefined,
     })
 
-    console.log('📤 /api/whatsapp/send abandoned-cart payload', {
+    console.log('📤 /api/whatsapp/send abandoned-cart Meta template payload', {
       to: phone,
       customerName,
       checkoutUrl,
-      contentSid: contentSid || null,
-      contentVariables,
-      sandboxTemplateMode: getTwilioSandboxTemplateMode(),
+      templateName: 'abandoned_cart_reminder',
+      bodyVariables,
     })
 
-    const sendResult = contentSid
-      ? await sendTwilioWhatsAppMessage(phone, { contentSid, contentVariables })
-      : await sendTwilioWhatsAppMessage(phone, { body: messageBody })
+    const sendResult = await sendWhatsAppMessage(phone, {
+      templateName: 'abandoned_cart_reminder',
+      bodyVariables,
+    })
 
     if (!sendResult.success) {
-      console.error('❌ Twilio abandoned-cart send failed:', sendResult)
+      console.error('❌ Meta WhatsApp abandoned-cart send failed:', sendResult)
       return NextResponse.json(
         {
           success: false,
-          error: sendResult.error || 'Twilio gateway rejected execution request',
-          contentSid: sendResult.contentSid ?? contentSid ?? null,
+          error: sendResult.error || 'Meta WhatsApp gateway rejected execution request',
         },
         { status: 502 }
       )
     }
 
-    console.log('✅ Abandoned-cart WhatsApp dispatched', {
+    console.log('✅ Abandoned-cart Meta WhatsApp dispatched', {
       to: sendResult.to ?? phone,
-      messageSid: sendResult.messageSid,
+      messageId: sendResult.messageId,
       status: sendResult.status,
-      contentSid: sendResult.contentSid ?? contentSid ?? null,
+      templateName: sendResult.templateName ?? 'abandoned_cart_reminder',
     })
 
     return NextResponse.json({
       success: true,
       message: 'Abandoned cart WhatsApp recovery message sent',
-      messageSid: sendResult.messageSid,
+      messageId: sendResult.messageId,
       deliveryStatus: sendResult.status,
-      contentSid: sendResult.contentSid ?? contentSid ?? null,
+      templateName: sendResult.templateName ?? 'abandoned_cart_reminder',
     })
   } catch (error: any) {
     console.error('❌ Send WhatsApp API Route Node Collision Error:', error.message)

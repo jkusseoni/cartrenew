@@ -1,7 +1,5 @@
 export const dynamic = "force-dynamic";
 
-import { redirect } from "next/navigation";
-
 import { AppBridgeHead } from "@/components/shopify/AppBridgeHead";
 import { ShopifyEmbedGuard } from "@/components/shopify/ShopifyEmbedGuard";
 import ShopifyBillingPlans from "@/components/shopify/ShopifyBillingPlans";
@@ -289,7 +287,14 @@ export default async function ShopifyEntryPage({
   }
 
   if (!store) {
-    redirect(`/api/auth/shopify?shop=${encodeURIComponent(shop)}`);
+    return (
+      <Notice
+        title="Finish setup in Shopify Admin"
+        body="Open CartRenew from Apps → CartRenew. Managed install completes inside the embedded app — no redirect login."
+        host={host}
+        embedded={embedded}
+      />
+    );
   }
 
   const dashboard = await loadShopifyStoreDashboard(shop);

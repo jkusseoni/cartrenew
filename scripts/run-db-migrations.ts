@@ -28,6 +28,7 @@ const SUPABASE_SQL_MIGRATIONS = [
   "db/migrations/2026-06-20-core-shopify-schema.sql",
   "db/migrations/2026-05-29-add-alerts-acknowledged.sql",
   "db/migrations/2026-06-05-add-geo-delivery-metrics.sql",
+  "db/migrations/2026-08-17-woocommerce-store-api-key.sql",
 ] as const;
 
 function run(command: string) {

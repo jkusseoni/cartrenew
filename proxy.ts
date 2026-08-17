@@ -49,15 +49,16 @@ const isPublicRoute = createRouteMatcher([
   "/api/webhook(.*)",
   "/api/meta-capi(.*)",
   "/api/cart/automate(.*)",
+  "/api/woocommerce(.*)",
   // Route handlers enforce ADMIN_PROCESS_SECRET themselves (requireAutomationSecret);
   // bypassing Clerk here lets header/query-secret cron calls reach them.
   "/api/auth/2fa(.*)",
+  "/api/auth/token-exchange(.*)",
   "/api/orders/webhook(.*)",
   "/api/shopify/callback(.*)",
   "/api/shopify/webhook(.*)",
   "/api/shopify/billing(.*)",
   "/api/shopify/dashboard(.*)",
-  "/api/auth/shopify(.*)",
   "/api/app(.*)",
   "/api/cron(.*)",
   "/app(.*)",
@@ -236,6 +237,16 @@ function applyShopifyEmbedHeaders(response: NextResponse, request: NextRequest) 
   return response;
 }
 
+/** Mark /app requests so root layout can inject App Bridge as the first <head> script. */
+function nextWithShopifyEmbed(request: NextRequest): NextResponse {
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-shopify-embed", "1");
+  return applyShopifyEmbedHeaders(
+    NextResponse.next({ request: { headers: requestHeaders } }),
+    request
+  );
+}
+
 /** Bypass locale/Clerk and apply embed-friendly headers for Shopify routes. */
 function handleShopifyRequest(request: NextRequest): NextResponse | null {
   const { pathname } = request.nextUrl;
@@ -247,7 +258,7 @@ function handleShopifyRequest(request: NextRequest): NextResponse | null {
       url.pathname = pathname.replace(/^\/shopify/, "/app") || "/app";
       return applyShopifyEmbedHeaders(NextResponse.redirect(url), request);
     }
-    return applyShopifyEmbedHeaders(NextResponse.next(), request);
+    return nextWithShopifyEmbed(request);
   }
 
   if (pathname === "/" && isShopifyLaunchRequest(request)) {

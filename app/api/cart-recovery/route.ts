@@ -11,7 +11,7 @@ const MAX_CARTS_PER_RUN = 25;
 type CartProcessResult = {
   cartId: string;
   status: "processed" | "skipped" | "failed";
-  messageSid?: string | null;
+  messageId?: string | null;
   error?: string;
   reason?: string;
 };
@@ -22,7 +22,8 @@ type CartProcessResult = {
  * This route does NOT receive Shopify webhook JSON.
  * Shopify Abandoned Checkout webhooks (checkouts/create|update) must POST to
  * /api/webhooks/shopify, which writes Supabase `abandoned_carts`.
- * This cron reads those rows with status=pending and sends Twilio WhatsApp.
+ * This cron reads those rows with status=pending and sends Meta WhatsApp
+ * (approved template abandoned_cart_reminder).
  */
 export async function GET(request: NextRequest) {
   console.log("⏰ /api/cart-recovery cron HIT (not a Shopify webhook receiver)", {
@@ -44,22 +45,20 @@ export async function GET(request: NextRequest) {
   try {
     const { supabaseAdmin } = await import("@/lib/supabase");
     const {
-      sendTwilioWhatsAppMessage,
-      hasTwilioWhatsAppCredentials,
-      getTwilioAbandonedCartContentSid,
-      buildAbandonedCartContentVariables,
-      buildRecoveryWhatsAppBody,
+      sendWhatsAppMessage,
+      hasWhatsAppCredentials,
+      buildAbandonedCartTemplateVariables,
       resolveRecoveryCustomerName,
       isValidWhatsAppPhone,
-    } = await import("@/lib/services/twilio-whatsapp");
+    } = await import("@/lib/services/whatsapp-meta");
     const { getTrackedRecoveryUrl } = await import("@/lib/recovery-link");
 
-    if (!hasTwilioWhatsAppCredentials()) {
-      console.error("❌ Twilio WhatsApp credentials missing — aborting cart-recovery run");
+    if (!hasWhatsAppCredentials()) {
+      console.error("❌ WhatsApp credentials missing — aborting cart-recovery run");
       return NextResponse.json(
         {
           success: false,
-          error: "Twilio WhatsApp credentials missing or placeholder",
+          error: "WhatsApp credentials missing or placeholder",
           durationMs: Date.now() - startedAt,
         },
         { status: 500 }
@@ -155,36 +154,23 @@ export async function GET(request: NextRequest) {
         const checkoutUrl =
           (typeof cart.checkout_url === "string" && cart.checkout_url) ||
           getTrackedRecoveryUrl(cart.id);
-        const contentSid = getTwilioAbandonedCartContentSid();
-        const contentVariables = buildAbandonedCartContentVariables({
+        const bodyVariables = buildAbandonedCartTemplateVariables({
           customerName,
           checkoutUrl,
-          items: Array.isArray(cart.items) ? cart.items : [],
-        });
-        const messageBody = buildRecoveryWhatsAppBody({
-          customerName,
-          cartValue: Number(cart.cart_value) || 0,
-          recoveryLink: checkoutUrl,
-          items: Array.isArray(cart.items) ? cart.items : [],
         });
 
-        const sendPayload = contentSid
-          ? {
-              contentSid,
-              contentVariables,
-            }
-          : { body: messageBody };
-
-        console.log("📤 Calling sendTwilioWhatsAppMessage for pending cart", {
+        console.log("📤 Calling sendWhatsAppMessage for pending cart", {
           cartId: cart.id,
           to: customerPhone,
           status: cart.status,
-          contentSid: contentSid || null,
-          contentVariables,
-          hasContentSid: Boolean(contentSid),
+          templateName: "abandoned_cart_reminder",
+          bodyVariables,
         });
 
-        const sendResult = await sendTwilioWhatsAppMessage(customerPhone, sendPayload);
+        const sendResult = await sendWhatsAppMessage(customerPhone, {
+          templateName: "abandoned_cart_reminder",
+          bodyVariables,
+        });
 
         if (!sendResult.success) {
           await supabaseAdmin
@@ -195,7 +181,7 @@ export async function GET(request: NextRequest) {
           results.push({
             cartId: cart.id,
             status: "failed",
-            error: sendResult.error || "twilio_send_failed",
+            error: sendResult.error || "whatsapp_send_failed",
           });
           continue;
         }
@@ -211,10 +197,10 @@ export async function GET(request: NextRequest) {
         results.push({
           cartId: cart.id,
           status: "processed",
-          messageSid: sendResult.messageSid ?? null,
+          messageId: sendResult.messageId ?? null,
         });
       } catch (error) {
-        console.error(`Failed to send Twilio WhatsApp for cart ${cart.id}:`, error);
+        console.error(`Failed to send Meta WhatsApp for cart ${cart.id}:`, error);
 
         try {
           await supabaseAdmin

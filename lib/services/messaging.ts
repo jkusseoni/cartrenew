@@ -1,11 +1,9 @@
 import { supabaseAdmin } from '@/lib/supabase'
 import {
-  buildAbandonedCartContentVariables,
-  getTwilioAbandonedCartContentSid,
-  hasTwilioWhatsAppCredentials,
+  hasWhatsAppCredentials,
   resolveRecoveryCustomerName,
-  sendTwilioWhatsAppMessage,
-} from '@/lib/services/twilio-whatsapp'
+  sendWhatsAppMessage,
+} from '@/lib/services/whatsapp-meta'
 import { sendMessage } from '@/lib/services/provider'
 import { getTrackedRecoveryUrl } from '@/lib/recovery-link'
 
@@ -97,8 +95,11 @@ function buildRecoveryMessageBody({
 }
 
 /**
- * After a pending abandoned cart is saved, compile the template, persist a
- * messages row, and dispatch via Meta/Twilio WhatsApp gateway.
+ * After a pending abandoned cart is saved, compile the per-store free-text for
+ * record-keeping, persist a messages row, and dispatch via Meta WhatsApp
+ * (approved template — business-initiated, no active customer session).
+ * Richer template (cart_recovery_default: discount/expiry/store name + URL
+ * button) will replace abandoned_cart_reminder once approved.
  */
 export async function triggerWhatsAppRecoveryForCart({
   storeId,
@@ -140,12 +141,8 @@ export async function triggerWhatsAppRecoveryForCart({
 
     const trackedCheckoutUrl = getTrackedRecoveryUrl(cartId)
     const safeName = resolveRecoveryCustomerName(customerName)
-    const contentSid = getTwilioAbandonedCartContentSid()
-    const contentVariables = buildAbandonedCartContentVariables({
-      customerName: safeName,
-      checkoutUrl: trackedCheckoutUrl,
-      items,
-    })
+    // Per-merchant free-text kept for reference only — WhatsApp requires pre-approved templates for business-initiated sends. Will move to variable-based customization (discount/expiry/store name) once the richer template is approved.
+    const whatsappTemplateName = 'abandoned_cart_reminder'
 
     const { data: messageRow, error: insertError } = await supabaseAdmin
       .from('messages')
@@ -153,7 +150,7 @@ export async function triggerWhatsAppRecoveryForCart({
         cart_id: cartId,
         store_id: storeId,
         phone: customerPhone,
-        template_name: contentSid || templateName,
+        template_name: whatsappTemplateName,
         body: messageBody,
         status: 'queued',
         attempt_count: 0,
@@ -167,30 +164,23 @@ export async function triggerWhatsAppRecoveryForCart({
       return { queued: false, sent: false, error: insertError?.message || 'insert_failed' }
     }
 
-    console.log('📤 triggerWhatsAppRecoveryForCart Twilio payload', {
+    console.log('📤 triggerWhatsAppRecoveryForCart Meta template payload', {
       cartId,
       to: customerPhone,
-      contentSid: contentSid || null,
-      contentVariables,
+      templateName: whatsappTemplateName,
+      bodyVariables: [safeName, trackedCheckoutUrl],
     })
 
-    const dispatch = hasTwilioWhatsAppCredentials()
-      ? contentSid
-        ? await sendTwilioWhatsAppMessage(customerPhone, {
-            contentSid,
-            contentVariables,
-          }).then((result) => ({
-            success: result.success,
-            providerId: result.messageSid,
-            error: result.error,
-            provider: 'twilio_whatsapp' as const,
-          }))
-        : await sendTwilioWhatsAppMessage(customerPhone, messageBody).then((result) => ({
-            success: result.success,
-            providerId: result.messageSid,
-            error: result.error,
-            provider: 'twilio_whatsapp' as const,
-          }))
+    const dispatch = hasWhatsAppCredentials()
+      ? await sendWhatsAppMessage(customerPhone, {
+          templateName: whatsappTemplateName,
+          bodyVariables: [safeName, trackedCheckoutUrl],
+        }).then((result) => ({
+          success: result.success,
+          providerId: result.messageId,
+          error: result.error,
+          provider: 'meta_whatsapp' as const,
+        }))
       : await sendMessage({
           id: messageRow.id,
           to: customerPhone,
