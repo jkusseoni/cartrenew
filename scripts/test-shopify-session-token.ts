@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 
 import { SignJWT } from "jose";
+import { NextRequest } from "next/server";
 
+import { POST as subscribeToLegacyBilling } from "../app/api/shopify/billing/subscribe/route";
 import { verifySessionToken } from "../lib/shopify/verifySessionToken";
 
 const SHOP = "session-test.myshopify.com";
@@ -57,7 +59,34 @@ async function main() {
     const wrongAudienceToken = await createSessionToken("another-client-id");
     await assert.rejects(verifySessionToken(wrongAudienceToken), /Invalid session token/);
 
-    console.log("Shopify session-token credential alias tests passed.");
+    clearCredentials();
+    const unauthenticatedBillingResponse = await subscribeToLegacyBilling(
+      new NextRequest("https://www.cartrenew.com/api/shopify/billing/subscribe", {
+        method: "POST",
+        body: JSON.stringify({ shop: SHOP, planId: "starter" }),
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+    assert.equal(unauthenticatedBillingResponse.status, 401);
+
+    process.env.NEXT_PUBLIC_SHOPIFY_CLIENT_ID = CLIENT_ID;
+    process.env.SHOPIFY_CLIENT_SECRET = CLIENT_SECRET;
+    const crossShopBillingResponse = await subscribeToLegacyBilling(
+      new NextRequest("https://www.cartrenew.com/api/shopify/billing/subscribe", {
+        method: "POST",
+        body: JSON.stringify({
+          shop: "another-store.myshopify.com",
+          planId: "starter",
+        }),
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      })
+    );
+    assert.equal(crossShopBillingResponse.status, 403);
+
+    console.log("Shopify session-token and billing authorization tests passed.");
   } finally {
     clearCredentials();
     for (const key of CREDENTIAL_KEYS) {
