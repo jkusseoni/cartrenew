@@ -14,7 +14,7 @@ import {
 const STATE_COOKIE = "shopify_oauth_state";
 
 /**
- * GET /api/auth/shopify?shop=my-store.myshopify.com[&state=...]
+ * GET /api/auth/shopify?shop=my-store.myshopify.com
  *
  * Initiates the Shopify OAuth handshake by redirecting the merchant to Shopify's
  * authorization screen, requesting an offline (permanent) access token with the
@@ -42,10 +42,9 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Carry the Clerk user id through `state` when available, plus a CSRF nonce.
-    const nonce = crypto.randomBytes(16).toString("hex");
-    const passedState = url.searchParams.get("state");
-    const state = passedState ? `${passedState}.${nonce}` : nonce;
+    // State is an opaque server-generated CSRF nonce. Never accept identity
+    // data from the request because the initiation route is public.
+    const state = crypto.randomBytes(16).toString("hex");
 
     const redirectUri = `${appUrl}/api/auth/shopify/callback`;
 
