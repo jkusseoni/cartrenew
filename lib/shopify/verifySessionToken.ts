@@ -1,6 +1,10 @@
 import { jwtVerify, type JWTPayload } from "jose";
 
-import { isValidShopDomain } from "@/lib/shopify/config";
+import {
+  getShopifyClientId,
+  getShopifyClientSecret,
+  isValidShopDomain,
+} from "@/lib/shopify/config";
 
 export type ShopifySessionTokenPayload = JWTPayload & {
   iss?: string;
@@ -40,35 +44,29 @@ function audienceMatches(aud: string | string[] | undefined, apiKey: string): bo
   return aud === apiKey;
 }
 
-/** Request-time env read — bracket access avoids Next.js build-time inlining from .env. */
-function env(name: string): string | undefined {
-  return process.env[name];
-}
-
 /**
  * Verify a Shopify App Bridge session token (HS256) with jose.
- * Validates aud === SHOPIFY_API_KEY, exp/nbf, and dest as *.myshopify.com.
+ * Validates aud === Shopify client ID, exp/nbf, and dest as *.myshopify.com.
  *
- * HMAC key = UTF-8 bytes of the full SHOPIFY_API_SECRET (including `shpss_` prefix).
- * Secret is read at request time — never cached at module scope, never stripped.
+ * Credential resolution uses the same canonical and legacy environment aliases
+ * as OAuth, webhooks, and App Bridge.
  */
 export async function verifySessionToken(token: string): Promise<VerifiedShopifySession> {
   if (!token || typeof token !== "string") {
     throw new Error("Missing session token");
   }
 
-  const apiKey = env("SHOPIFY_API_KEY");
-  const apiSecret = env("SHOPIFY_API_SECRET");
+  const apiKey = getShopifyClientId();
+  const apiSecret = getShopifyClientSecret();
 
   if (!apiKey) {
-    throw new Error("SHOPIFY_API_KEY is not configured");
+    throw new Error("Shopify client ID is not configured");
   }
   if (!apiSecret) {
-    throw new Error("SHOPIFY_API_SECRET is not configured");
+    throw new Error("Shopify client secret is not configured");
   }
 
-  // Full raw secret WITH shpss_ prefix, UTF-8 encoded — do not strip.
-  const key = new TextEncoder().encode(process.env.SHOPIFY_API_SECRET);
+  const key = new TextEncoder().encode(apiSecret);
 
   let payload: ShopifySessionTokenPayload;
   try {
