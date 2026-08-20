@@ -8,6 +8,7 @@
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
+    "test:proxy-auth": "tsx --test tests/unit/proxy-shopify-auth.node.ts",
     "test:merchant-handshake": "tsx scripts/test-merchant-handshake.ts",
     "test:recovery": "tsx test-recovery.ts",
     "db:migrate": "tsx scripts/run-db-migrations.ts",
