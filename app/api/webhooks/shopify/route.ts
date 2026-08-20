@@ -332,7 +332,6 @@ async function dispatchWhatsAppRecovery({
   customer,
   cartValue,
   items,
-  persistMessageRow = true,
 }: {
   storeId: string
   cartId: string
@@ -341,7 +340,6 @@ async function dispatchWhatsAppRecovery({
   cartValue: number
   items: unknown[]
   cartToken: string
-  persistMessageRow?: boolean
 }) {
   const shippingAddress = payload.shipping_address ?? null
   console.log(
@@ -403,37 +401,30 @@ async function dispatchWhatsAppRecovery({
     return
   }
 
-  let messageRowId: string | null = null
+  const { data: messageRow, error: insertError } = await supabaseAdmin
+    .from('messages')
+    .insert({
+      cart_id: cartId,
+      store_id: storeId,
+      phone: customerPhone,
+      template_name: contentSid,
+      body: messageBody,
+      status: 'queued',
+      attempt_count: 0,
+      next_retry_at: null,
+    })
+    .select('id')
+    .single()
 
-  if (persistMessageRow) {
-    const { data: messageRow, error: insertError } = await supabaseAdmin
-      .from('messages')
-      .insert({
-        cart_id: cartId,
-        store_id: storeId,
-        phone: customerPhone,
-        template_name: contentSid,
-        body: messageBody,
-        status: 'queued',
-        attempt_count: 0,
-        next_retry_at: null,
-      })
-      .select('id')
-      .single()
-
-    if (insertError || !messageRow?.id) {
-      logSupabaseError(
-        'Failed to insert recovery message row — continuing Twilio send anyway',
-        insertError
-      )
-    } else {
-      messageRowId = messageRow.id
-    }
-  } else {
-    console.warn(
-      `Skipping messages row persist for cart ${cartId} (abandoned_carts row missing) — still sending WhatsApp`
+  if (insertError || !messageRow?.id) {
+    logSupabaseError(
+      'Failed to persist recovery message — skipping Twilio send',
+      insertError
     )
+    return
   }
+
+  const messageRowId = messageRow.id
 
   console.log('📤 Dispatching Twilio Content template WhatsApp recovery', {
     cartId,
@@ -460,30 +451,25 @@ async function dispatchWhatsAppRecovery({
   })
 
   if (sendResult.success) {
-    if (messageRowId) {
-      await supabaseAdmin
-        .from('messages')
-        .update({
-          status: 'sent',
-          whatsapp_message_id: sendResult.messageSid || null,
-          sent_at: new Date().toISOString(),
-          attempt_count: 1,
-          error_message: null,
-        })
-        .eq('id', messageRowId)
-    }
+    await supabaseAdmin
+      .from('messages')
+      .update({
+        status: 'sent',
+        whatsapp_message_id: sendResult.messageSid || null,
+        sent_at: new Date().toISOString(),
+        attempt_count: 1,
+        error_message: null,
+      })
+      .eq('id', messageRowId)
 
-    // Only mark messaged when we have a real abandoned_carts UUID row.
-    if (persistMessageRow) {
-      await supabaseAdmin
-        .from('abandoned_carts')
-        .update({
-          status: 'messaged',
-          message_sent_at: new Date().toISOString(),
-        })
-        .eq('id', cartId)
-        .eq('status', 'pending')
-    }
+    await supabaseAdmin
+      .from('abandoned_carts')
+      .update({
+        status: 'messaged',
+        message_sent_at: new Date().toISOString(),
+      })
+      .eq('id', cartId)
+      .eq('status', 'pending')
 
     console.log(
       `✅ WhatsApp recovery sent for cart ${cartId} to ${customerPhone} via Twilio ContentSid ${contentSid} (${sendResult.messageSid}, status=${sendResult.status}) — link: ${checkoutUrl}`
@@ -491,17 +477,15 @@ async function dispatchWhatsAppRecovery({
     return
   }
 
-  if (messageRowId) {
-    await supabaseAdmin
-      .from('messages')
-      .update({
-        status: 'pending',
-        error_message: sendResult.error || 'twilio_send_failed',
-        attempt_count: 1,
-        next_retry_at: new Date(Date.now() + 5 * 60_000).toISOString(),
-      })
-      .eq('id', messageRowId)
-  }
+  await supabaseAdmin
+    .from('messages')
+    .update({
+      status: 'pending',
+      error_message: sendResult.error || 'twilio_send_failed',
+      attempt_count: 1,
+      next_retry_at: new Date(Date.now() + 5 * 60_000).toISOString(),
+    })
+    .eq('id', messageRowId)
 
   console.warn(
     `❌ WhatsApp recovery dispatch failed for cart ${cartId} (${customerPhone}):`,
@@ -627,23 +611,23 @@ async function upsertAbandonedCartRecord({
 
   const scheduledAt = new Date(Date.now() + 60 * 60000).toISOString()
 
+  // Insert, rather than upsert, so a concurrent first-delivery webhook cannot
+  // overwrite a cart that the winning request already messaged or recovered.
   const { data, error } = await supabaseAdmin
     .from('abandoned_carts')
-    .upsert(
-      {
-        ...baseRow,
-        status: 'pending',
-        scheduled_message_at: scheduledAt,
-      },
-      { onConflict: 'store_id,shopify_cart_token' }
-    )
+    .insert({
+      ...baseRow,
+      status: 'pending',
+      scheduled_message_at: scheduledAt,
+    })
     .select('id, status, customer_phone')
     .maybeSingle()
 
   if (error) {
-    logSupabaseError('Failed to upsert abandoned checkout', error)
+    logSupabaseError('Failed to insert abandoned checkout', error)
 
-    // Race: another webhook inserted between select and upsert — re-read.
+    // Race: another webhook inserted after the initial read — re-read without
+    // mutating the winner's status or treating this request as the creator.
     const { data: raced, error: readError } = await supabaseAdmin
       .from('abandoned_carts')
       .select('id, status, customer_phone')
@@ -652,7 +636,7 @@ async function upsertAbandonedCartRecord({
       .maybeSingle()
 
     if (readError) {
-      logSupabaseError('Failed to re-read abandoned checkout after upsert error', readError)
+      logSupabaseError('Failed to re-read abandoned checkout after insert error', readError)
     }
 
     return {
@@ -662,10 +646,16 @@ async function upsertAbandonedCartRecord({
     }
   }
 
+  if (!data?.id) {
+    const missingRowError = new Error('Abandoned cart insert returned no row')
+    logSupabaseError('Failed to insert abandoned checkout', missingRowError)
+    return { cart: null, error: missingRowError, created: false }
+  }
+
   return {
-    cart: (data as AbandonedCartRow | null) ?? null,
+    cart: data as AbandonedCartRow,
     error: null,
-    created: !existing,
+    created: true,
   }
 }
 
@@ -708,7 +698,7 @@ async function handleCartWebhook(storeId: string, payload: any) {
   const canSendWhatsApp = Boolean(customerPhone && (checkoutUrl || cart?.id))
 
   if (error && !cart) {
-    console.error('Abandoned cart upsert failed — continuing WhatsApp if contact is valid', {
+    console.error('Abandoned cart persistence failed — skipping WhatsApp recovery', {
       message: (error as { message?: string })?.message ?? null,
       code: (error as { code?: string })?.code ?? null,
       token,
@@ -719,7 +709,7 @@ async function handleCartWebhook(storeId: string, payload: any) {
     await incrementAnalytics(storeId, 'carts_created')
   }
 
-  if (canSendWhatsApp && (!cart || cart.status === 'pending')) {
+  if (!error && canSendWhatsApp && cart?.id && cart.status === 'pending') {
     await dispatchWhatsAppRecovery({
       storeId,
       cartId: recoveryCartId,
@@ -728,7 +718,6 @@ async function handleCartWebhook(storeId: string, payload: any) {
       cartValue,
       items,
       cartToken: token,
-      persistMessageRow: Boolean(cart?.id),
     })
   }
 }
@@ -796,8 +785,10 @@ async function handleCheckoutWebhook(storeId: string, payload: any) {
   const recoveryCartId = cart?.id || token
   const phoneJustArrived = Boolean(customerPhone && !previousPhone)
   const shouldDispatch =
+    !error &&
+    Boolean(cart?.id) &&
     Boolean(customerPhone && (checkoutUrl || cart?.id)) &&
-    (!cart || cart.status === 'pending') &&
+    cart?.status === 'pending' &&
     (created || phoneJustArrived || !previousPhone)
 
   if (shouldDispatch) {
@@ -812,7 +803,6 @@ async function handleCheckoutWebhook(storeId: string, payload: any) {
       cartValue,
       items,
       cartToken: token,
-      persistMessageRow: Boolean(cart?.id),
     })
   }
 }
