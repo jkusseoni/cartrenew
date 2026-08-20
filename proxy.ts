@@ -9,6 +9,11 @@ import {
   MERCHANT_DASHBOARD_PATH,
   STANDARD_DASHBOARD_PATH,
 } from "./lib/roles";
+import {
+  isShopifyApi,
+  isShopifyEntry,
+  shouldBypassAuthForShopify,
+} from "./lib/shopify/proxy-routing";
 
 const intlMiddleware = createIntlMiddleware(routing);
 
@@ -65,15 +70,6 @@ const isPublicRoute = createRouteMatcher([
   "/r/(.*)",
 ]);
 
-// Embedded Shopify App Home (+ legacy /shopify): bypass next-intl + Clerk.
-const isShopifyEntry = (pathname: string) =>
-  pathname === "/app" ||
-  pathname.startsWith("/app/") ||
-  pathname === "/shopify" ||
-  pathname.startsWith("/shopify/");
-
-const isShopifyApi = (pathname: string) => pathname.startsWith("/api/app");
-
 const isRecoveryRedirect = (pathname: string) =>
   pathname === "/r" || pathname.startsWith("/r/");
 
@@ -113,15 +109,6 @@ function isShopifyLaunchRequest(request: NextRequest): boolean {
   const shop = request.nextUrl.searchParams.get("shop");
   const hasShop = Boolean(shop && SHOPIFY_SHOP_RE.test(shop));
   return hasShop || isShopifyEmbeddedRequest(request);
-}
-
-function shouldBypassAuthForShopify(request: NextRequest): boolean {
-  const { pathname } = request.nextUrl;
-  return (
-    isShopifyEntry(pathname) ||
-    isShopifyApi(pathname) ||
-    isShopifyLaunchRequest(request)
-  );
 }
 
 const isAuthRoute = createRouteMatcher([
@@ -437,9 +424,8 @@ export default skipClerk
         return applySecurityHeaders(intlResponse);
       }
 
-      // Never run Clerk session gates on Shopify embed launches — they break
-      // App Bridge session tokens inside the Admin iframe.
-      if (shouldBypassAuthForShopify(request)) {
+      // These routes authenticate with Shopify session tokens instead of Clerk.
+      if (shouldBypassAuthForShopify(request.nextUrl.pathname)) {
         return applyShopifyEmbedHeaders(intlResponse, request);
       }
 
