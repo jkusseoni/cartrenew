@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
     }
 
     const cookieState = req.cookies.get(STATE_COOKIE)?.value;
-    if (cookieState && state && cookieState !== state) {
+    if (!cookieState || !state || cookieState !== state) {
       return NextResponse.json({ error: "OAuth state mismatch" }, { status: 401 });
     }
 
@@ -71,9 +71,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Missing access token" }, { status: 502 });
     }
 
-    const clerkUserId =
-      (state && !state.includes(".") ? null : state?.split(".")[0]) ||
-      `webhook_${shop.replace(/[^a-z0-9]/gi, "_")}`;
+    const clerkUserId = `webhook_${shop.replace(/[^a-z0-9]/gi, "_")}`;
 
     const upsertRes = await supabaseAdmin
       .from("stores")

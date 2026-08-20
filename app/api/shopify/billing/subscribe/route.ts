@@ -4,12 +4,15 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 
 import { supabaseAdmin } from "@/lib/supabase";
-import { isValidShopDomain } from "@/lib/shopify/config";
 import {
   createAppSubscription,
   isShopifyBillingPlanId,
   type ShopifyBillingPlanId,
 } from "@/lib/shopify/billing";
+import {
+  getBearerToken,
+  verifySessionToken,
+} from "@/lib/shopify/verifySessionToken";
 
 type StoreAuthRow = {
   id: string;
@@ -20,24 +23,37 @@ type StoreAuthRow = {
 /**
  * POST /api/shopify/billing/subscribe
  *
- * Body: { shop, planId, host? }
+ * Auth: Shopify session token. Shop tenant comes from JWT `dest`, not the body.
+ * Body: { shop?, planId, host? }
  * Creates an appSubscriptionCreate charge and returns { confirmationUrl }.
  * The merchant must be redirected to confirmationUrl to approve the charge.
  */
 export async function POST(req: NextRequest) {
   try {
+    const token = getBearerToken(req.headers.get("authorization"));
+    if (!token) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    let shop: string;
+    try {
+      ({ shop } = await verifySessionToken(token));
+    } catch {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const body = (await req.json().catch(() => null)) as {
       shop?: string;
       planId?: string;
       host?: string;
     } | null;
 
-    const shop = body?.shop?.trim();
     const planId = body?.planId?.trim();
     const host = body?.host?.trim();
 
-    if (!isValidShopDomain(shop)) {
-      return NextResponse.json({ error: "Invalid shop domain" }, { status: 400 });
+    // Ignore body.shop as a tenant selector; reject mismatches during migration.
+    if (body?.shop && body.shop.trim() !== shop) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     if (!planId || !isShopifyBillingPlanId(planId)) {
