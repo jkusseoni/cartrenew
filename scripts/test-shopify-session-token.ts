@@ -112,11 +112,7 @@ async function main() {
     );
     assert.equal(missingStateResponse.status, 401);
 
-    const legacyCallbackResponse = await finishLegacyShopifyOAuth(
-      new NextRequest(
-        `https://www.cartrenew.com/api/shopify/callback?shop=${SHOP}&code=test-code&state=attacker-user`
-      )
-    );
+    const legacyCallbackResponse = await finishLegacyShopifyOAuth();
     assert.equal(legacyCallbackResponse.status, 410);
 
     console.log("Shopify session-token, billing, and OAuth authorization tests passed.");
