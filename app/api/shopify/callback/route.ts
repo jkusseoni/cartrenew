@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
 /**
  * Legacy OAuth callback.
@@ -11,7 +11,7 @@ import { NextRequest, NextResponse } from "next/server";
  * attacker's Clerk identity. Keep the route closed while old Shopify app
  * configurations age out.
  */
-export async function GET(_req: NextRequest) {
+export async function GET() {
   return NextResponse.json(
     { error: "Legacy Shopify OAuth callback is disabled" },
     { status: 410 }
