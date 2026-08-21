@@ -91,7 +91,8 @@ export default function EmbeddedAppHomePage() {
         }
 
         if (json.needsInstall && json.shop) {
-          window.location.href = `/api/auth/shopify?shop=${encodeURIComponent(json.shop)}`;
+          (window.top ?? window).location.href =
+            `/api/auth/shopify?shop=${encodeURIComponent(json.shop)}`;
           return;
         }
 
@@ -114,20 +115,35 @@ export default function EmbeddedAppHomePage() {
     };
 
     // App Bridge injects window.shopify after the sync CDN script runs.
+    const appBridgeDeadline = Date.now() + 10_000;
+    let retryTimer: number | undefined;
+
     const tryLoad = () => {
+      if (cancelled) return;
+
       const shopify = (window as Window & { shopify?: { idToken?: () => Promise<string> } })
         .shopify;
       if (shopify?.idToken) {
         void load();
         return;
       }
-      window.setTimeout(tryLoad, 50);
+
+      if (Date.now() >= appBridgeDeadline) {
+        setError(
+          "Shopify App Bridge did not initialize. Open CartRenew from Shopify Admin and verify the app API key."
+        );
+        setLoading(false);
+        return;
+      }
+
+      retryTimer = window.setTimeout(tryLoad, 50);
     };
 
     tryLoad();
 
     return () => {
       cancelled = true;
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
     };
   }, []);
 
