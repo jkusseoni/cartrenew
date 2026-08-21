@@ -131,7 +131,7 @@ export async function GET(request: NextRequest) {
       }
 
       // Shopify often stores placeholder phones like +15551212 — Twilio 21211.
-      // Mark lost so cron does not infinite-retry invalid numbers.
+      // Release the claim so a later checkout update can replace the phone.
       if (!isValidWhatsAppPhone(customerPhone)) {
         console.warn("⚠️ Skipping cart with invalid/placeholder phone", {
           cartId: cart.id,
@@ -140,7 +140,7 @@ export async function GET(request: NextRequest) {
 
         await supabaseAdmin
           .from("abandoned_carts")
-          .update({ status: "lost", updated_at: new Date().toISOString() })
+          .update({ status: PENDING_STATUS })
           .eq("id", cart.id)
           .eq("status", "messaged");
 

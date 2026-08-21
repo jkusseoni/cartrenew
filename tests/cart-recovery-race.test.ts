@@ -24,6 +24,7 @@ class HermeticSupabase {
   analytics: Row[] = []
   claimApplied = new Deferred()
   allowClaimResponse = new Deferred()
+  updateSequence = 0
 
   reset(customerPhone: string | null) {
     this.cart = {
@@ -48,6 +49,7 @@ class HermeticSupabase {
     this.analytics = []
     this.claimApplied = new Deferred()
     this.allowClaimResponse = new Deferred()
+    this.updateSequence = 0
   }
 
   from(table: string) {
@@ -171,6 +173,8 @@ class HermeticQuery implements PromiseLike<QueryResult> {
 
       for (const row of rows) {
         Object.assign(row, this.values)
+        this.database.updateSequence += 1
+        row.updated_at = `2026-08-21T10:00:${String(this.database.updateSequence).padStart(2, '0')}.000Z`
       }
 
       if (isClaim && rows.length > 0) {
@@ -191,6 +195,7 @@ const moduleUrl = (relativePath: string) =>
 
 const database = new HermeticSupabase()
 let sendMode: SendMode = 'success'
+let sendAttempts = 0
 
 mock.module(moduleUrl('lib/supabase.ts'), {
   namedExports: {
@@ -215,6 +220,7 @@ mock.module(moduleUrl('lib/services/twilio-whatsapp.ts'), {
     isValidWhatsAppPhone: (phone: string) => !phone.includes('5551212'),
     resolveRecoveryCustomerName: (name: string | null) => name || 'there',
     sendTwilioWhatsAppMessage: async () => {
+      sendAttempts += 1
       if (sendMode === 'throw') throw new Error('hermetic Twilio exception')
       if (sendMode === 'failure') {
         return { success: false, error: 'hermetic Twilio failure' }
@@ -237,7 +243,7 @@ const scenarios: Array<{
     sendMode: 'success',
   },
   {
-    name: 'invalid phone finalization',
+    name: 'invalid phone release',
     phone: '+15551212',
     sendMode: 'success',
   },
@@ -311,4 +317,153 @@ test('preserves recovered status when cart recovery cron finishes after an order
       `${scenario.name}: recovered status must remain terminal after cron resumes`
     )
   }
+})
+
+test('retries recovery on the next cron after checkout replaces an invalid phone', async () => {
+  const { GET: runCartRecoveryCron } = await import(
+    moduleUrl('app/api/cart-recovery/route.ts')
+  )
+  const { POST: runShopifyWebhook } = await import(
+    moduleUrl('app/api/webhooks/shopify/route.ts')
+  )
+
+  database.reset('+15551212')
+  sendMode = 'success'
+  sendAttempts = 0
+  const initialUpdatedAt = database.cart.updated_at
+
+  const cronPromise = runCartRecoveryCron(
+    new Request('http://localhost/api/cart-recovery') as never
+  )
+  await database.claimApplied.promise
+  assert.equal(database.cart.status, 'messaged')
+  database.allowClaimResponse.resolve()
+
+  const cronResponse = await cronPromise
+  assert.equal(cronResponse.status, 200)
+  assert.equal(database.cart.status, 'pending')
+  assert.equal(sendAttempts, 0)
+  assert.notEqual(
+    database.cart.updated_at,
+    initialUpdatedAt,
+    'releasing the claim must refresh updated_at so ordered cron scans rotate the row'
+  )
+
+  const checkoutResponse = await runShopifyWebhook(
+    new Request('http://localhost/api/webhooks/shopify', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-shopify-shop-domain': 'shop.example.test',
+        'x-shopify-topic': 'checkouts/update',
+        'x-shopify-webhook-skip-verify': 'true',
+      },
+      body: JSON.stringify({
+        id: 'checkout-1',
+        token: 'checkout-token',
+        email: 'buyer@example.test',
+        customer: {
+          first_name: 'Test',
+          last_name: 'Buyer',
+        },
+        shipping_address: {
+          phone: '+14155550123',
+        },
+        abandoned_checkout_url:
+          'https://shop.example.test/checkouts/checkout-token',
+        line_items: [{ title: 'Test item', quantity: 1, price: '42' }],
+      }),
+    }) as never
+  )
+
+  assert.equal(checkoutResponse.status, 200)
+  assert.deepEqual(
+    {
+      status: database.cart.status,
+      customerPhone: database.cart.customer_phone,
+      sendAttempts,
+    },
+    {
+      status: 'pending',
+      customerPhone: '+14155550123',
+      sendAttempts: 0,
+    },
+    'the update must store the valid phone without bypassing cron claim ordering'
+  )
+
+  const retryResponse = await runCartRecoveryCron(
+    new Request('http://localhost/api/cart-recovery') as never
+  )
+
+  assert.equal(retryResponse.status, 200)
+  assert.equal(database.cart.status, 'messaged')
+  assert.equal(sendAttempts, 1)
+})
+
+test('does not revive a cart made terminal by carts/delete when a checkout update arrives later', async () => {
+  const { POST: runShopifyWebhook } = await import(
+    moduleUrl('app/api/webhooks/shopify/route.ts')
+  )
+
+  database.reset('+15551212')
+  sendMode = 'success'
+  sendAttempts = 0
+
+  const deleteResponse = await runShopifyWebhook(
+    new Request('http://localhost/api/webhooks/shopify', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-shopify-shop-domain': 'shop.example.test',
+        'x-shopify-topic': 'carts/delete',
+        'x-shopify-webhook-skip-verify': 'true',
+      },
+      body: JSON.stringify({ token: 'checkout-token' }),
+    }) as never
+  )
+
+  assert.equal(deleteResponse.status, 200)
+  assert.equal(database.cart.status, 'lost')
+
+  const checkoutResponse = await runShopifyWebhook(
+    new Request('http://localhost/api/webhooks/shopify', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-shopify-shop-domain': 'shop.example.test',
+        'x-shopify-topic': 'checkouts/update',
+        'x-shopify-webhook-skip-verify': 'true',
+      },
+      body: JSON.stringify({
+        id: 'checkout-1',
+        token: 'checkout-token',
+        email: 'buyer@example.test',
+        customer: {
+          first_name: 'Test',
+          last_name: 'Buyer',
+        },
+        shipping_address: {
+          phone: '+14155550123',
+        },
+        abandoned_checkout_url:
+          'https://shop.example.test/checkouts/checkout-token',
+        line_items: [{ title: 'Test item', quantity: 1, price: '42' }],
+      }),
+    }) as never
+  )
+
+  assert.equal(checkoutResponse.status, 200)
+  assert.deepEqual(
+    {
+      status: database.cart.status,
+      customerPhone: database.cart.customer_phone,
+      sendAttempts,
+    },
+    {
+      status: 'lost',
+      customerPhone: '+15551212',
+      sendAttempts: 0,
+    },
+    'a later checkout update must not revive or message a deleted cart'
+  )
 })
