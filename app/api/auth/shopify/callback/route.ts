@@ -11,7 +11,12 @@ import {
   isValidShopDomain,
   verifyOAuthHmac,
 } from "@/lib/shopify/config";
-import { createInstallSubscription } from "@/lib/shopify/billing";
+import {
+  createInstallSubscription,
+  getActiveAppSubscriptions,
+  resolveBillingPlanFromActiveSubscription,
+  toDbBillingStatus,
+} from "@/lib/shopify/billing";
 import { registerShopifyWebhooks } from "@/lib/shopify/webhooks";
 
 const STATE_COOKIE = "shopify_oauth_state";
@@ -41,7 +46,7 @@ export async function GET(req: NextRequest) {
     }
 
     const cookieState = req.cookies.get(STATE_COOKIE)?.value;
-    if (cookieState && state && cookieState !== state) {
+    if (!cookieState || !state || cookieState !== state) {
       return NextResponse.json({ error: "OAuth state mismatch" }, { status: 401 });
     }
 
@@ -71,9 +76,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Missing access token" }, { status: 502 });
     }
 
-    const clerkUserId =
-      (state && !state.includes(".") ? null : state?.split(".")[0]) ||
-      `webhook_${shop.replace(/[^a-z0-9]/gi, "_")}`;
+    const clerkUserId = `webhook_${shop.replace(/[^a-z0-9]/gi, "_")}`;
 
     const upsertRes = await supabaseAdmin
       .from("stores")
@@ -82,11 +85,10 @@ export async function GET(req: NextRequest) {
           shopify_domain: shop,
           shopify_access_token: accessToken,
           clerk_user_id: clerkUserId,
-          billing_status: "pending",
         },
         { onConflict: "shopify_domain" }
       )
-      .select("id")
+      .select("id, billing_plan")
       .maybeSingle();
 
     if (upsertRes.error) {
@@ -105,24 +107,47 @@ export async function GET(req: NextRequest) {
         .eq("id", fetchedStore.id);
     }
 
-    // Post-install: send merchant to Shopify Billing approval page.
+    // Preserve an existing active subscription during re-auth/reinstall.
     try {
-      const { confirmationUrl, subscriptionId, planId } = await createInstallSubscription({
+      const activeSubscriptions = await getActiveAppSubscriptions(shop, accessToken);
+      const activeSubscription =
+        activeSubscriptions.find((subscription) => subscription.status === "ACTIVE") ??
+        activeSubscriptions[0];
+
+      if (activeSubscription) {
+        if (fetchedStore?.id) {
+          const { error: billingSyncError } = await supabaseAdmin
+            .from("stores")
+            .update({
+              billing_plan: resolveBillingPlanFromActiveSubscription(
+                activeSubscription.name,
+                fetchedStore.billing_plan
+              ),
+              billing_status: toDbBillingStatus(activeSubscription.status),
+              shopify_subscription_id: activeSubscription.id,
+              billing_current_period_end: activeSubscription.currentPeriodEnd,
+            })
+            .eq("id", fetchedStore.id);
+
+          if (billingSyncError) {
+            throw new Error(`Failed to sync active Shopify billing: ${billingSyncError.message}`);
+          }
+        }
+
+        const returnParams = new URLSearchParams({ shop, billing: "active" });
+        if (host) returnParams.set("host", host);
+        const response = NextResponse.redirect(
+          `${getShopifyAppUrl()}/app?${returnParams.toString()}`
+        );
+        response.cookies.delete(STATE_COOKIE);
+        return response;
+      }
+
+      const { confirmationUrl } = await createInstallSubscription({
         shop,
         accessToken,
         host,
       });
-
-      if (fetchedStore?.id) {
-        await supabaseAdmin
-          .from("stores")
-          .update({
-            billing_plan: planId,
-            billing_status: "pending",
-            shopify_subscription_id: subscriptionId,
-          })
-          .eq("id", fetchedStore.id);
-      }
 
       const response = NextResponse.redirect(confirmationUrl);
       response.cookies.delete(STATE_COOKIE);
