@@ -84,16 +84,6 @@ export async function POST(req: NextRequest) {
       host,
     });
 
-    // Persist pending subscription so the callback can reconcile status.
-    await supabaseAdmin
-      .from("stores")
-      .update({
-        billing_plan: planId,
-        billing_status: "pending",
-        shopify_subscription_id: subscriptionId,
-      })
-      .eq("id", row.id);
-
     return NextResponse.json({
       confirmationUrl,
       subscriptionId,
