@@ -119,7 +119,8 @@ export async function GET(request: NextRequest) {
         await supabaseAdmin
           .from("abandoned_carts")
           .update({ status: PENDING_STATUS })
-          .eq("id", cart.id);
+          .eq("id", cart.id)
+          .eq("status", "messaged");
 
         results.push({
           cartId: cart.id,
@@ -140,7 +141,8 @@ export async function GET(request: NextRequest) {
         await supabaseAdmin
           .from("abandoned_carts")
           .update({ status: "lost", updated_at: new Date().toISOString() })
-          .eq("id", cart.id);
+          .eq("id", cart.id)
+          .eq("status", "messaged");
 
         results.push({
           cartId: cart.id,
@@ -190,7 +192,8 @@ export async function GET(request: NextRequest) {
           await supabaseAdmin
             .from("abandoned_carts")
             .update({ status: PENDING_STATUS })
-            .eq("id", cart.id);
+            .eq("id", cart.id)
+            .eq("status", "messaged");
 
           results.push({
             cartId: cart.id,
@@ -206,7 +209,8 @@ export async function GET(request: NextRequest) {
             status: "messaged",
             message_sent_at: new Date().toISOString(),
           })
-          .eq("id", cart.id);
+          .eq("id", cart.id)
+          .eq("status", "messaged");
 
         results.push({
           cartId: cart.id,
@@ -220,7 +224,8 @@ export async function GET(request: NextRequest) {
           await supabaseAdmin
             .from("abandoned_carts")
             .update({ status: PENDING_STATUS })
-            .eq("id", cart.id);
+            .eq("id", cart.id)
+            .eq("status", "messaged");
         } catch (releaseError) {
           console.error(`Failed to release claim for cart ${cart.id}:`, releaseError);
         }
