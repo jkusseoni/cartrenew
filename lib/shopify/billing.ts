@@ -279,6 +279,17 @@ export function inferPlanIdFromSubscriptionName(name: string | null | undefined)
 }
 
 /**
+ * Resolve the locally persisted plan from Shopify-owned subscription data.
+ * Callback query parameters are browser-controlled and must never grant entitlements.
+ */
+export function resolveBillingPlanFromActiveSubscription(
+  subscriptionName: string | null | undefined,
+  currentPlan: string | null | undefined
+): string | null {
+  return inferPlanIdFromSubscriptionName(subscriptionName) ?? currentPlan ?? null;
+}
+
+/**
  * Default post-install plan. Override with SHOPIFY_DEFAULT_BILLING_PLAN=starter|growth|scale.
  */
 export function getDefaultInstallPlanId(): ShopifyBillingPlanId {

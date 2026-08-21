@@ -7,6 +7,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { getShopifyAppUrl, isValidShopDomain } from "@/lib/shopify/config";
 import {
   getActiveAppSubscriptions,
+  resolveBillingPlanFromActiveSubscription,
   toDbBillingStatus,
 } from "@/lib/shopify/billing";
 
@@ -21,7 +22,6 @@ export async function GET(req: NextRequest) {
   const shop = url.searchParams.get("shop");
   const host = url.searchParams.get("host");
   const plan = url.searchParams.get("plan");
-  const chargeId = url.searchParams.get("charge_id");
 
   if (!isValidShopDomain(shop)) {
     return NextResponse.redirect(`${getShopifyAppUrl()}/app?billing=invalid_shop`);
@@ -47,17 +47,13 @@ export async function GET(req: NextRequest) {
           .update({
             billing_status: toDbBillingStatus(match.status),
             shopify_subscription_id: match.id,
-            billing_plan: plan || store.billing_plan || null,
+            billing_plan: resolveBillingPlanFromActiveSubscription(
+              match.name,
+              store.billing_plan
+            ),
             billing_current_period_end: match.currentPeriodEnd,
           })
           .eq("id", store.id);
-      } else if (chargeId) {
-        // Merchant may have declined — mark pending as declined when no active sub.
-        await supabaseAdmin
-          .from("stores")
-          .update({ billing_status: "declined" })
-          .eq("id", store.id)
-          .in("billing_status", ["pending", "PENDING"]);
       }
     }
   } catch (error) {
