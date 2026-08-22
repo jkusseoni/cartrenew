@@ -6,6 +6,9 @@ import { Link } from "@/i18n/routing";
 
 type Step = 1 | 2 | 3;
 
+const PLUGIN_DOWNLOAD_URL =
+  "https://github.com/jkusseoni/cartrenew-woocommerce/releases/download/v0.1.2/cartrenew-woocommerce.1.zip";
+
 type Credentials = {
   store_id: string;
   api_key: string;
@@ -307,16 +310,28 @@ export default function WooCommerceConnectPage() {
         {step === 3 ? (
           <div className="rounded-2xl border border-neutral-800 bg-neutral-950/60 p-5 sm:p-6 space-y-5">
             <h2 className="text-sm font-black text-white">Install CartRenew plugin</h2>
+
+            <a
+              href={PLUGIN_DOWNLOAD_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex rounded-xl bg-[#00DF89] px-5 py-3 text-xs font-black text-neutral-950 transition hover:bg-[#00c978]"
+            >
+              Download Plugin (.zip)
+            </a>
+
             <ol className="space-y-3 text-sm text-neutral-300 list-decimal list-inside">
               <li>
                 Download{" "}
                 <a
-                  href="#download-plugin"
+                  href={PLUGIN_DOWNLOAD_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="font-bold text-[#00DF89] underline-offset-2 hover:underline"
                 >
                   CartRenew for WooCommerce
                 </a>{" "}
-                (plugin zip — link placeholder).
+                (plugin zip).
               </li>
               <li>
                 In WordPress admin go to{" "}
