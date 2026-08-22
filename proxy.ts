@@ -50,6 +50,7 @@ const isPublicRoute = createRouteMatcher([
   "/api/meta-capi(.*)",
   "/api/cart/automate(.*)",
   "/api/woocommerce(.*)",
+  "/woocommerce(.*)",
   // Route handlers enforce ADMIN_PROCESS_SECRET themselves (requireAutomationSecret);
   // bypassing Clerk here lets header/query-secret cron calls reach them.
   "/api/auth/2fa(.*)",
@@ -279,6 +280,17 @@ function handleRecoveryRedirectRequest(request: NextRequest): NextResponse | nul
   return null;
 }
 
+const isWooCommerceConnect = (pathname: string) =>
+  pathname === "/woocommerce" || pathname.startsWith("/woocommerce/");
+
+/** Public WooCommerce signup pages must skip next-intl locale prefixing. */
+function handleWooCommerceConnectRequest(request: NextRequest): NextResponse | null {
+  if (isWooCommerceConnect(request.nextUrl.pathname)) {
+    return NextResponse.next();
+  }
+  return null;
+}
+
 function handleApiRequest(request: NextRequest) {
   // Shopify (and other providers) must not be rate-limited on webhook delivery.
   if (request.nextUrl.pathname.startsWith("/api/webhooks")) {
@@ -412,6 +424,9 @@ export default skipClerk
       const recoveryResponse = handleRecoveryRedirectRequest(request);
       if (recoveryResponse) return recoveryResponse;
 
+      const wooResponse = handleWooCommerceConnectRequest(request);
+      if (wooResponse) return applySecurityHeaders(wooResponse);
+
       const leakedPath = resolveClerkPathLeak(request.nextUrl.pathname);
       if (leakedPath) {
         return applySecurityHeaders(
@@ -434,6 +449,9 @@ export default skipClerk
 
       const recoveryResponse = handleRecoveryRedirectRequest(request);
       if (recoveryResponse) return recoveryResponse;
+
+      const wooResponse = handleWooCommerceConnectRequest(request);
+      if (wooResponse) return applySecurityHeaders(wooResponse);
 
       const leakedPath = resolveClerkPathLeak(request.nextUrl.pathname);
       if (leakedPath) {

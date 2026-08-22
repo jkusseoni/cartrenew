@@ -12,11 +12,15 @@ export interface Database {
       stores: {
         Row: {
           id: string
-          shopify_domain: string
+          shopify_domain: string | null
           shopify_access_token: string | null
           webhook_ids: Json | null
           clerk_user_id: string
           api_key: string | null
+          platform: string
+          site_url: string | null
+          contact_email: string | null
+          store_name: string | null
           whatsapp_phone_id: string | null
           whatsapp_access_token: string | null
           billing_plan: string | null
@@ -29,11 +33,15 @@ export interface Database {
         }
         Insert: {
           id?: string
-          shopify_domain: string
+          shopify_domain?: string | null
           shopify_access_token?: string | null
           webhook_ids?: Json | null
           clerk_user_id: string
           api_key?: string | null
+          platform?: string
+          site_url?: string | null
+          contact_email?: string | null
+          store_name?: string | null
           whatsapp_phone_id?: string | null
           whatsapp_access_token?: string | null
           billing_plan?: string | null
@@ -46,11 +54,15 @@ export interface Database {
         }
         Update: {
           id?: string
-          shopify_domain?: string
+          shopify_domain?: string | null
           shopify_access_token?: string | null
           webhook_ids?: Json | null
           clerk_user_id?: string
           api_key?: string | null
+          platform?: string
+          site_url?: string | null
+          contact_email?: string | null
+          store_name?: string | null
           whatsapp_phone_id?: string | null
           whatsapp_access_token?: string | null
           billing_plan?: string | null
