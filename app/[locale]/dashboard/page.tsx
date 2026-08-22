@@ -111,9 +111,9 @@ export default function Dashboard({
             <Link href="/settings" className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-neutral-900/40 hover:text-white transition-colors shrink-0 lg:w-full">
               <span>⚙️</span> Core Integration Settings
             </Link>
-            <a href="/woocommerce/connect" className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-neutral-900/40 hover:text-white transition-colors shrink-0 lg:w-full">
+            <Link href="/woocommerce/connect" className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-neutral-900/40 hover:text-white transition-colors shrink-0 lg:w-full">
               <span>🛒</span> WooCommerce
-            </a>
+            </Link>
           </nav>
         </div>
 

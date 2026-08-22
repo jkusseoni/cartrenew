@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import {
   BarChart3,
   Clock,
@@ -10,6 +9,8 @@ import {
   ShieldCheck,
   ShoppingCart,
 } from "lucide-react";
+
+import { Link } from "@/i18n/routing";
 
 const STEPS = [
   {
@@ -121,53 +122,6 @@ const FAQS = [
   },
 ] as const;
 
-function LandingNav() {
-  return (
-    <nav className="fixed top-0 left-0 right-0 z-50 h-16 border-b border-slate-200/80 bg-white/80 backdrop-blur-md">
-      <div className="mx-auto flex h-full max-w-7xl items-center justify-between px-6">
-        <Link href="/" className="flex items-center gap-1 text-xl font-black tracking-tight">
-          <span className="text-slate-900">Cart</span>
-          <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-            Renew
-          </span>
-        </Link>
-        <div className="hidden items-center gap-8 md:flex">
-          <a
-            href="#how-it-works"
-            className="text-xs font-bold uppercase tracking-wider text-slate-600 transition-colors hover:text-blue-600"
-          >
-            How it works
-          </a>
-          <a
-            href="#pricing"
-            className="text-xs font-bold uppercase tracking-wider text-slate-600 transition-colors hover:text-blue-600"
-          >
-            Pricing
-          </a>
-          <a
-            href="#faq"
-            className="text-xs font-bold uppercase tracking-wider text-slate-600 transition-colors hover:text-blue-600"
-          >
-            FAQ
-          </a>
-          <Link
-            href="/"
-            className="text-xs font-bold uppercase tracking-wider text-slate-600 transition-colors hover:text-blue-600"
-          >
-            Shopify
-          </Link>
-        </div>
-        <Link
-          href="/woocommerce/connect"
-          className="rounded-xl bg-blue-600 px-5 py-2.5 text-xs font-black text-white shadow-md shadow-blue-500/10 transition hover:bg-blue-700"
-        >
-          Connect Store
-        </Link>
-      </div>
-    </nav>
-  );
-}
-
 function FaqAccordion() {
   const [openIdx, setOpenIdx] = useState<number | null>(0);
 
@@ -211,18 +165,10 @@ function FaqAccordion() {
 
 export default function WooCommerceLanding() {
   return (
-    <main className="relative flex min-h-screen w-full flex-col overflow-x-hidden bg-slate-50 text-slate-800 selection:bg-blue-200 selection:text-blue-900">
-      <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
-        <div className="absolute left-[-10%] top-[5%] h-[900px] w-[900px] rounded-full bg-blue-100/40 blur-[160px] mix-blend-multiply" />
-        <div className="absolute right-[-10%] top-[35%] h-[800px] w-[800px] rounded-full bg-pink-100/40 blur-[150px] mix-blend-multiply" />
-        <div className="absolute left-[5%] top-[65%] h-[700px] w-[700px] rounded-full bg-emerald-100/30 blur-[140px] mix-blend-multiply" />
-      </div>
-
-      <LandingNav />
-
-      <div className="relative z-10 flex w-full flex-col pt-16">
+    <main className="relative flex w-full flex-col overflow-x-hidden bg-transparent text-slate-800 selection:bg-blue-200 selection:text-blue-900">
+      <div className="relative z-10 flex w-full flex-col">
         {/* HERO */}
-        <section className="relative mx-auto w-full max-w-7xl px-4 pb-20 pt-16 sm:px-6 md:pt-24 lg:px-8">
+        <section className="relative mx-auto w-full max-w-7xl px-4 pb-20 pt-10 sm:px-6 md:pt-16 lg:px-8">
           <div className="max-w-3xl space-y-6">
             <p className="text-sm font-black uppercase tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-indigo-500 to-emerald-600 sm:text-base">
               CartRenew for WooCommerce
@@ -420,33 +366,6 @@ export default function WooCommerceLanding() {
             </Link>
           </div>
         </section>
-
-        <footer className="border-t border-slate-200/80 bg-white/60 py-8 backdrop-blur-md">
-          <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-6 sm:flex-row">
-            <div className="text-center sm:text-left">
-              <span className="text-lg font-black tracking-wider text-slate-900">
-                CartRenew
-              </span>
-              <p className="text-xs text-slate-400">
-                © {new Date().getFullYear()} All rights reserved.
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs font-bold text-slate-500">
-              <Link href="/en/privacy" className="hover:text-slate-900">
-                Privacy
-              </Link>
-              <Link href="/en/terms" className="hover:text-slate-900">
-                Terms
-              </Link>
-              <Link href="/en/support" className="hover:text-slate-900">
-                Support
-              </Link>
-              <Link href="/" className="text-indigo-600 hover:text-indigo-500">
-                Shopify version
-              </Link>
-            </div>
-          </div>
-        </footer>
       </div>
     </main>
   );

@@ -17,6 +17,7 @@ const localePublicRoutes = locales.flatMap((locale) => [
   `/${locale}/pricing(.*)`,
   `/${locale}/comparison(.*)`,
   `/${locale}/docs(.*)`,
+  `/${locale}/woocommerce(.*)`,
   `/${locale}/sign-in(.*)`,
   `/${locale}/sign-up(.*)`,
   `/${locale}/terms(.*)`,
@@ -280,17 +281,6 @@ function handleRecoveryRedirectRequest(request: NextRequest): NextResponse | nul
   return null;
 }
 
-const isWooCommerceConnect = (pathname: string) =>
-  pathname === "/woocommerce" || pathname.startsWith("/woocommerce/");
-
-/** Public WooCommerce signup pages must skip next-intl locale prefixing. */
-function handleWooCommerceConnectRequest(request: NextRequest): NextResponse | null {
-  if (isWooCommerceConnect(request.nextUrl.pathname)) {
-    return NextResponse.next();
-  }
-  return null;
-}
-
 function handleApiRequest(request: NextRequest) {
   // Shopify (and other providers) must not be rate-limited on webhook delivery.
   if (request.nextUrl.pathname.startsWith("/api/webhooks")) {
@@ -424,9 +414,6 @@ export default skipClerk
       const recoveryResponse = handleRecoveryRedirectRequest(request);
       if (recoveryResponse) return recoveryResponse;
 
-      const wooResponse = handleWooCommerceConnectRequest(request);
-      if (wooResponse) return applySecurityHeaders(wooResponse);
-
       const leakedPath = resolveClerkPathLeak(request.nextUrl.pathname);
       if (leakedPath) {
         return applySecurityHeaders(
@@ -449,9 +436,6 @@ export default skipClerk
 
       const recoveryResponse = handleRecoveryRedirectRequest(request);
       if (recoveryResponse) return recoveryResponse;
-
-      const wooResponse = handleWooCommerceConnectRequest(request);
-      if (wooResponse) return applySecurityHeaders(wooResponse);
 
       const leakedPath = resolveClerkPathLeak(request.nextUrl.pathname);
       if (leakedPath) {

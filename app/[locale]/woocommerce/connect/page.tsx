@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
+
+import { Link } from "@/i18n/routing";
 
 type Step = 1 | 2 | 3;
 
@@ -135,7 +136,7 @@ export default function WooCommerceConnectPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0B0F17] text-white flex flex-col lg:flex-row">
+    <div className="min-h-[calc(100vh-4rem)] bg-[#0B0F17] text-white flex flex-col lg:flex-row -mx-0">
       <aside className="w-full lg:w-64 bg-neutral-950 border-b lg:border-b-0 lg:border-r border-neutral-900 p-5 flex flex-col justify-between shrink-0">
         <div className="space-y-8">
           <div className="flex items-center gap-2">
@@ -152,20 +153,23 @@ export default function WooCommerceConnectPage() {
 
           <nav className="flex flex-row lg:flex-col gap-1 overflow-x-auto lg:overflow-x-visible pb-2 lg:pb-0 text-xs font-bold text-neutral-400">
             <Link
-              href="/en/dashboard"
+              href="/dashboard"
               className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-neutral-900/40 hover:text-white transition-colors shrink-0 lg:w-full"
             >
               <span>🏠</span> Dashboard
             </Link>
             <Link
-              href="/en/settings"
+              href="/settings"
               className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-neutral-900/40 hover:text-white transition-colors shrink-0 lg:w-full"
             >
               <span>⚙️</span> Settings
             </Link>
-            <a href="/woocommerce" className="flex items-center gap-3 px-4 py-3 rounded-xl bg-neutral-900 text-[#00DF89] border border-neutral-800/40 shrink-0 lg:w-full">
+            <Link
+              href="/woocommerce"
+              className="flex items-center gap-3 px-4 py-3 rounded-xl bg-neutral-900 text-[#00DF89] border border-neutral-800/40 shrink-0 lg:w-full"
+            >
               <span>🛒</span> WooCommerce
-            </a>
+            </Link>
           </nav>
         </div>
 
@@ -315,7 +319,8 @@ export default function WooCommerceConnectPage() {
                 (plugin zip — link placeholder).
               </li>
               <li>
-                In WordPress admin go to <strong className="text-white">Plugins → Add New → Upload Plugin</strong>.
+                In WordPress admin go to{" "}
+                <strong className="text-white">Plugins → Add New → Upload Plugin</strong>.
               </li>
               <li>Upload the zip and activate the plugin.</li>
               <li>
@@ -334,7 +339,7 @@ export default function WooCommerceConnectPage() {
                 ← Back to credentials
               </button>
               <Link
-                href="/en/dashboard"
+                href="/dashboard"
                 className="rounded-xl bg-neutral-100 px-4 py-2.5 text-xs font-black text-neutral-950 transition hover:bg-white"
               >
                 Go to dashboard

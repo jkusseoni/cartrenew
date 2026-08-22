@@ -9,7 +9,7 @@ import { Link } from "@/i18n/routing";
 const navLinks = [
   { key: "pricing", href: "/pricing" },
   { key: "comparison", href: "/comparison" },
-  { key: "woocommerce", href: "/woocommerce", absolute: true as const },
+  { key: "woocommerce", href: "/woocommerce" },
   { key: "dashboard", href: "/dashboard" },
   { key: "docs", href: "/docs" },
 ] as const;
@@ -47,27 +47,16 @@ export default function Navigation() {
         </Link>
 
         <div className="hidden md:flex items-center gap-8">
-          {navLinks.map((link) =>
-            "absolute" in link && link.absolute ? (
-              <a
-                key={link.key}
-                href={link.href}
-                onClick={handleNavClick}
-                className="text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors duration-200"
-              >
-                {t(link.key)}
-              </a>
-            ) : (
-              <Link
-                key={link.key}
-                href={link.href}
-                onClick={handleNavClick}
-                className="text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors duration-200"
-              >
-                {t(link.key)}
-              </Link>
-            )
-          )}
+          {navLinks.map((link) => (
+            <Link
+              key={link.key}
+              href={link.href}
+              onClick={handleNavClick}
+              className="text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors duration-200"
+            >
+              {t(link.key)}
+            </Link>
+          ))}
         </div>
 
         <div className="hidden md:flex items-center gap-3">
@@ -99,27 +88,16 @@ export default function Navigation() {
       {mobileOpen && (
         <div className="md:hidden bg-[var(--bg-elevated)] border-b border-[var(--bg-border)] px-6 py-4">
           <div className="flex flex-col gap-4">
-            {navLinks.map((link) =>
-              "absolute" in link && link.absolute ? (
-                <a
-                  key={link.key}
-                  href={link.href}
-                  onClick={handleNavClick}
-                  className="text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-                >
-                  {t(link.key)}
-                </a>
-              ) : (
-                <Link
-                  key={link.key}
-                  href={link.href}
-                  onClick={handleNavClick}
-                  className="text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-                >
-                  {t(link.key)}
-                </Link>
-              )
-            )}
+            {navLinks.map((link) => (
+              <Link
+                key={link.key}
+                href={link.href}
+                onClick={handleNavClick}
+                className="text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+              >
+                {t(link.key)}
+              </Link>
+            ))}
 
             <div className="flex flex-col gap-2 pt-2 border-t border-[var(--bg-border)]">
               <Link

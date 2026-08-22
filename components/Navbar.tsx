@@ -7,22 +7,13 @@ import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/routing";
 import LanguageSwitcher from "@/components/LanguageSwitcher";
 
-type NavLink =
-  | { key: "pricing" | "comparison" | "dashboard" | "docs"; href: string; absolute?: false }
-  | { key: "woocommerce"; href: "/woocommerce"; absolute: true };
-
-const navLinks: NavLink[] = [
+const navLinks = [
   { key: "pricing", href: "/pricing" },
   { key: "comparison", href: "/comparison" },
-  { key: "woocommerce", href: "/woocommerce", absolute: true },
+  { key: "woocommerce", href: "/woocommerce" },
   { key: "dashboard", href: "/dashboard" },
   { key: "docs", href: "/docs" },
-];
-
-const linkClassDesktop =
-  "text-xs font-bold text-slate-600 hover:text-blue-600 transition-colors uppercase tracking-wider";
-const linkClassMobile =
-  "text-sm font-bold text-slate-700 hover:text-blue-600 transition-all";
+] as const;
 
 export default function Navbar() {
   const t = useTranslations("nav");
@@ -53,17 +44,15 @@ export default function Navbar() {
         </Link>
 
         <div className="hidden md:flex items-center gap-8">
-          {navLinks.map((link) =>
-            link.absolute ? (
-              <a key={link.key} href={link.href} className={linkClassDesktop}>
-                {t(link.key)}
-              </a>
-            ) : (
-              <Link key={link.key} href={link.href} className={linkClassDesktop}>
-                {t(link.key)}
-              </Link>
-            )
-          )}
+          {navLinks.map((link) => (
+            <Link
+              key={link.key}
+              href={link.href}
+              className="text-xs font-bold text-slate-600 hover:text-blue-600 transition-colors uppercase tracking-wider"
+            >
+              {t(link.key)}
+            </Link>
+          ))}
         </div>
 
         <div className="hidden md:flex items-center gap-4">
@@ -94,27 +83,16 @@ export default function Navbar() {
 
       {mobileOpen && (
         <div className="md:hidden bg-white border-b border-slate-200 px-6 py-6 shadow-xl absolute w-full left-0 top-16 flex flex-col gap-5">
-          {navLinks.map((link) =>
-            link.absolute ? (
-              <a
-                key={link.key}
-                href={link.href}
-                onClick={() => setMobileOpen(false)}
-                className={linkClassMobile}
-              >
-                {t(link.key)}
-              </a>
-            ) : (
-              <Link
-                key={link.key}
-                href={link.href}
-                onClick={() => setMobileOpen(false)}
-                className={linkClassMobile}
-              >
-                {t(link.key)}
-              </Link>
-            )
-          )}
+          {navLinks.map((link) => (
+            <Link
+              key={link.key}
+              href={link.href}
+              onClick={() => setMobileOpen(false)}
+              className="text-sm font-bold text-slate-700 hover:text-blue-600 transition-all"
+            >
+              {t(link.key)}
+            </Link>
+          ))}
           <div className="pt-2">
             <LanguageSwitcher />
           </div>
