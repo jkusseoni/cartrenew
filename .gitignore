@@ -58,5 +58,8 @@ next-env.d.ts
 # clerk configuration (can include secrets)
 /.clerk/
 
+# local-only helper that prints a store's api_key to stdout
+/scripts/get-store-api-key.ts
+
 .vercel
 .env*
