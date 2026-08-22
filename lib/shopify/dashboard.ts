@@ -118,48 +118,59 @@ export async function loadShopifyStoreDashboard(
         .gte("date", startDateStr),
     ]);
 
-    const carts = (cartsRes.data ?? []) as ShopifyCartRow[];
-    const analytics = analyticsRes.data ?? [];
+    // Empty store / missing tables: treat query errors as zero rows, never throw.
+    if (cartsRes.error) {
+      console.warn(
+        `[CartRenew] abandoned_carts query failed for ${shop}:`,
+        describeSupabaseError(cartsRes.error)
+      );
+    }
+    if (analyticsRes.error) {
+      console.warn(
+        `[CartRenew] analytics_daily query failed for ${shop}:`,
+        describeSupabaseError(analyticsRes.error)
+      );
+    }
+
+    const carts = (Array.isArray(cartsRes.data) ? cartsRes.data : []) as ShopifyCartRow[];
+    const analytics = Array.isArray(analyticsRes.data) ? analyticsRes.data : [];
 
     const metrics = analytics.reduce<ShopifyDashboardMetrics>(
       (acc, row) => ({
-        trackedCarts: acc.trackedCarts + (row.carts_created ?? 0),
-        recovered: acc.recovered + (row.carts_recovered ?? 0),
-        recoveredValue: acc.recoveredValue + Number(row.revenue_recovered ?? 0),
+        trackedCarts: acc.trackedCarts + Number(row?.carts_created ?? 0),
+        recovered: acc.recovered + Number(row?.carts_recovered ?? 0),
+        recoveredValue: acc.recoveredValue + Number(row?.revenue_recovered ?? 0),
       }),
       { trackedCarts: 0, recovered: 0, recoveredValue: 0 }
     );
 
+    // Brand-new shops: zero analytics rows is normal — fall back to cart list counts.
     if (metrics.trackedCarts === 0 && carts.length > 0) {
-      console.log(
-        "🔍 DEBUG CARTS DATA:",
-        JSON.stringify(
-          carts.map((c) => ({
-            status: c.status,
-            val1: (c as { cartValue?: number }).cartValue,
-            val2: c.cart_value,
-            raw: c,
-          })),
-          null,
-          2
-        )
-      );
-
-      // Case-insensitive: accepts "recovered" | "RECOVERED" | mixed
       const recoveredCarts = carts.filter(
-        (cart) => cart.status && cart.status.toLowerCase() === "recovered"
+        (cart) =>
+          typeof cart.status === "string" &&
+          cart.status.trim().toLowerCase() === "recovered"
       );
       metrics.trackedCarts = carts.length;
       metrics.recovered = recoveredCarts.length;
-      // Revenue mapping — support cart_value (Supabase) and cartValue (camelCase)
       metrics.recoveredValue = recoveredCarts.reduce(
         (sum, cart) =>
-          sum + Number((cart as { cartValue?: number }).cartValue ?? cart.cart_value ?? 0),
+          sum +
+          Number(
+            (cart as { cartValue?: number }).cartValue ?? cart.cart_value ?? 0
+          ),
         0
       );
     }
 
-    return { store, carts, metrics };
+    return {
+      store: {
+        ...store,
+        shopify_domain: store.shopify_domain || shop,
+      },
+      carts,
+      metrics,
+    };
   } catch (err) {
     const message = describeSupabaseError(err);
     if (message) {

@@ -17,6 +17,7 @@ type DashboardResponse = {
   metrics: ShopifyDashboardMetrics;
   carts: ShopifyCartRow[];
   needsInstall?: boolean;
+  degraded?: boolean;
   error?: string;
 };
 
@@ -42,13 +43,48 @@ function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-/** Top-level reload of the embedded App URL — escapes iframe auth dead-ends without legacy OAuth. */
+function normalizeMetrics(
+  metrics?: Partial<ShopifyDashboardMetrics> | null
+): ShopifyDashboardMetrics {
+  return {
+    trackedCarts: Number(metrics?.trackedCarts ?? 0) || 0,
+    recovered: Number(metrics?.recovered ?? 0) || 0,
+    recoveredValue: Number(metrics?.recoveredValue ?? 0) || 0,
+  };
+}
+
+function normalizeDashboard(
+  json: Partial<DashboardResponse> & { shop?: string },
+  fallbackShop?: string | null
+): DashboardResponse {
+  const shop = json.shop || fallbackShop || "";
+  return {
+    shop,
+    merchantId: json.merchantId,
+    needsInstall: Boolean(json.needsInstall),
+    degraded: Boolean(json.degraded),
+    store: json.store
+      ? {
+          ...json.store,
+          shopify_domain: json.store.shopify_domain || shop,
+        }
+      : null,
+    carts: Array.isArray(json.carts) ? json.carts : [],
+    metrics: normalizeMetrics(json.metrics),
+    error: json.error,
+  };
+}
+
+/**
+ * Stay inside the Shopify Admin iframe.
+ * NEVER navigate window.top — that breaks out of Admin and looks like an
+ * "error page after installing" (App Store review 2.1.1).
+ */
 function reloadEmbeddedApp(shop?: string | null) {
   const params = new URLSearchParams(window.location.search);
   if (shop && !params.get("shop")) params.set("shop", shop);
   const next = `/app?${params.toString()}`;
-  const topWindow = window.top ?? window;
-  topWindow.location.href = next;
+  window.location.assign(next);
 }
 
 function Shell({ children }: { children: React.ReactNode }) {
@@ -86,34 +122,103 @@ async function fetchDashboard(url: string): Promise<{
   json: DashboardResponse;
 }> {
   const res = await authFetch(url, { method: "GET" });
-  const json = (await res.json()) as DashboardResponse;
-  return { res, json };
+  let raw: Partial<DashboardResponse> = {};
+  try {
+    raw = (await res.json()) as Partial<DashboardResponse>;
+  } catch {
+    // Non-JSON (HTML error page) — treat as empty payload; caller recovers.
+  }
+  const shopFromUrl = new URL(url, window.location.origin).searchParams.get("shop");
+  return { res, json: normalizeDashboard(raw, shopFromUrl) };
 }
 
-/** Token-exchange then re-fetch dashboard. Retries for slow Supabase commits on fresh installs. */
-async function completeInstallAndLoadDashboard(
-  dashboardUrl: string
-): Promise<DashboardResponse | null> {
-  for (let attempt = 0; attempt < 3; attempt++) {
+type ExchangeResult = {
+  ok: boolean;
+  shop?: string;
+  storeId?: string;
+};
+
+async function runTokenExchange(): Promise<ExchangeResult> {
+  try {
     const exchangeRes = await authFetch("/api/auth/token-exchange", {
       method: "POST",
     });
+    let body: ExchangeResult = { ok: false };
+    try {
+      body = (await exchangeRes.json()) as ExchangeResult;
+    } catch {
+      body = { ok: false };
+    }
+    return {
+      ok: Boolean(exchangeRes.ok && body.ok && body.storeId),
+      shop: body.shop,
+      storeId: body.storeId,
+    };
+  } catch {
+    return { ok: false };
+  }
+}
 
-    if (!exchangeRes.ok) {
+/**
+ * Token-exchange then re-fetch dashboard.
+ * If Supabase read lags after insert, synthesize an empty-store dashboard from
+ * the exchange response so brand-new shops never loop into an error page.
+ */
+async function completeInstallAndLoadDashboard(
+  dashboardUrl: string,
+  fallbackShop?: string | null
+): Promise<DashboardResponse | null> {
+  let lastExchange: ExchangeResult = { ok: false };
+
+  for (let attempt = 0; attempt < 4; attempt++) {
+    lastExchange = await runTokenExchange();
+
+    if (!lastExchange.ok) {
       await sleep(400 * (attempt + 1));
       continue;
     }
 
-    await sleep(200 * (attempt + 1));
+    await sleep(250 * (attempt + 1));
 
     const { res, json } = await fetchDashboard(dashboardUrl);
     if (res.ok && json.store && !json.needsInstall) {
-      return {
-        ...json,
-        carts: json.carts ?? [],
-        metrics: json.metrics ?? EMPTY_METRICS,
-      };
+      return json;
     }
+
+    // Store row committed but dashboard still says needsInstall — render empty state.
+    if (lastExchange.storeId) {
+      const shop = json.shop || lastExchange.shop || fallbackShop || "";
+      return normalizeDashboard(
+        {
+          shop,
+          store: {
+            id: lastExchange.storeId,
+            shopify_domain: shop,
+          },
+          metrics: EMPTY_METRICS,
+          carts: [],
+          needsInstall: false,
+        },
+        shop
+      );
+    }
+  }
+
+  if (lastExchange.storeId) {
+    const shop = lastExchange.shop || fallbackShop || "";
+    return normalizeDashboard(
+      {
+        shop,
+        store: {
+          id: lastExchange.storeId,
+          shopify_domain: shop,
+        },
+        metrics: EMPTY_METRICS,
+        carts: [],
+        needsInstall: false,
+      },
+      shop
+    );
   }
 
   return null;
@@ -127,6 +232,13 @@ export default function EmbeddedAppHomePage() {
 
   useEffect(() => {
     let cancelled = false;
+
+    const applyData = (next: DashboardResponse) => {
+      startTransition(() => {
+        setData(next);
+        setLoading(false);
+      });
+    };
 
     const load = async () => {
       try {
@@ -143,20 +255,18 @@ export default function EmbeddedAppHomePage() {
         // Fresh managed install: no store row yet — exchange token then load (incl. zero carts).
         if (res.ok && json.needsInstall && json.shop) {
           setStatusMessage("Finishing install…");
-          const installed = await completeInstallAndLoadDashboard(url);
+          const installed = await completeInstallAndLoadDashboard(url, json.shop);
           if (cancelled) return;
 
           if (installed) {
-            startTransition(() => {
-              setData(installed);
-              setLoading(false);
-            });
+            applyData(installed);
             return;
           }
 
-          // Last resort: top-level remount of /app (not legacy OAuth — that route was removed).
+          // Soft in-iframe retry — never break out of Admin via window.top.
           setStatusMessage("Almost ready — refreshing…");
-          reloadEmbeddedApp(json.shop);
+          await sleep(800);
+          if (!cancelled) reloadEmbeddedApp(json.shop);
           return;
         }
 
@@ -171,46 +281,46 @@ export default function EmbeddedAppHomePage() {
 
           if (res.ok && json.needsInstall && json.shop) {
             setStatusMessage("Finishing install…");
-            const installed = await completeInstallAndLoadDashboard(url);
+            const installed = await completeInstallAndLoadDashboard(url, json.shop);
             if (cancelled) return;
             if (installed) {
-              startTransition(() => {
-                setData(installed);
-                setLoading(false);
-              });
+              applyData(installed);
               return;
             }
           }
 
-          if (res.ok && json.store) {
-            startTransition(() => {
-              setData({
-                ...json,
-                carts: json.carts ?? [],
-                metrics: json.metrics ?? EMPTY_METRICS,
-              });
-              setLoading(false);
-            });
+          if (res.ok && (json.store || json.shop)) {
+            applyData(
+              json.store
+                ? json
+                : normalizeDashboard(
+                    {
+                      ...json,
+                      store: {
+                        id: json.merchantId ?? "pending",
+                        shopify_domain: json.shop || shopParam || "",
+                      },
+                    },
+                    shopParam
+                  )
+            );
             return;
           }
 
           const shop = json.shop || shopParam;
           if (shop) {
             setStatusMessage("Recovering session…");
-            const installed = await completeInstallAndLoadDashboard(url);
+            const installed = await completeInstallAndLoadDashboard(url, shop);
             if (cancelled) return;
             if (installed) {
-              startTransition(() => {
-                setData(installed);
-                setLoading(false);
-              });
+              applyData(installed);
               return;
             }
-            reloadEmbeddedApp(shop);
+            await sleep(600);
+            if (!cancelled) reloadEmbeddedApp(shop);
             return;
           }
 
-          // No shop yet — keep a soft loading state (never a "Session required" error page).
           setStatusMessage("Waiting for Shopify Admin session…");
           await sleep(1000);
           if (!cancelled) reloadEmbeddedApp(shopParam);
@@ -221,16 +331,14 @@ export default function EmbeddedAppHomePage() {
           const shop = json.shop || shopParam;
           setStatusMessage("Retrying…");
           if (shop) {
-            const installed = await completeInstallAndLoadDashboard(url);
+            const installed = await completeInstallAndLoadDashboard(url, shop);
             if (cancelled) return;
             if (installed) {
-              startTransition(() => {
-                setData(installed);
-                setLoading(false);
-              });
+              applyData(installed);
               return;
             }
-            reloadEmbeddedApp(shop);
+            await sleep(600);
+            if (!cancelled) reloadEmbeddedApp(shop);
             return;
           }
           setStatusMessage("Waiting for Shopify Admin session…");
@@ -240,17 +348,24 @@ export default function EmbeddedAppHomePage() {
         }
 
         // Happy path — including brand-new stores with zero carts / zero metrics.
-        startTransition(() => {
-          setData({
-            ...json,
-            carts: json.carts ?? [],
-            metrics: json.metrics ?? EMPTY_METRICS,
-          });
-          setLoading(false);
-        });
+        applyData(
+          json.store
+            ? json
+            : normalizeDashboard(
+                {
+                  ...json,
+                  store: {
+                    id: json.merchantId ?? "pending",
+                    shopify_domain: json.shop || shopParam || "",
+                  },
+                  needsInstall: false,
+                },
+                shopParam
+              )
+        );
       } catch {
         if (cancelled) return;
-        // Never paint a static error page — recover via top-level /app remount.
+        // Stay in iframe — soft remount, never a static error page.
         setStatusMessage("Reconnecting…");
         const shop = new URLSearchParams(window.location.search).get("shop");
         await sleep(600);
@@ -261,17 +376,20 @@ export default function EmbeddedAppHomePage() {
     // App Bridge injects window.shopify after the sync CDN script runs.
     let attempts = 0;
     const tryLoad = () => {
-      const shopify = (window as Window & { shopify?: { idToken?: () => Promise<string> } })
-        .shopify;
+      const shopify = (
+        window as Window & { shopify?: { idToken?: () => Promise<string> } }
+      ).shopify;
       if (shopify?.idToken) {
         void load();
         return;
       }
       attempts += 1;
       if (attempts > 100) {
-        // ~5s without App Bridge — remount rather than show an error banner.
+        // ~5s without App Bridge — in-iframe remount only.
         setStatusMessage("Reconnecting to Shopify…");
-        reloadEmbeddedApp(new URLSearchParams(window.location.search).get("shop"));
+        reloadEmbeddedApp(
+          new URLSearchParams(window.location.search).get("shop")
+        );
         return;
       }
       window.setTimeout(tryLoad, 50);
@@ -285,22 +403,28 @@ export default function EmbeddedAppHomePage() {
   }, []);
 
   if (loading || !data) {
-    return (
-      <Notice
-        title="Setting up CartRenew"
-        body={statusMessage}
-      />
-    );
+    return <Notice title="Setting up CartRenew" body={statusMessage} />;
   }
 
-  const store = data.store ?? {
+  const shopDomain =
+    data.store?.shopify_domain ||
+    data.shop ||
+    (typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("shop")
+      : null) ||
+    "";
+
+  const store: ShopifyStoreRow = data.store ?? {
     id: data.merchantId ?? "pending",
-    shopify_domain: data.shop,
+    shopify_domain: shopDomain,
   };
+
   const rows = data.carts ?? [];
-  const metrics = data.metrics ?? EMPTY_METRICS;
-  const pending = rows.filter((c) => isPendingStatus(c.status));
-  const recoveredRows = rows.filter((c) => isRecoveredStatus(c.status));
+  const metrics = normalizeMetrics(data.metrics);
+  const pending = rows.filter((c) => isPendingStatus(String(c.status ?? "")));
+  const recoveredRows = rows.filter((c) =>
+    isRecoveredStatus(String(c.status ?? ""))
+  );
   const host =
     typeof window !== "undefined"
       ? new URLSearchParams(window.location.search).get("host") ?? undefined
@@ -309,32 +433,42 @@ export default function EmbeddedAppHomePage() {
   return (
     <Shell>
       <div className="border-b border-neutral-900/60 pb-6 mb-8">
-        <h1 className="text-2xl sm:text-3xl font-black tracking-tight">Cart Recovery Console</h1>
+        <h1 className="text-2xl sm:text-3xl font-black tracking-tight">
+          Cart Recovery Console
+        </h1>
         <p className="text-xs sm:text-sm text-neutral-400 mt-1">
           Connected store:{" "}
-          <span className="text-[#00DF89] font-mono">{store.shopify_domain}</span>
+          <span className="text-[#00DF89] font-mono">
+            {store.shopify_domain || shopDomain || "—"}
+          </span>
         </p>
       </div>
 
-      <ShopifyBillingPlans
-        shop={store.shopify_domain}
-        host={host}
-        currentPlan={store.billing_plan}
-        billingStatus={store.billing_status}
-      />
+      {shopDomain ? (
+        <ShopifyBillingPlans
+          shop={shopDomain}
+          host={host}
+          currentPlan={store.billing_plan}
+          billingStatus={store.billing_status}
+        />
+      ) : null}
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
         <div className="bg-neutral-950/40 border border-neutral-900 p-5 rounded-2xl">
           <p className="text-[10px] uppercase font-bold tracking-wider text-neutral-500">
             Tracked Carts
           </p>
-          <p className="text-2xl font-mono font-black text-white mt-2">{metrics.trackedCarts}</p>
+          <p className="text-2xl font-mono font-black text-white mt-2">
+            {metrics.trackedCarts}
+          </p>
         </div>
         <div className="bg-neutral-950/40 border border-neutral-900 p-5 rounded-2xl">
           <p className="text-[10px] uppercase font-bold tracking-wider text-neutral-500">
             Recovered
           </p>
-          <p className="text-2xl font-mono font-black text-[#00DF89] mt-2">{metrics.recovered}</p>
+          <p className="text-2xl font-mono font-black text-[#00DF89] mt-2">
+            {metrics.recovered}
+          </p>
         </div>
         <div className="bg-neutral-950/40 border border-neutral-900 p-5 rounded-2xl">
           <p className="text-[10px] uppercase font-bold tracking-wider text-neutral-500">
@@ -360,14 +494,22 @@ export default function EmbeddedAppHomePage() {
           <tbody className="divide-y divide-neutral-900/50 text-xs sm:text-sm text-neutral-300">
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={4} className="p-8 text-center text-neutral-500">
-                  No abandoned carts captured yet. They will appear here as Shopify webhooks fire.
+                <td colSpan={4} className="p-10 text-center">
+                  <p className="text-sm font-bold text-neutral-300">
+                    You&apos;re all set — no abandoned carts yet
+                  </p>
+                  <p className="mt-2 text-xs text-neutral-500 max-w-md mx-auto leading-relaxed">
+                    This is normal for a new store. As shoppers leave checkouts,
+                    carts will appear here and WhatsApp recovery can start.
+                  </p>
                 </td>
               </tr>
             ) : (
               rows.map((cart) => (
                 <tr key={cart.id} className="hover:bg-neutral-900/20 transition-colors">
-                  <td className="p-4 font-bold text-white">{cart.customer_name || "Guest"}</td>
+                  <td className="p-4 font-bold text-white">
+                    {cart.customer_name || "Guest"}
+                  </td>
                   <td className="p-4 font-mono text-neutral-400">
                     {cart.customer_phone || "—"}
                   </td>
@@ -377,14 +519,14 @@ export default function EmbeddedAppHomePage() {
                   <td className="p-4 text-right">
                     <span
                       className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                        isRecoveredStatus(cart.status)
+                        isRecoveredStatus(String(cart.status ?? ""))
                           ? "bg-emerald-950/40 text-[#00DF89] border border-emerald-900/30"
-                          : isPendingStatus(cart.status)
+                          : isPendingStatus(String(cart.status ?? ""))
                             ? "bg-amber-950/40 text-amber-400 border border-amber-900/30"
                             : "bg-neutral-900 text-neutral-500 border border-neutral-800"
                       }`}
                     >
-                      {cart.status}
+                      {cart.status || "unknown"}
                     </span>
                   </td>
                 </tr>
@@ -395,7 +537,8 @@ export default function EmbeddedAppHomePage() {
       </div>
 
       <p className="mt-6 text-[11px] text-neutral-600">
-        {pending.length} pending · {recoveredRows.length} recovered · showing latest {rows.length}
+        {pending.length} pending · {recoveredRows.length} recovered · showing
+        latest {rows.length}
       </p>
     </Shell>
   );

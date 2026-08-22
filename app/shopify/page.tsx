@@ -157,6 +157,7 @@ function Console({
               <tr>
                 <td colSpan={4} className="p-8 text-center text-neutral-500">
                   No abandoned carts captured yet. They will appear here as Shopify webhooks fire.
+                  This is normal for a brand-new store with no orders yet.
                 </td>
               </tr>
             ) : (

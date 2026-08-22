@@ -145,19 +145,32 @@ export async function POST(req: NextRequest) {
           shopify_domain: shop,
           shopify_access_token: accessToken,
           clerk_user_id: clerkUserId,
+          platform: "shopify",
           billing_status: "pending",
         })
         .select("id")
         .maybeSingle();
 
       if (insertError) {
-        console.error("[token-exchange] Failed to insert store", insertError);
-        return NextResponse.json(
-          { ok: false, error: "Failed to save store" },
-          { status: 500 }
-        );
+        // Race: another request inserted the same shop — treat as success.
+        if (insertError.code === "23505") {
+          const { data: raced } = await supabaseAdmin
+            .from("stores")
+            .select("id")
+            .eq("shopify_domain", shop)
+            .maybeSingle();
+          storeId = raced?.id;
+        }
+        if (!storeId) {
+          console.error("[token-exchange] Failed to insert store", insertError);
+          return NextResponse.json(
+            { ok: false, error: "Failed to save store" },
+            { status: 500 }
+          );
+        }
+      } else {
+        storeId = inserted?.id;
       }
-      storeId = inserted?.id;
     }
 
     if (!storeId) {
@@ -167,14 +180,21 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Best-effort webhooks — never fail install if registration partially fails.
+    // Best-effort webhooks — NEVER fail install if registration fails.
+    // Brand-new empty stores must still load the embedded dashboard.
     try {
       const registered = await registerShopifyWebhooks(shop, accessToken);
       if (registered.length > 0) {
-        await supabaseAdmin
+        const { error: webhookUpdateError } = await supabaseAdmin
           .from("stores")
           .update({ webhook_ids: registered })
           .eq("id", storeId);
+        if (webhookUpdateError) {
+          console.warn(
+            "[token-exchange] webhook_ids update skipped:",
+            webhookUpdateError
+          );
+        }
       }
     } catch (webhookError) {
       console.warn("[token-exchange] webhook registration skipped:", webhookError);
