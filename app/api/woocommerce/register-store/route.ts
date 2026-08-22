@@ -1,4 +1,5 @@
 import { randomBytes } from "crypto";
+import { auth } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 
 import { supabaseAdmin } from "@/lib/supabase";
@@ -12,6 +13,31 @@ interface RegisterStoreBody {
   email?: string;
   site_url?: string;
   store_name?: string;
+}
+
+export function buildWooCommerceStoreRegistration({
+  apiKey,
+  email,
+  siteUrl,
+  storeName,
+  userId,
+}: {
+  apiKey: string;
+  email: string;
+  siteUrl: string;
+  storeName: string | null;
+  userId: string;
+}) {
+  return {
+    platform: "woocommerce",
+    site_url: siteUrl,
+    contact_email: email,
+    store_name: storeName,
+    api_key: apiKey,
+    shopify_domain: null,
+    clerk_user_id: userId,
+    billing_status: "pending",
+  };
 }
 
 function normalizeSiteUrl(raw: string): string | null {
@@ -30,16 +56,25 @@ function normalizeSiteUrl(raw: string): string | null {
   }
 }
 
-function syntheticClerkUserId(siteUrl: string): string {
-  const slug = siteUrl
-    .replace(/^https?:\/\//, "")
-    .replace(/[^a-z0-9]+/gi, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 80);
-  return `woo_${slug || "store"}`;
+async function getRegistrationUserId(): Promise<string | null> {
+  if (process.env.NODE_ENV === "development") {
+    return "local-dev";
+  }
+
+  try {
+    const { userId } = await auth();
+    return userId;
+  } catch {
+    return null;
+  }
 }
 
 export async function POST(req: NextRequest) {
+  const userId = await getRegistrationUserId();
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   let body: RegisterStoreBody;
   try {
     body = (await req.json()) as RegisterStoreBody;
@@ -66,7 +101,7 @@ export async function POST(req: NextRequest) {
 
   const { data: existing, error: lookupError } = await supabaseAdmin
     .from("stores")
-    .select("id")
+    .select("id, clerk_user_id")
     .eq("site_url", siteUrl)
     .maybeSingle();
 
@@ -76,6 +111,10 @@ export async function POST(req: NextRequest) {
   }
 
   if (existing?.id) {
+    if (existing.clerk_user_id !== userId) {
+      return NextResponse.json({ error: "already registered" }, { status: 409 });
+    }
+
     return NextResponse.json(
       {
         error: "already registered",
@@ -89,16 +128,15 @@ export async function POST(req: NextRequest) {
 
   const { data: inserted, error: insertError } = await supabaseAdmin
     .from("stores")
-    .insert({
-      platform: "woocommerce",
-      site_url: siteUrl,
-      contact_email: email,
-      store_name: storeName,
-      api_key: apiKey,
-      shopify_domain: null,
-      clerk_user_id: syntheticClerkUserId(siteUrl),
-      billing_status: "pending",
-    })
+    .insert(
+      buildWooCommerceStoreRegistration({
+        apiKey,
+        email,
+        siteUrl,
+        storeName,
+        userId,
+      })
+    )
     .select("id")
     .maybeSingle();
 
@@ -107,14 +145,17 @@ export async function POST(req: NextRequest) {
     if (insertError?.code === "23505") {
       const { data: raced } = await supabaseAdmin
         .from("stores")
-        .select("id")
+        .select("id, clerk_user_id")
         .eq("site_url", siteUrl)
         .maybeSingle();
-      if (raced?.id) {
+      if (raced?.id && raced.clerk_user_id === userId) {
         return NextResponse.json(
           { error: "already registered", store_id: raced.id },
           { status: 409 }
         );
+      }
+      if (raced?.id) {
+        return NextResponse.json({ error: "already registered" }, { status: 409 });
       }
     }
     console.error("[register-store] insert failed", insertError);

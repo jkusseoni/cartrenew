@@ -113,6 +113,11 @@ export default function WooCommerceConnectPage() {
         error?: string;
       } | null;
 
+      if (res.status === 401) {
+        setError("Sign in to your CartRenew account before generating store credentials.");
+        return;
+      }
+
       if (res.status === 409 && json?.store_id) {
         setExistingStoreId(json.store_id);
         setError(
@@ -174,7 +179,7 @@ export default function WooCommerceConnectPage() {
         </div>
 
         <p className="hidden lg:block text-[10px] text-neutral-600 font-mono pt-4 border-t border-neutral-900">
-          Public onboarding — no login required
+          Account-protected onboarding
         </p>
       </aside>
 
