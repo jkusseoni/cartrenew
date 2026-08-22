@@ -135,10 +135,15 @@ export async function generateCartRecoveryMessage(
       storeId: requestBody.merchantId || "default_store",
       phoneNumber: cart.phoneNumber ?? cart.customerPhone,
       messagePayload: {
-        text: recovery.message,
+        templateName: "abandoned_cart_reminder",
+        bodyVariables: [
+          cart.customerName ?? "there",
+          cart.cartUrl,
+        ],
+        offerLine: recovery.message,
+        offerType: recovery.offerType,
         customerName: cart.customerName ?? "Customer",
         cartUrl: cart.cartUrl,
-        offerType: recovery.offerType,
       }
     });
     console.log(`🚀 [BullMQ] Successfully queued WhatsApp recovery job for Cart ID: ${cart.id}`);
@@ -242,10 +247,13 @@ function buildSystemPrompt() {
     "Treat cartTotalAmount of INR 3000 or more, repeat visits, prior purchases, premium items, or strong buying intent in userHistory as high-value signals.",
     "Prefer 10% Discount Code when userHistory suggests price sensitivity, deal browsing, coupon searches, or repeated cart revisits.",
     "Prefer Free Shipping when userHistory suggests delivery/shipping hesitation, location friction, or cart value is high but price sensitivity is unclear.",
-    "If no strong support, discount, or shipping signal exists, choose None and write a simple reminder.",
-    "The message must be one finalized personalized Hinglish WhatsApp message under 480 characters.",
-    "Mention customer name, cartTotalAmount, and checkout link exactly once.",
-    "Do not include markdown, labels, quotation marks, emojis, multiple options, or internal reasoning inside message.",
+    "If no strong support, discount, or shipping signal exists, choose None.",
+    "The message field is NOT a full WhatsApp message. It is only a short optional offer/urgency line for future template slots.",
+    "When offerType is None, message must be an empty string.",
+    "When offerType is 10% Discount Code, message should be a short line like: Get 10% off with code SAVE10.",
+    "When offerType is Free Shipping, message should be a short line like: Enjoy free shipping on this order.",
+    "When offerType is Priority Callback from Support, message should be a short line like: Our team can call you to help complete checkout.",
+    "Keep message under 80 characters. Do not include customer name, cart total, checkout URL, markdown, labels, quotation marks, or emojis.",
   ].join("\n");
 }
 
@@ -324,7 +332,9 @@ async function generateGeminiMessage(systemPrompt: string, userPrompt: string, g
   if (!rawText) throw new CartRecoveryMessageError("Gemini API did not return a message");
 
   const parsedMessage = parseGeminiRecoveryMessage(rawText);
-  if (!parsedMessage.message) throw new CartRecoveryMessageError("Gemini API did not return a finalized WhatsApp message");
+  if (parsedMessage.offerType !== "None" && !parsedMessage.message) {
+    throw new CartRecoveryMessageError("Gemini API did not return an offer line for the selected offerType");
+  }
 
   return parsedMessage;
 }
@@ -333,9 +343,15 @@ function parseGeminiRecoveryMessage(rawText: string) {
   const parsed = parseJsonObject(rawText);
   if (!isJsonRecord(parsed)) throw new CartRecoveryMessageError("Gemini API did not return a JSON object");
   const offerType = normalizeOfferType(parsed.offerType);
+  const message =
+    offerType === "None"
+      ? ""
+      : typeof parsed.message === "string"
+        ? parsed.message.trim()
+        : "";
 
   return {
-    message: typeof parsed.message === "string" ? parsed.message.trim() : "",
+    message,
     offerType,
   };
 }

@@ -1,3 +1,8 @@
+// TODO: Twilio→Meta migration pending. NOT part of live recovery flow
+// (webhook + cron already migrated). WHATSAPP_OFFICIAL branch still sends
+// freeform via Twilio — migrate to abandoned_cart_reminder template before
+// re-enabling this pipeline. Twilio account is suspended, so this route
+// is non-functional as-is.
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
