@@ -163,9 +163,9 @@ export default function WooCommerceConnectPage() {
             >
               <span>⚙️</span> Settings
             </Link>
-            <span className="flex items-center gap-3 px-4 py-3 rounded-xl bg-neutral-900 text-[#00DF89] border border-neutral-800/40 shrink-0 lg:w-full">
+            <a href="/woocommerce" className="flex items-center gap-3 px-4 py-3 rounded-xl bg-neutral-900 text-[#00DF89] border border-neutral-800/40 shrink-0 lg:w-full">
               <span>🛒</span> WooCommerce
-            </span>
+            </a>
           </nav>
         </div>
 
