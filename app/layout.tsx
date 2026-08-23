@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { DM_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+import { getShopifyClientId } from "@/lib/shopify/config";
 import AppProviders from "./providers";
 
 const dmSans = DM_Sans({ subsets: ["latin"], variable: "--font-dm-sans" });
@@ -21,6 +22,7 @@ export const metadata: Metadata = {
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const headerList = await headers();
   const isShopifyEmbed = headerList.get("x-shopify-embed") === "1";
+  const shopifyClientId = getShopifyClientId();
 
   return (
     <html lang="en" suppressHydrationWarning>
@@ -30,7 +32,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           // Do not use next/script, async, or defer (Shopify embedded-app check).
           <script
             src="https://cdn.shopify.com/shopifycloud/app-bridge.js"
-            data-api-key={process.env.NEXT_PUBLIC_SHOPIFY_API_KEY}
+            data-api-key={shopifyClientId}
           ></script>
         ) : null}
       </head>
