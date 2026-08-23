@@ -3,11 +3,12 @@ import AlertsTableClient from './AlertsTableClient'
 import { supabaseAdmin } from '@/lib/supabase'
 import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
+import { isAdminRole } from '@/lib/roles'
 
 export default async function Page() {
-  const { userId } = await auth()
-  if (!userId) {
-    redirect('/sign-in')
+  if (process.env.NODE_ENV !== 'development') {
+    const { sessionClaims, userId } = await auth()
+    if (!userId || !isAdminRole(sessionClaims)) redirect('/dashboard')
   }
 
   const { data: alertsData } = await supabaseAdmin

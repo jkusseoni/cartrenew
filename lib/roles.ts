@@ -3,7 +3,7 @@ export const STANDARD_DASHBOARD_PATH = "/dashboard";
 
 export type UserRole = "merchant" | "admin" | "user";
 
-type SessionClaims = {
+export type SessionClaims = {
   metadata?: {
     role?: string;
   };
@@ -27,4 +27,10 @@ export function isMerchantRole(
   sessionClaims: SessionClaims | null | undefined
 ): boolean {
   return getRoleFromSessionClaims(sessionClaims) === "merchant";
+}
+
+export function isAdminRole(
+  sessionClaims: SessionClaims | null | undefined
+): boolean {
+  return getRoleFromSessionClaims(sessionClaims) === "admin";
 }
