@@ -1,6 +1,15 @@
 import { timingSafeEqual } from "crypto";
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import { isAdminRole, type SessionClaims } from "@/lib/roles";
+
+export function getAdminSessionStatus(
+  userId: string | null | undefined,
+  sessionClaims: SessionClaims | null | undefined
+): 200 | 401 | 403 {
+  if (!userId) return 401;
+  return isAdminRole(sessionClaims) ? 200 : 403;
+}
 
 /** Constant-time comparison so the secret cannot be brute-forced via timing. */
 function secretsMatch(provided: string, expected: string): boolean {
@@ -42,7 +51,7 @@ function getProvidedAutomationSecret(req: Request): string | null {
  * Allows the request when any of these hold:
  *  - development mode (local testing)
  *  - a valid `x-admin-secret` header matching ADMIN_PROCESS_SECRET (server-to-server)
- *  - a signed-in Clerk user (dashboard clients)
+ *  - a signed-in Clerk user with the admin role (dashboard clients)
  *
  * Returns a 401 response to short-circuit with, or null when authorized.
  */
@@ -58,9 +67,13 @@ export async function requireAdmin(req: Request): Promise<NextResponse | null> {
   }
 
   try {
-    const { userId } = await auth();
-    if (userId) {
+    const { sessionClaims, userId } = await auth();
+    const status = getAdminSessionStatus(userId, sessionClaims);
+    if (status === 200) {
       return null;
+    }
+    if (status === 403) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
   } catch {
     // Clerk unavailable (e.g. missing keys) — fall through to 401.

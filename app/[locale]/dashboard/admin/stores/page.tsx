@@ -1,10 +1,18 @@
+import { auth } from '@clerk/nextjs/server'
+import { redirect } from 'next/navigation'
 import { supabaseAdmin } from '@/lib/supabase'
+import { isAdminRole } from '@/lib/roles'
 import StoresTableClient from './StoresTableClient'
 import PendingMessagesClient from '../messages/PendingMessagesClient'
 
 export const revalidate = 0
 
 export default async function AdminStoresPage() {
+  if (process.env.NODE_ENV !== 'development') {
+    const { sessionClaims, userId } = await auth()
+    if (!userId || !isAdminRole(sessionClaims)) redirect('/dashboard')
+  }
+
   const { data } = await supabaseAdmin
     .from('stores')
     .select('id, shopify_domain, webhook_ids, clerk_user_id, whatsapp_phone_id, updated_at')
