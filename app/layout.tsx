@@ -30,6 +30,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         {isShopifyEmbed ? (
           // Raw sync CDN tag — must be the first <script> in the document.
           // Do not use next/script, async, or defer (Shopify embedded-app check).
+          // eslint-disable-next-line @next/next/no-sync-scripts
           <script
             src="https://cdn.shopify.com/shopifycloud/app-bridge.js"
             data-api-key={shopifyClientId}
