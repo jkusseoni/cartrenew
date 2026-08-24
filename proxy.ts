@@ -1,5 +1,6 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import createIntlMiddleware from "next-intl/middleware";
+import { appendFileSync } from "node:fs";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
@@ -75,7 +76,8 @@ const isShopifyEntry = (pathname: string) =>
   pathname === "/shopify" ||
   pathname.startsWith("/shopify/");
 
-const isShopifyApi = (pathname: string) => pathname.startsWith("/api/app");
+const isShopifyApi = (pathname: string) =>
+  pathname === "/api/app" || pathname.startsWith("/api/app/");
 
 const isRecoveryRedirect = (pathname: string) =>
   pathname === "/r" || pathname.startsWith("/r/");
@@ -115,16 +117,24 @@ function isShopifyEmbeddedRequest(request: NextRequest): boolean {
 function isShopifyLaunchRequest(request: NextRequest): boolean {
   const shop = request.nextUrl.searchParams.get("shop");
   const hasShop = Boolean(shop && SHOPIFY_SHOP_RE.test(shop));
-  return hasShop || isShopifyEmbeddedRequest(request);
+  const hasHost = isShopifyEmbeddedRequest(request);
+  const result = hasShop || hasHost;
+  // #region agent log
+  appendFileSync("/opt/cursor/logs/debug.log", `${JSON.stringify({ hypothesisId: "A", location: "proxy.ts:isShopifyLaunchRequest", message: "Classified Shopify launch query", data: { pathname: request.nextUrl.pathname, hasShop, hasHost, result }, timestamp: Date.now() })}\n`);
+  // #endregion
+  return result;
 }
 
-function shouldBypassAuthForShopify(request: NextRequest): boolean {
+export function shouldBypassAuthForShopify(request: NextRequest): boolean {
   const { pathname } = request.nextUrl;
-  return (
-    isShopifyEntry(pathname) ||
-    isShopifyApi(pathname) ||
-    isShopifyLaunchRequest(request)
-  );
+  const entry = isShopifyEntry(pathname);
+  const api = isShopifyApi(pathname);
+  const launch = pathname === "/" && isShopifyLaunchRequest(request);
+  const result = entry || api || launch;
+  // #region agent log
+  appendFileSync("/opt/cursor/logs/debug.log", `${JSON.stringify({ hypothesisId: "A,C", location: "proxy.ts:shouldBypassAuthForShopify", message: "Computed Shopify auth bypass", data: { pathname, entry, api, launch, result }, timestamp: Date.now() })}\n`);
+  // #endregion
+  return result;
 }
 
 const isAuthRoute = createRouteMatcher([
@@ -250,10 +260,15 @@ function nextWithShopifyEmbed(request: NextRequest): NextResponse {
 }
 
 /** Bypass locale/Clerk and apply embed-friendly headers for Shopify routes. */
-function handleShopifyRequest(request: NextRequest): NextResponse | null {
+export function handleShopifyRequest(request: NextRequest): NextResponse | null {
   const { pathname } = request.nextUrl;
+  const entry = isShopifyEntry(pathname);
+  const rootLaunch = pathname === "/" && isShopifyLaunchRequest(request);
+  // #region agent log
+  appendFileSync("/opt/cursor/logs/debug.log", `${JSON.stringify({ hypothesisId: "B,C", location: "proxy.ts:handleShopifyRequest", message: "Evaluated early Shopify route handling", data: { pathname, entry, rootLaunch }, timestamp: Date.now() })}\n`);
+  // #endregion
 
-  if (isShopifyEntry(pathname)) {
+  if (entry) {
     // Legacy /shopify → /app (preserve query string for shop/host/hmac).
     if (pathname === "/shopify" || pathname.startsWith("/shopify/")) {
       const url = request.nextUrl.clone();
@@ -263,7 +278,7 @@ function handleShopifyRequest(request: NextRequest): NextResponse | null {
     return nextWithShopifyEmbed(request);
   }
 
-  if (pathname === "/" && isShopifyLaunchRequest(request)) {
+  if (rootLaunch) {
     const url = request.nextUrl.clone();
     url.pathname = "/app";
     return applyShopifyEmbedHeaders(NextResponse.redirect(url), request);
@@ -445,6 +460,9 @@ export default skipClerk
       }
 
       const intlResponse = runIntlMiddleware(request);
+      // #region agent log
+      appendFileSync("/opt/cursor/logs/debug.log", `${JSON.stringify({ hypothesisId: "D", location: "proxy.ts:clerkMiddleware:intlResponse", message: "Completed intl routing before auth decision", data: { pathname: request.nextUrl.pathname, status: intlResponse.status, redirected: isIntlRedirect(intlResponse) }, timestamp: Date.now() })}\n`);
+      // #endregion
 
       if (isIntlRedirect(intlResponse)) {
         return applySecurityHeaders(intlResponse);
