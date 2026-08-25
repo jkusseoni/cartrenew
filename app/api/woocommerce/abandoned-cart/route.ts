@@ -92,8 +92,12 @@ export async function POST(req: NextRequest) {
 
   // Schema check: status ∈ pending | messaged | recovered | lost | opted_out
   // (not "sent" — that was a mismatch with the live CHECK constraint)
-  if (existing && existing.status === 'messaged') {
+  if (existing?.status === 'messaged') {
     return NextResponse.json({ status: 'already_sent' }, { status: 200 })
+  }
+
+  if (existing && existing.status !== 'pending') {
+    return NextResponse.json({ status: 'already_processed' }, { status: 200 })
   }
 
   const cartValue = Number(payload.cart_total) || 0
@@ -133,6 +137,30 @@ export async function POST(req: NextRequest) {
     cartId = inserted.id
   }
 
+  // Atomically move this cart out of "pending" before dispatch. This also
+  // excludes the fallback cart-recovery cron, which claims pending rows.
+  const processingStartedAt = new Date().toISOString()
+  const { data: claimed, error: claimError } = await supabaseAdmin
+    .from('abandoned_carts')
+    .update({
+      status: 'messaged',
+      processing_started_at: processingStartedAt,
+    })
+    .eq('id', cartId)
+    .eq('status', 'pending')
+    .is('processing_started_at', null)
+    .select('id')
+    .maybeSingle()
+
+  if (claimError) {
+    console.error('CartRenew WooCommerce: failed to claim abandoned cart', claimError)
+    return NextResponse.json({ error: 'Failed to claim cart.' }, { status: 500 })
+  }
+
+  if (!claimed) {
+    return NextResponse.json({ status: 'already_processing' }, { status: 200 })
+  }
+
   // --- 3. Send the WhatsApp recovery message ----------------------------
   // triggerWhatsAppRecoveryForCart returns { sent, error } — it does not throw
   // on soft send failures, so check result.sent explicitly.
@@ -154,8 +182,10 @@ export async function POST(req: NextRequest) {
       // exists in the CHECK constraint.
       await supabaseAdmin
         .from('abandoned_carts')
-        .update({ status: 'pending' })
+        .update({ status: 'pending', processing_started_at: null })
         .eq('id', cartId)
+        .eq('status', 'messaged')
+        .eq('processing_started_at', processingStartedAt)
 
       return NextResponse.json(
         { error: result.error || 'WhatsApp send failed.', status: 'pending' },
@@ -170,8 +200,11 @@ export async function POST(req: NextRequest) {
       .update({
         status: 'messaged',
         message_sent_at: new Date().toISOString(),
+        processing_started_at: null,
       })
       .eq('id', cartId)
+      .eq('status', 'messaged')
+      .eq('processing_started_at', processingStartedAt)
 
     return NextResponse.json({ status: 'sent', result }, { status: 200 })
   } catch (err) {
@@ -179,8 +212,10 @@ export async function POST(req: NextRequest) {
 
     await supabaseAdmin
       .from('abandoned_carts')
-      .update({ status: 'pending' })
+      .update({ status: 'pending', processing_started_at: null })
       .eq('id', cartId)
+      .eq('status', 'messaged')
+      .eq('processing_started_at', processingStartedAt)
 
     return NextResponse.json({ error: 'WhatsApp send failed.' }, { status: 502 })
   }
