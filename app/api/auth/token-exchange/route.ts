@@ -123,7 +123,6 @@ export async function POST(req: NextRequest) {
         .from("stores")
         .update({
           shopify_access_token: accessToken,
-          billing_status: "pending",
         })
         .eq("id", existingStore.id)
         .select("id")
