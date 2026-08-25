@@ -1,4 +1,3 @@
-import { appendFileSync } from "node:fs";
 import { NextRequest, NextResponse } from "next/server";
 
 import { loadShopifyStoreDashboard } from "@/lib/shopify/dashboard";
@@ -78,11 +77,6 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // #region agent log
-    try {
-      appendFileSync("/opt/cursor/logs/debug.log", `${JSON.stringify({ hypothesisId: "D", location: "app/api/app/dashboard/route.ts:81", message: "dashboard returning store billing state", data: { hasStore: Boolean(dashboard.store), billingStatus: dashboard.store?.billing_status ?? null }, timestamp: Date.now() })}\n`);
-    } catch {}
-    // #endregion
     return NextResponse.json({
       shop,
       merchantId,
