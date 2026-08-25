@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+import { appendFileSync } from "node:fs";
 import { NextRequest, NextResponse } from "next/server";
 
 import { supabaseAdmin } from "@/lib/supabase";
@@ -25,6 +26,16 @@ import {
 export async function POST(req: NextRequest) {
   try {
     const sessionToken = getBearerToken(req.headers.get("authorization"));
+    // #region agent log
+    let referrerPath: string | null = null;
+    try {
+      const referrer = req.headers.get("referer");
+      referrerPath = referrer ? new URL(referrer).pathname : null;
+    } catch {}
+    try {
+      appendFileSync("/opt/cursor/logs/debug.log", `${JSON.stringify({ hypothesisId: "B,E", location: "app/api/auth/token-exchange/route.ts:28", message: "token exchange request entered", data: { hasSessionToken: Boolean(sessionToken), referrerPath }, timestamp: Date.now() })}\n`);
+    } catch {}
+    // #endregion
     if (!sessionToken) {
       return NextResponse.json(
         { ok: false, error: "Missing Authorization Bearer session token" },
@@ -41,6 +52,11 @@ export async function POST(req: NextRequest) {
         { status: 401 }
       );
     }
+    // #region agent log
+    try {
+      appendFileSync("/opt/cursor/logs/debug.log", `${JSON.stringify({ hypothesisId: "B", location: "app/api/auth/token-exchange/route.ts:55", message: "session token verified", data: { verified: true }, timestamp: Date.now() })}\n`);
+    } catch {}
+    // #endregion
 
     const clientId = getShopifyClientId();
     const clientSecret = getShopifyClientSecret();
@@ -104,9 +120,14 @@ export async function POST(req: NextRequest) {
     // synthetic webhook_* value when inserting a brand-new store row.
     const { data: existingStore, error: lookupError } = await supabaseAdmin
       .from("stores")
-      .select("id, clerk_user_id")
+      .select("id, clerk_user_id, billing_status")
       .eq("shopify_domain", shop)
       .maybeSingle();
+    // #region agent log
+    try {
+      appendFileSync("/opt/cursor/logs/debug.log", `${JSON.stringify({ hypothesisId: "A,C", location: "app/api/auth/token-exchange/route.ts:128", message: "existing store lookup completed", data: { found: Boolean(existingStore?.id), billingStatus: existingStore?.billing_status ?? null, hasError: Boolean(lookupError) }, timestamp: Date.now() })}\n`);
+    } catch {}
+    // #endregion
 
     if (lookupError) {
       console.error("[token-exchange] Failed to look up store", lookupError);
@@ -126,8 +147,13 @@ export async function POST(req: NextRequest) {
           billing_status: "pending",
         })
         .eq("id", existingStore.id)
-        .select("id")
+        .select("id, billing_status")
         .maybeSingle();
+      // #region agent log
+      try {
+        appendFileSync("/opt/cursor/logs/debug.log", `${JSON.stringify({ hypothesisId: "A,C", location: "app/api/auth/token-exchange/route.ts:157", message: "existing store update completed", data: { beforeBillingStatus: existingStore.billing_status ?? null, requestedBillingStatus: "pending", returnedBillingStatus: updated?.billing_status ?? null, hasError: Boolean(updateError) }, timestamp: Date.now() })}\n`);
+      } catch {}
+      // #endregion
 
       if (updateError) {
         console.error("[token-exchange] Failed to update store", updateError);
@@ -200,6 +226,11 @@ export async function POST(req: NextRequest) {
       console.warn("[token-exchange] webhook registration skipped:", webhookError);
     }
 
+    // #region agent log
+    try {
+      appendFileSync("/opt/cursor/logs/debug.log", `${JSON.stringify({ hypothesisId: "B,C,E", location: "app/api/auth/token-exchange/route.ts:239", message: "token exchange returning success", data: { existingStore: Boolean(existingStore?.id), storeCommitted: Boolean(storeId) }, timestamp: Date.now() })}\n`);
+    } catch {}
+    // #endregion
     return NextResponse.json({ ok: true, shop, storeId, merchantId });
   } catch (error) {
     console.error("[token-exchange] unexpected error", error);
