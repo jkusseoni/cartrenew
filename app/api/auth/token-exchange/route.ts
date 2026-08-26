@@ -152,14 +152,24 @@ export async function POST(req: NextRequest) {
         .maybeSingle();
 
       if (insertError) {
-        // Race: another request inserted the same shop — treat as success.
+        // Race: a webhook may have inserted this shop with a null token after
+        // our lookup. Persist the exchanged token on that winning row before
+        // reporting install success, without changing its billing state.
         if (insertError.code === "23505") {
-          const { data: raced } = await supabaseAdmin
+          const { data: raced, error: raceUpdateError } = await supabaseAdmin
             .from("stores")
-            .select("id")
+            .update({ shopify_access_token: accessToken })
             .eq("shopify_domain", shop)
+            .select("id")
             .maybeSingle();
-          storeId = raced?.id;
+          if (raceUpdateError) {
+            console.error(
+              "[token-exchange] Failed to update concurrently inserted store",
+              raceUpdateError
+            );
+          } else {
+            storeId = raced?.id;
+          }
         }
         if (!storeId) {
           console.error("[token-exchange] Failed to insert store", insertError);
