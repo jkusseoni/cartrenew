@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "eslint",
     "test:merchant-handshake": "tsx scripts/test-merchant-handshake.ts",
+    "test:token-exchange": "tsx --test tests/token-exchange-race.test.ts",
     "test:recovery": "tsx test-recovery.ts",
     "db:migrate": "tsx scripts/run-db-migrations.ts",
     "vercel:env:audit": "tsx scripts/audit-vercel-env.ts",
