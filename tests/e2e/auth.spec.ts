@@ -10,6 +10,9 @@ const hasClerkSecrets = Boolean(
   process.env.CLERK_SECRET_KEY?.trim() &&
     process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim()
 );
+const testsClerkProtectedTarget =
+  (isCI && hasClerkSecrets) ||
+  process.env.E2E_TEST_CLERK_PROTECTION === "true";
 
 // In CI, skip auth e2e when Clerk credentials are not injected via secrets.
 test.skip(isCI && !hasClerkSecrets, "Clerk secrets missing in CI environment");
@@ -59,6 +62,34 @@ test.describe("auth routes", () => {
       submitName: /sign in|continue|log in/i,
     });
     await expectDashboardRedirectOrAuthFeedback(page);
+  });
+});
+
+test.describe("protected routes", () => {
+  test.skip(
+    !testsClerkProtectedTarget,
+    "Requires a production target with Clerk protection enabled"
+  );
+
+  test("Shopify query parameters do not bypass Clerk protection", async ({
+    request,
+  }) => {
+    const paths = [
+      "/en/admin",
+      "/en/admin?host=attacker",
+      "/en/admin?shop=proof-store.myshopify.com",
+    ];
+
+    for (const path of paths) {
+      await test.step(path, async () => {
+        const response = await request.get(path, { maxRedirects: 0 });
+        expect(response.status()).toBe(307);
+
+        const location = response.headers().location;
+        expect(location).toBeTruthy();
+        expect(new URL(location!, response.url()).pathname).toBe("/en/sign-in");
+      });
+    }
   });
 });
 

@@ -118,15 +118,6 @@ function isShopifyLaunchRequest(request: NextRequest): boolean {
   return hasShop || isShopifyEmbeddedRequest(request);
 }
 
-function shouldBypassAuthForShopify(request: NextRequest): boolean {
-  const { pathname } = request.nextUrl;
-  return (
-    isShopifyEntry(pathname) ||
-    isShopifyApi(pathname) ||
-    isShopifyLaunchRequest(request)
-  );
-}
-
 const isAuthRoute = createRouteMatcher([
   "/sign-in(.*)",
   "/sign-up(.*)",
@@ -448,12 +439,6 @@ export default skipClerk
 
       if (isIntlRedirect(intlResponse)) {
         return applySecurityHeaders(intlResponse);
-      }
-
-      // Never run Clerk session gates on Shopify embed launches — they break
-      // App Bridge session tokens inside the Admin iframe.
-      if (shouldBypassAuthForShopify(request)) {
-        return applyShopifyEmbedHeaders(intlResponse, request);
       }
 
       const { sessionClaims, userId } = await auth();
