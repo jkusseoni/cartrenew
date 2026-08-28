@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { DM_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import AppProviders from "./providers";
+import { getShopifyClientId } from "@/lib/shopify/config";
 
 const dmSans = DM_Sans({ subsets: ["latin"], variable: "--font-dm-sans" });
 const jetBrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains" });
@@ -30,7 +31,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           // Do not use next/script, async, or defer (Shopify embedded-app check).
           <script
             src="https://cdn.shopify.com/shopifycloud/app-bridge.js"
-            data-api-key={process.env.NEXT_PUBLIC_SHOPIFY_API_KEY}
+            data-api-key={getShopifyClientId()}
           ></script>
         ) : null}
       </head>

@@ -1,6 +1,6 @@
 import { jwtVerify, type JWTPayload } from "jose";
 
-import { isValidShopDomain } from "@/lib/shopify/config";
+import { getShopifyClientId, isValidShopDomain } from "@/lib/shopify/config";
 
 export type ShopifySessionTokenPayload = JWTPayload & {
   iss?: string;
@@ -47,7 +47,7 @@ function env(name: string): string | undefined {
 
 /**
  * Verify a Shopify App Bridge session token (HS256) with jose.
- * Validates aud === SHOPIFY_API_KEY, exp/nbf, and dest as *.myshopify.com.
+ * Validates aud === getShopifyClientId(), exp/nbf, and dest as *.myshopify.com.
  *
  * HMAC key = UTF-8 bytes of the full SHOPIFY_API_SECRET (including `shpss_` prefix).
  * Secret is read at request time — never cached at module scope, never stripped.
@@ -57,11 +57,13 @@ export async function verifySessionToken(token: string): Promise<VerifiedShopify
     throw new Error("Missing session token");
   }
 
-  const apiKey = env("SHOPIFY_API_KEY");
+  // Must match the client ID App Bridge was initialized with (app/layout.tsx),
+  // not just SHOPIFY_API_KEY — those can drift across env var naming conventions.
+  const apiKey = getShopifyClientId();
   const apiSecret = env("SHOPIFY_API_SECRET");
 
   if (!apiKey) {
-    throw new Error("SHOPIFY_API_KEY is not configured");
+    throw new Error("Shopify client ID is not configured");
   }
   if (!apiSecret) {
     throw new Error("SHOPIFY_API_SECRET is not configured");
