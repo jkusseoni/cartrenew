@@ -54,7 +54,7 @@ if (!globalForRedis.whatsappWorker) {
       try {
         const result = await sendWhatsAppMessage(phoneNumber, {
           templateName,
-          languageCode: messagePayload?.languageCode || 'en',
+          languageCode: messagePayload?.languageCode,
           bodyVariables,
         });
 

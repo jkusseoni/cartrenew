@@ -9,6 +9,7 @@
  *   WHATSAPP_ACCESS_TOKEN      permanent System User token (Business Settings → System Users)
  *   WHATSAPP_PHONE_NUMBER_ID   from Meta app → Use case → WhatsApp → Production setup
  *   WHATSAPP_API_VERSION       optional, defaults to "v22.0"
+ *   WHATSAPP_TEMPLATE_LANG     optional, defaults to "en"
  */
 
 function cleanEnv(value?: string | null): string {
@@ -190,6 +191,10 @@ function cleanEnv(value?: string | null): string {
     const token = cleanEnv(process.env.WHATSAPP_ACCESS_TOKEN)
     const phoneNumberId = cleanEnv(process.env.WHATSAPP_PHONE_NUMBER_ID)
     const apiVersion = cleanEnv(process.env.WHATSAPP_API_VERSION) || 'v22.0'
+    const languageCode =
+      cleanEnv(options.languageCode) ||
+      cleanEnv(process.env.WHATSAPP_TEMPLATE_LANG) ||
+      'en'
     const url = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`
   
     const components = options.bodyVariables?.length
@@ -207,7 +212,7 @@ function cleanEnv(value?: string | null): string {
       type: 'template',
       template: {
         name: options.templateName,
-        language: { code: options.languageCode || 'en' },
+        language: { code: languageCode },
         ...(components ? { components } : {}),
       },
     }
