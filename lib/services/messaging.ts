@@ -174,7 +174,6 @@ export async function triggerWhatsAppRecoveryForCart({
     const dispatch = hasWhatsAppCredentials()
       ? await sendWhatsAppMessage(customerPhone, {
           templateName: whatsappTemplateName,
-          languageCode: 'en',
           bodyVariables: [safeName, trackedCheckoutUrl],
         }).then((result) => ({
           success: result.success,
