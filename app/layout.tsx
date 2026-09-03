@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { DM_Sans, JetBrains_Mono } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import AppProviders from "./providers";
 import { getShopifyClientId } from "@/lib/shopify/config";
@@ -37,6 +38,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       </head>
       <body className={`${dmSans.variable} ${jetBrainsMono.variable} antialiased`}>
         <AppProviders>{children}</AppProviders>
+        <Analytics />
       </body>
     </html>
   );
