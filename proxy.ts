@@ -206,7 +206,7 @@ function applySecurityHeaders(response: NextResponse) {
       `script-src 'self' 'unsafe-eval' 'unsafe-inline' https://va.vercel-scripts.com https://challenges.cloudflare.com ${clerkSources};`,
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;",
       "font-src 'self' https://fonts.gstatic.com data:;",
-      `img-src 'self' data: blob: https://images.unsplash.com https://img.clerk.com https://graph.facebook.com ${clerkSources};`,
+      `img-src 'self' data: blob: https://images.unsplash.com https://img.clerk.com https://graph.facebook.com https://api.producthunt.com ${clerkSources};`,
       `connect-src 'self' https://generativelanguage.googleapis.com https://graph.facebook.com ${clerkSources};`,
       `frame-src 'self' https://challenges.cloudflare.com ${clerkSources};`,
       "worker-src 'self' blob:;",
