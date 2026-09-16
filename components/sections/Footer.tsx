@@ -45,6 +45,22 @@ export default function Footer() {
           </p>
         </div>
 
+        {/* Middle Section: Product Hunt Badge */}
+        <a
+          href="https://www.producthunt.com/products/cartrenew-whatsapp-cart-recovery?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-cartrenew-whatsapp-cart-recovery"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="shrink-0"
+        >
+          <img
+            src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1252536&theme=light"
+            alt="CartRenew — WhatsApp Cart Recovery - Recover abandoned carts on WhatsApp — 0% markup | Product Hunt"
+            width={180}
+            height={39}
+            className="h-[39px] w-auto"
+          />
+        </a>
+
         {/* Right Section: Legal & Mailto Active Links */}
         <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs font-bold text-slate-500">
           <Link href="/privacy" className="hover:text-slate-900 transition-colors">
