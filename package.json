@@ -10,6 +10,7 @@
     "lint": "eslint",
     "test:merchant-handshake": "tsx scripts/test-merchant-handshake.ts",
     "test:recovery": "tsx test-recovery.ts",
+    "test:unit": "tsx --test tests/unit/*.test.ts",
     "db:migrate": "tsx scripts/run-db-migrations.ts",
     "vercel:env:audit": "tsx scripts/audit-vercel-env.ts",
     "vercel:env:sync": "tsx scripts/sync-vercel-env.ts",
