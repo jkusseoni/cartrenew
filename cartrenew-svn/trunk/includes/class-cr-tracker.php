@@ -16,9 +16,21 @@ class CartRenew_WC_Tracker {
 		add_action( 'woocommerce_after_cart_item_quantity_update', array( __CLASS__, 'save_snapshot' ) );
 		add_action( 'woocommerce_cart_item_removed', array( __CLASS__, 'save_snapshot' ) );
 
+		// Keep the CartRenew row aligned when WooCommerce changes guest identity to a user ID.
+		add_action( 'woocommerce_guest_session_to_user_id', array( __CLASS__, 'migrate_guest_cart' ), 10, 2 );
+
 		// Order placed → this cart is recovered, stop any pending send.
 		add_action( 'woocommerce_checkout_order_processed', array( __CLASS__, 'mark_recovered' ), 10, 1 );
 		add_action( 'woocommerce_thankyou', array( __CLASS__, 'mark_recovered' ), 10, 1 );
+	}
+
+	public static function migrate_guest_cart( $guest_session_id, $user_id ) {
+		$user_id = absint( $user_id );
+		if ( ! $guest_session_id || ! $user_id ) {
+			return;
+		}
+
+		CartRenew_WC_DB::migrate_cart_key( 'session_' . $guest_session_id, 'user_' . $user_id );
 	}
 
 	/**
