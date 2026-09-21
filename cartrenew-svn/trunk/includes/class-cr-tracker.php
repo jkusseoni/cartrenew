@@ -18,10 +18,22 @@ class CartRenew_WC_Tracker {
 
 		// Keep the CartRenew row aligned when WooCommerce changes guest identity to a user ID.
 		add_action( 'woocommerce_guest_session_to_user_id', array( __CLASS__, 'migrate_guest_cart' ), 10, 2 );
+		add_action( 'wp_login', array( __CLASS__, 'migrate_guest_cart_on_login' ), 10, 2 );
 
 		// Order placed → this cart is recovered, stop any pending send.
 		add_action( 'woocommerce_checkout_order_processed', array( __CLASS__, 'mark_recovered' ), 10, 1 );
 		add_action( 'woocommerce_thankyou', array( __CLASS__, 'mark_recovered' ), 10, 1 );
+	}
+
+	public static function migrate_guest_cart_on_login( $user_login, $user ) {
+		$user_id          = isset( $user->ID ) ? absint( $user->ID ) : 0;
+		$guest_session_id = WC()->session ? WC()->session->get_customer_id() : null;
+
+		if ( ! $guest_session_id || ! $user_id || (string) $guest_session_id === (string) $user_id ) {
+			return;
+		}
+
+		self::migrate_guest_cart( $guest_session_id, $user_id );
 	}
 
 	public static function migrate_guest_cart( $guest_session_id, $user_id ) {

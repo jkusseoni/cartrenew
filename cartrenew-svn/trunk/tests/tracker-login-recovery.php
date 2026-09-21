@@ -138,44 +138,62 @@ final class CartRenew_WC_DB {
 require dirname( __DIR__ ) . '/includes/class-cr-tracker.php';
 
 CartRenew_WC_Tracker::init();
-CartRenew_WC_Tracker::save_snapshot();
-$GLOBALS['test_logged_in'] = true;
-WC()->session->set_customer_id( '42' );
-cartrenew_test_do_action( 'woocommerce_guest_session_to_user_id', 'guest-session-123', '42' );
-CartRenew_WC_Tracker::save_snapshot();
-CartRenew_WC_Tracker::mark_recovered( 9001 );
 
-$statuses = array();
-foreach ( CartRenew_WC_DB::$rows as $cart_key => $row ) {
-	$statuses[ $cart_key ] = $row['status'];
+function cartrenew_test_run_scenario( $migration_path ) {
+	$GLOBALS['test_logged_in'] = false;
+	$GLOBALS['test_wc']        = (object) array(
+		'session' => new CartRenew_Test_Session(),
+		'cart'    => new CartRenew_Test_Cart(),
+	);
+	CartRenew_WC_DB::$rows      = array();
+
+	CartRenew_WC_Tracker::save_snapshot();
+	$GLOBALS['test_logged_in'] = true;
+
+	if ( 'legacy_wp_login' === $migration_path ) {
+		cartrenew_test_do_action( 'wp_login', 'test-customer', (object) array( 'ID' => 42 ) );
+		WC()->session->set_customer_id( '42' );
+	} else {
+		WC()->session->set_customer_id( '42' );
+		cartrenew_test_do_action( 'woocommerce_guest_session_to_user_id', 'guest-session-123', '42' );
+	}
+
+	CartRenew_WC_Tracker::save_snapshot();
+	CartRenew_WC_Tracker::mark_recovered( 9001 );
+
+	$statuses = array();
+	foreach ( CartRenew_WC_DB::$rows as $cart_key => $row ) {
+		$statuses[ $cart_key ] = $row['status'];
+	}
+
+	return array(
+		'statuses_after_checkout' => $statuses,
+		'cron_eligible_keys'      => array_keys(
+			array_filter(
+				$statuses,
+				static function ( $status ) {
+					return 'tracking' === $status;
+				}
+			)
+		),
+	);
 }
 
-$tracking_keys = array_keys(
-	array_filter(
-		$statuses,
-		static function ( $status ) {
-			return 'tracking' === $status;
-		}
-	)
+$results = array(
+	'legacy_wp_login'            => cartrenew_test_run_scenario( 'legacy_wp_login' ),
+	'modern_woocommerce_migrate' => cartrenew_test_run_scenario( 'modern_woocommerce_migrate' ),
 );
 
-echo json_encode(
-	array(
-		'statuses_after_checkout' => $statuses,
-		'cron_eligible_keys'      => $tracking_keys,
-	),
-	JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES
-) . PHP_EOL;
+echo json_encode( $results, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) . PHP_EOL;
 
 $failures = array();
-if ( isset( $statuses['session_guest-session-123'] ) ) {
-	$failures[] = 'The original guest key was not migrated.';
-}
-if ( 'recovered' !== ( $statuses['user_42'] ?? null ) ) {
-	$failures[] = 'The authenticated cart was not marked recovered.';
-}
-if ( $tracking_keys ) {
-	$failures[] = 'A completed cart remains eligible for the abandonment cron.';
+foreach ( $results as $scenario => $result ) {
+	if ( array( 'user_42' => 'recovered' ) !== $result['statuses_after_checkout'] ) {
+		$failures[] = $scenario . ' did not leave only the authenticated cart recovered.';
+	}
+	if ( $result['cron_eligible_keys'] ) {
+		$failures[] = $scenario . ' left a completed cart eligible for the abandonment cron.';
+	}
 }
 
 if ( $failures ) {
@@ -183,4 +201,4 @@ if ( $failures ) {
 	exit( 1 );
 }
 
-echo 'PASS: no tracked cart remains after checkout.' . PHP_EOL;
+echo 'PASS: legacy and modern login migrations leave no tracked cart after checkout.' . PHP_EOL;
