@@ -164,9 +164,6 @@ function cleanEnv(value?: string | null): string {
     toPhone: string,
     options: SendWhatsAppOptions
   ): Promise<WhatsAppSendResult> {
-    const diagnostics = getWhatsAppCredentialDiagnostics()
-    console.log('🔐 WhatsApp credential diagnostics (production-safe):', diagnostics)
-  
     if (!hasWhatsAppCredentials()) {
       console.error(
         '❌ WhatsApp credentials missing or placeholder. Check Vercel env for WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID.'
@@ -175,10 +172,7 @@ function cleanEnv(value?: string | null): string {
     }
   
     if (!isValidWhatsAppPhone(toPhone)) {
-      console.error('❌ Invalid WhatsApp destination phone:', {
-        raw: toPhone,
-        normalized: normalizePhoneDigits(toPhone),
-      })
+      console.error('❌ Invalid WhatsApp destination phone')
       return { success: false, error: `Invalid phone number: ${toPhone}`, to: toPhone }
     }
   
@@ -212,8 +206,6 @@ function cleanEnv(value?: string | null): string {
       },
     }
   
-    console.log('🌐 Meta WhatsApp API request payload:', JSON.stringify(payload, null, 2))
-  
     try {
       const response = await fetch(url, {
         method: 'POST',
@@ -227,7 +219,11 @@ function cleanEnv(value?: string | null): string {
       const data = await response.json()
   
       if (!response.ok) {
-        console.error('❌ Meta WhatsApp API error response:', JSON.stringify(data, null, 2))
+        console.error('❌ Meta WhatsApp API rejected template send:', {
+          status: response.status,
+          code: data?.error?.code,
+          type: data?.error?.type,
+        })
         return {
           success: false,
           error: data?.error?.message || `HTTP ${response.status}`,
@@ -237,7 +233,7 @@ function cleanEnv(value?: string | null): string {
       }
   
       const messageId = data?.messages?.[0]?.id ?? null
-      console.log('✅ Meta WhatsApp API response:', JSON.stringify(data, null, 2))
+      console.log('✅ Meta WhatsApp template accepted:', { messageId })
   
       return {
         success: true,

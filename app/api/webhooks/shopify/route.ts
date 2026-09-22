@@ -70,12 +70,10 @@ export async function POST(req: NextRequest) {
     
     const body = await req.text()
 
-    console.log('📦 Shopify webhook raw body (checkouts/update JSON):', {
+    console.log('📦 Shopify webhook body received:', {
       topic,
       shop: shopDomain,
       bodyLength: body.length,
-      bodyPreview: body.slice(0, 2000),
-      fullBody: body,
     })
     
     // Verify webhook HMAC with SHOPIFY_API_SECRET (X-Shopify-Hmac-SHA256).
@@ -136,16 +134,7 @@ export async function POST(req: NextRequest) {
     console.log('🔥 LIVE WEBHOOK RECEIVED (parsed Abandoned Checkout payload):', {
       topic,
       shop: shopDomain,
-      checkoutToken: payload?.token ?? null,
-      checkoutId: payload?.id ?? null,
-      email: payload?.email ?? null,
-      phone: payload?.phone ?? null,
-      abandonedCheckoutUrl: payload?.abandoned_checkout_url ?? null,
       lineItemCount: Array.isArray(payload?.line_items) ? payload.line_items.length : 0,
-      customer: payload?.customer ?? null,
-      shipping_address: payload?.shipping_address ?? null,
-      billing_address: payload?.billing_address ?? null,
-      payload,
     })
 
     if (!shopDomain) {
@@ -194,7 +183,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true })
     
   } catch (error) {
-    console.error('Shopify webhook error:', error)
+    console.error('Shopify webhook processing failed', {
+      errorType: error instanceof Error ? error.name : 'UnknownError',
+    })
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
   }
 }
@@ -344,14 +335,6 @@ async function dispatchWhatsAppRecovery({
   cartToken: string
   persistMessageRow?: boolean
 }) {
-  const shippingAddress = payload.shipping_address ?? null
-  console.log(
-    `📞 Phone lookup for cart ${cartId} — customer.phone:`,
-    customer.phone ?? null,
-    '| shipping_address:',
-    JSON.stringify(shippingAddress, null, 2)
-  )
-
   // Prefer shipping_address.phone, then customer.phone (see extractCustomerPhone).
   const customerPhone = extractCustomerPhone(payload, customer)
   const customerName = resolveRecoveryCustomerName(extractCustomerName(customer, payload))
@@ -376,22 +359,17 @@ async function dispatchWhatsAppRecovery({
   })
 
   if (!customerPhone) {
-    console.warn(
-      `WhatsApp recovery skipped: missing phone for cart ${cartId}. customer.phone=${String(customer.phone ?? 'undefined')}, shipping_address.phone=${String((shippingAddress as Record<string, unknown> | null)?.phone ?? 'undefined')}. Full payload:`,
-      JSON.stringify(payload, null, 2)
-    )
+    console.warn('WhatsApp recovery skipped: missing phone')
     return
   }
 
   if (!checkoutUrl) {
-    console.warn(`WhatsApp recovery skipped: missing checkout URL for cart ${cartId}`)
+    console.warn('WhatsApp recovery skipped: missing checkout URL')
     return
   }
 
   if (!hasWhatsAppCredentials()) {
-    console.error(
-      `WhatsApp credentials missing — cannot send recovery for cart ${cartId}`
-    )
+    console.error('WhatsApp credentials missing — cannot send recovery')
     return
   }
 
@@ -422,17 +400,11 @@ async function dispatchWhatsAppRecovery({
       messageRowId = messageRow.id
     }
   } else {
-    console.warn(
-      `Skipping messages row persist for cart ${cartId} (abandoned_carts row missing) — still sending WhatsApp`
-    )
+    console.warn('Skipping messages row persist — abandoned_carts row missing')
   }
 
   console.log('📤 Dispatching Meta WhatsApp template recovery', {
-    cartId,
-    to: customerPhone,
     templateName: 'abandoned_cart_reminder',
-    bodyVariables,
-    checkoutUrl,
   })
 
   const sendResult = await sendWhatsAppMessage(customerPhone, {
@@ -441,13 +413,10 @@ async function dispatchWhatsAppRecovery({
   })
 
   console.log('📨 Meta WhatsApp message status:', {
-    cartId,
     success: sendResult.success,
     status: sendResult.status ?? (sendResult.success ? 'accepted' : 'failed'),
     messageId: sendResult.messageId ?? null,
-    to: sendResult.to ?? customerPhone,
     templateName: sendResult.templateName ?? 'abandoned_cart_reminder',
-    error: sendResult.error ?? null,
   })
 
   if (sendResult.success) {
@@ -476,9 +445,11 @@ async function dispatchWhatsAppRecovery({
         .eq('status', 'pending')
     }
 
-    console.log(
-      `✅ WhatsApp recovery sent for cart ${cartId} to ${customerPhone} via Meta template abandoned_cart_reminder (${sendResult.messageId}, status=${sendResult.status}) — link: ${checkoutUrl}`
-    )
+    console.log('✅ WhatsApp recovery sent', {
+      messageId: sendResult.messageId,
+      status: sendResult.status,
+      templateName: 'abandoned_cart_reminder',
+    })
     return
   }
 
@@ -494,24 +465,20 @@ async function dispatchWhatsAppRecovery({
       .eq('id', messageRowId)
   }
 
-  console.warn(
-    `❌ WhatsApp recovery dispatch failed for cart ${cartId} (${customerPhone}):`,
-    sendResult.error ?? 'unknown',
-    `| status=${sendResult.status}`
-  )
+  console.warn('❌ WhatsApp recovery dispatch failed', {
+    status: sendResult.status,
+    templateName: sendResult.templateName ?? 'abandoned_cart_reminder',
+  })
 }
 
 function logSupabaseError(context: string, error: unknown) {
   if (!error || typeof error !== 'object') {
-    console.error(context, error)
+    console.error(context)
     return
   }
   const row = error as Record<string, unknown>
   console.error(context, {
-    message: row.message ?? null,
     code: row.code ?? null,
-    details: row.details ?? null,
-    hint: row.hint ?? null,
   })
 }
 
@@ -700,9 +667,7 @@ async function handleCartWebhook(storeId: string, payload: any) {
 
   if (error && !cart) {
     console.error('Abandoned cart upsert failed — continuing WhatsApp if contact is valid', {
-      message: (error as { message?: string })?.message ?? null,
       code: (error as { code?: string })?.code ?? null,
-      token,
     })
   }
 
@@ -772,11 +737,8 @@ async function handleCheckoutWebhook(storeId: string, payload: any) {
     logSupabaseError('Failed to insert abandoned checkout', error)
   } else {
     console.log('✅ Abandoned checkout upserted', {
-      cartId: cart?.id ?? null,
-      token,
       created,
       status: cart?.status ?? null,
-      phone: customerPhone ?? cart?.customer_phone ?? null,
     })
   }
 
@@ -792,9 +754,10 @@ async function handleCheckoutWebhook(storeId: string, payload: any) {
     (created || phoneJustArrived || !previousPhone)
 
   if (shouldDispatch) {
-    console.log(
-      `📲 Dispatching WhatsApp recovery for checkout ${recoveryCartId} (created=${created}, phoneJustArrived=${phoneJustArrived})`
-    )
+    console.log('📲 Dispatching WhatsApp recovery for checkout', {
+      created,
+      phoneJustArrived,
+    })
     await dispatchWhatsAppRecovery({
       storeId,
       cartId: recoveryCartId,
@@ -869,7 +832,7 @@ async function markCartRecovered(
     .maybeSingle()
 
   if (error) {
-    console.error('Failed to mark cart recovered:', error)
+    logSupabaseError('Failed to mark cart recovered', error)
     return false
   }
 
@@ -878,7 +841,7 @@ async function markCartRecovered(
   }
 
   await incrementAnalytics(storeId, 'carts_recovered', Number(cart.cart_value) || 0)
-  console.log(`Cart ${cart.id} marked as recovered from order webhook`)
+  console.log('Cart marked as recovered from order webhook')
   return true
 }
 
@@ -902,9 +865,6 @@ async function handleOrderCreated(storeId: string, payload: any) {
   if (!cart) {
     console.log('No matching pending abandoned cart for order recovery', {
       storeId,
-      cartToken,
-      phone,
-      email,
     })
     return
   }

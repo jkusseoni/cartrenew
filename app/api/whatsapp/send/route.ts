@@ -54,21 +54,16 @@ export async function POST(request: Request) {
       checkoutUrl,
     })
 
-    console.log('📤 /api/whatsapp/send abandoned-cart Meta template payload', {
-      to: phone,
-      customerName,
-      checkoutUrl,
-      templateName: 'abandoned_cart_reminder',
-      bodyVariables,
-    })
-
     const sendResult = await sendWhatsAppMessage(phone, {
       templateName: 'abandoned_cart_reminder',
       bodyVariables,
     })
 
     if (!sendResult.success) {
-      console.error('❌ Meta WhatsApp abandoned-cart send failed:', sendResult)
+      console.error('❌ Meta WhatsApp abandoned-cart send failed', {
+        status: sendResult.status,
+        templateName: sendResult.templateName,
+      })
       return NextResponse.json(
         {
           success: false,
@@ -79,7 +74,6 @@ export async function POST(request: Request) {
     }
 
     console.log('✅ Abandoned-cart Meta WhatsApp dispatched', {
-      to: sendResult.to ?? phone,
       messageId: sendResult.messageId,
       status: sendResult.status,
       templateName: sendResult.templateName ?? 'abandoned_cart_reminder',
