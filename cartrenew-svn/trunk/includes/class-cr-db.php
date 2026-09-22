@@ -93,14 +93,42 @@ class CartRenew_WC_DB {
 		return $wpdb->insert_id;
 	}
 
-	public static function mark_status( $cart_key, $status, $extra = array() ) {
+	/**
+	 * Remove a cart snapshot once the shopper has emptied the cart.
+	 */
+	public static function delete_cart( $cart_key ) {
+		global $wpdb;
+		$table = self::table_name();
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- custom table, no core API available
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.NoCaching -- transient cart data, caching not beneficial
+		return $wpdb->delete( $table, array( 'cart_key' => $cart_key ) );
+	}
+
+	/**
+	 * Atomically move a tracking cart into the in-flight state.
+	 */
+	public static function claim_for_send( $cart_key ) {
+		return 0 < self::mark_status( $cart_key, 'pending_send', array(), 'tracking' );
+	}
+
+	/**
+	 * Update a cart status, optionally only when its current status matches.
+	 */
+	public static function mark_status( $cart_key, $status, $extra = array(), $expected_status = null ) {
 		global $wpdb;
 		$table = self::table_name();
 
 		$data = array_merge( array( 'status' => $status ), $extra );
+		$where = array( 'cart_key' => $cart_key );
+		if ( null !== $expected_status ) {
+			$where['status'] = $expected_status;
+		}
+
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- custom table, no core API available
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.NoCaching -- transient cart data, caching not beneficial
-		$wpdb->update( $table, $data, array( 'cart_key' => $cart_key ) );
+		$rows_updated = $wpdb->update( $table, $data, $where );
+		return $rows_updated;
 	}
 
 	/**

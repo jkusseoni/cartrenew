@@ -26,13 +26,18 @@ class CartRenew_WC_Cron {
 		$carts   = CartRenew_WC_DB::get_abandoned_carts( $minutes );
 
 		foreach ( $carts as $cart ) {
+			if ( ! CartRenew_WC_DB::claim_for_send( $cart->cart_key ) ) {
+				continue;
+			}
+
 			$result = CartRenew_WC_API::send_abandoned_cart( $cart );
 
 			if ( is_wp_error( $result ) ) {
 				CartRenew_WC_DB::mark_status(
 					$cart->cart_key,
 					'send_failed',
-					array( 'sent_at' => current_time( 'mysql' ) )
+					array( 'sent_at' => current_time( 'mysql' ) ),
+					'pending_send'
 				);
 				// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- intentional debug trail during dev.
 				error_log( 'CartRenew WC send failed for cart ' . $cart->cart_key . ': ' . $result->get_error_message() );
@@ -42,7 +47,8 @@ class CartRenew_WC_Cron {
 			CartRenew_WC_DB::mark_status(
 				$cart->cart_key,
 				'sent',
-				array( 'sent_at' => current_time( 'mysql' ) )
+				array( 'sent_at' => current_time( 'mysql' ) ),
+				'pending_send'
 			);
 		}
 	}
