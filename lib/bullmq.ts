@@ -43,7 +43,7 @@ if (!globalForRedis.whatsappWorker) {
     'WhatsAppRecovery',
     async (job) => {
       const { cartId, phoneNumber, messagePayload } = job.data;
-      console.log(`🚀 [BullMQ] Job ${job.id} started for Cart ID: ${cartId}`);
+      console.log(`🚀 [BullMQ] Job ${job.id} started`);
 
       const templateName =
         messagePayload?.templateName || 'abandoned_cart_reminder';
@@ -59,7 +59,7 @@ if (!globalForRedis.whatsappWorker) {
         });
 
         if (!result.success) {
-          console.error(`❌ [BullMQ] Meta WhatsApp API error for Job ${job.id}:`, result.error);
+          console.error(`❌ [BullMQ] Meta WhatsApp API rejected job ${job.id}`);
           throw new Error(result.error || 'Meta API request failed');
         }
 
@@ -75,12 +75,12 @@ if (!globalForRedis.whatsappWorker) {
               status: 'message_sent',
             },
           });
-          console.log(`💾 [Prisma] Cart ${cartId} status successfully updated to 'message_sent'`);
+          console.log(`💾 [Prisma] Job ${job.id} cart status updated to 'message_sent'`);
         }
 
         console.log(`✅ [BullMQ] Job ${job.id} finished successfully!`);
       } catch (error: unknown) {
-        console.error(`💥 [BullMQ] Delivery execution failed for job ${job.id}:`, getErrorMessage(error));
+        console.error(`💥 [BullMQ] Delivery execution failed for job ${job.id}`);
         throw error; // Job throw karein taaki queue automatically exponential delay se retry kar sake
       }
     },
@@ -96,7 +96,3 @@ if (!globalForRedis.whatsappWorker) {
 }
 
 export const worker = globalForRedis.whatsappWorker;
-
-function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
-}

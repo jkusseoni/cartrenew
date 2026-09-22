@@ -123,7 +123,7 @@ export async function triggerWhatsAppRecoveryForCart({
   cartToken?: string | null
 }): Promise<WhatsAppRecoveryResult> {
   if (!customerPhone) {
-    console.warn(`WhatsApp recovery skipped: missing phone for cart ${cartId}`)
+    console.warn('WhatsApp recovery skipped: missing phone')
     return { queued: false, sent: false, error: 'missing_phone' }
   }
 
@@ -160,16 +160,11 @@ export async function triggerWhatsAppRecoveryForCart({
       .single()
 
     if (insertError || !messageRow?.id) {
-      console.error('Failed to insert recovery message row:', insertError)
+      console.error('Failed to insert recovery message row', {
+        code: insertError?.code ?? null,
+      })
       return { queued: false, sent: false, error: insertError?.message || 'insert_failed' }
     }
-
-    console.log('📤 triggerWhatsAppRecoveryForCart Meta template payload', {
-      cartId,
-      to: customerPhone,
-      templateName: whatsappTemplateName,
-      bodyVariables: [safeName, trackedCheckoutUrl],
-    })
 
     const dispatch = hasWhatsAppCredentials()
       ? await sendWhatsAppMessage(customerPhone, {
@@ -210,9 +205,7 @@ export async function triggerWhatsAppRecoveryForCart({
         .eq('id', cartId)
         .eq('status', 'pending')
 
-      console.log(
-        `✅ WhatsApp recovery sent for cart ${cartId} via ${dispatch.provider ?? 'provider'}`
-      )
+      console.log(`✅ WhatsApp recovery sent via ${dispatch.provider ?? 'provider'}`)
 
       return { queued: true, sent: true, messageId: dispatch.providerId }
     }
@@ -227,11 +220,13 @@ export async function triggerWhatsAppRecoveryForCart({
       })
       .eq('id', messageRow.id)
 
-    console.warn(`WhatsApp recovery dispatch failed for cart ${cartId}:`, dispatch.error)
+    console.warn('WhatsApp recovery dispatch failed')
 
     return { queued: true, sent: false, error: dispatch.error }
   } catch (error) {
-    console.error('Failed to trigger WhatsApp recovery:', error)
+    console.error('Failed to trigger WhatsApp recovery', {
+      errorType: error instanceof Error ? error.name : 'UnknownError',
+    })
     return {
       queued: false,
       sent: false,
