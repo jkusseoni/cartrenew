@@ -94,6 +94,18 @@ class CartRenew_WC_DB {
 	}
 
 	/**
+	 * Remove a cart snapshot once the shopper has emptied the cart.
+	 */
+	public static function delete_cart( $cart_key ) {
+		global $wpdb;
+		$table = self::table_name();
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- custom table, no core API available
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.NoCaching -- transient cart data, caching not beneficial
+		return $wpdb->delete( $table, array( 'cart_key' => $cart_key ) );
+	}
+
+	/**
 	 * Atomically move a tracking cart into the in-flight state.
 	 */
 	public static function claim_for_send( $cart_key ) {
