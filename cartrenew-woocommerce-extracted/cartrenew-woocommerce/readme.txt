@@ -3,7 +3,7 @@ Contributors: cartrenew
 Tags: woocommerce, abandoned cart, whatsapp, cart recovery, cart abandonment
 Requires at least: 6.0
 Tested up to: 7.1
-Stable tag: 0.1.4
+Stable tag: 0.1.5
 Requires PHP: 7.4
 Requires Plugins: woocommerce
 License: GPLv2 or later
@@ -100,6 +100,9 @@ Yes. CartRenew's consent-first design (explicit opt-in checkbox) and secure data
 3. CartRenew dashboard showing recovery analytics
 
 == Changelog ==
+= 0.1.5 =
+* Use the WooCommerce store country when normalizing local WhatsApp numbers
+
 = 0.1.4 =
 * Updated plugin name for guideline compliance
 * Added External services disclosure
@@ -121,6 +124,9 @@ Yes. CartRenew's consent-first design (explicit opt-in checkbox) and secure data
 * CartRenew API integration for WhatsApp message delivery
 
 == Upgrade Notice ==
+
+= 0.1.5 =
+Corrects WhatsApp destinations for stores outside India.
 
 = 0.1.2 =
 Phone number formatting fix — upgrade recommended for stores with international customers.

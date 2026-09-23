@@ -33,6 +33,12 @@ class CartRenew_WC_Consent {
 			return;
 		}
 
+		$base_country = WC()->countries->get_base_country();
+		$calling_code = WC()->countries->get_country_calling_code( $base_country );
+		if ( is_array( $calling_code ) ) {
+			$calling_code = reset( $calling_code );
+		}
+
 		wp_enqueue_script(
 			'cartrenew-consent',
 			CARTRENEW_WC_PLUGIN_URL . 'assets/consent.js',
@@ -44,8 +50,9 @@ class CartRenew_WC_Consent {
 			'cartrenew-consent',
 			'CartRenewConsent',
 			array(
-				'ajax_url' => admin_url( 'admin-ajax.php' ),
-				'nonce'    => wp_create_nonce( 'cartrenew_consent' ),
+				'ajax_url'             => admin_url( 'admin-ajax.php' ),
+				'nonce'                => wp_create_nonce( 'cartrenew_consent' ),
+				'country_calling_code' => $calling_code,
 			)
 		);
 	}
