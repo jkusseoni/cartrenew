@@ -67,9 +67,13 @@ class CartRenew_WC_DB {
 		$now = current_time( 'mysql' );
 
 		if ( $existing ) {
-			// Don't overwrite a cart that's already sent/recovered/opted_out back to "tracking".
-			$protected_statuses = array( 'sent', 'recovered', 'opted_out' );
-			if ( in_array( $existing->status, $protected_statuses, true ) && empty( $data['status'] ) ) {
+			// A later non-empty snapshot is fresh cart activity. Sent/recovered
+			// rows can be tracked again, but an explicit opt-out remains final.
+			if ( in_array( $existing->status, array( 'sent', 'recovered' ), true ) && empty( $data['status'] ) ) {
+				$data['status']   = 'tracking';
+				$data['order_id'] = null;
+				$data['sent_at']  = null;
+			} elseif ( 'opted_out' === $existing->status && empty( $data['status'] ) ) {
 				unset( $data['status'] );
 			}
 
