@@ -1,3 +1,28 @@
+function cartrenewNormalizePhone(raw, countryCallingCode) {
+	var value = String(raw || '').trim();
+	var digits = value.replace(/\D/g, '');
+
+	if (!digits) {
+		return '';
+	}
+
+	if (value.charAt(0) === '+') {
+		return digits;
+	}
+
+	if (digits.indexOf('00') === 0) {
+		return digits.substring(2);
+	}
+
+	var callingCode = String(countryCallingCode || '').replace(/\D/g, '');
+	if (!callingCode) {
+		return digits;
+	}
+
+	digits = digits.replace(/^0+/, '');
+	return callingCode + digits;
+}
+
 jQuery(function ($) {
 	'use strict';
 
@@ -68,22 +93,14 @@ jQuery(function ($) {
 		var $status = $scope.find('#cartrenew-consent-status');
 		var saveTimer = null;
 
-		function normalizePhone(raw) {
-			var digits = raw.replace(/\D/g, '');
-			if (digits.length === 10) {
-				return '91' + digits;
-			}
-			if (digits.length === 11 && digits.charAt(0) === '0') {
-				return '91' + digits.substring(1);
-			}
-			return digits;
-		}
-
 		function save() {
 			$.post(CartRenewConsent.ajax_url, {
 				action: 'cartrenew_save_consent',
 				nonce: CartRenewConsent.nonce,
-				phone: normalizePhone($phone.val() || ''),
+				phone: cartrenewNormalizePhone(
+					$phone.val() || '',
+					CartRenewConsent.country_calling_code
+				),
 				consent: $consent.is(':checked') ? 'yes' : 'no'
 			}).done(function () {
 				$status.text('Saved');
