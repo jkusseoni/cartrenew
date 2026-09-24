@@ -47,26 +47,46 @@ class CartRenew_WC_API {
 			)
 		);
 
-		// #region agent log
-		file_put_contents( '/opt/cursor/logs/debug.log', wp_json_encode( array( 'hypothesisId' => 'B,C', 'location' => 'includes/class-cr-api.php:50', 'message' => 'WordPress HTTP request completed', 'data' => array( 'transport_error' => is_wp_error( $response ) ), 'timestamp' => (int) round( microtime( true ) * 1000 ) ) ) . PHP_EOL, FILE_APPEND | LOCK_EX );
-		// #endregion
-
 		if ( is_wp_error( $response ) ) {
 			return $response;
 		}
 
 		$code = wp_remote_retrieve_response_code( $response );
-		// #region agent log
-		file_put_contents( '/opt/cursor/logs/debug.log', wp_json_encode( array( 'hypothesisId' => 'B,D', 'location' => 'includes/class-cr-api.php:59', 'message' => 'Backend HTTP response classified', 'data' => array( 'http_code' => $code, 'successful' => 200 <= $code && 300 > $code ), 'timestamp' => (int) round( microtime( true ) * 1000 ) ) ) . PHP_EOL, FILE_APPEND | LOCK_EX );
-		// #endregion
 		if ( $code < 200 || $code >= 300 ) {
 			return new WP_Error(
 				'cartrenew_api_error',
 				sprintf( 'CartRenew API returned HTTP %d', $code ),
-				array( 'body' => wp_remote_retrieve_body( $response ) )
+				array(
+					'body'        => wp_remote_retrieve_body( $response ),
+					'status_code' => $code,
+				)
 			);
 		}
 
 		return true;
+	}
+
+	/**
+	 * Whether a failed request is safe to retry on a later cron sweep.
+	 */
+	public static function is_retryable_error( $error ) {
+		if ( ! is_wp_error( $error ) ) {
+			return false;
+		}
+
+		$error_code = $error->get_error_code();
+		if ( 'cartrenew_not_configured' === $error_code ) {
+			return false;
+		}
+
+		// WordPress transport errors (timeouts, DNS, connection failures) are transient.
+		if ( 'cartrenew_api_error' !== $error_code ) {
+			return true;
+		}
+
+		$error_data = $error->get_error_data();
+		$status     = isset( $error_data['status_code'] ) ? (int) $error_data['status_code'] : 0;
+
+		return 408 === $status || 425 === $status || 429 === $status || 500 <= $status;
 	}
 }

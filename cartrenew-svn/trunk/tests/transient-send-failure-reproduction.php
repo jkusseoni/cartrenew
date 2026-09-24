@@ -1,6 +1,6 @@
 <?php
 /**
- * Hermetic reproduction for a transient HTTP 500 before backend insertion.
+ * Hermetic regression coverage for retries after transient send failures.
  *
  * Run with: php tests/transient-send-failure-reproduction.php
  */
@@ -73,6 +73,10 @@ class WP_Error {
 	public function get_error_message() {
 		return $this->message;
 	}
+
+	public function get_error_data() {
+		return $this->data;
+	}
 }
 
 class Fake_WPDB {
@@ -81,6 +85,10 @@ class Fake_WPDB {
 	public $transitions = array();
 
 	public function __construct() {
+		$this->reset();
+	}
+
+	public function reset() {
 		$this->row = (object) array(
 			'id'             => 1,
 			'cart_key'       => 'hermetic-cart',
@@ -96,6 +104,7 @@ class Fake_WPDB {
 			'created_at'     => '2026-09-24 10:00:00',
 			'sent_at'        => null,
 		);
+		$this->transitions = array();
 	}
 
 	public function prepare( $query, ...$args ) {
@@ -127,53 +136,139 @@ class Fake_WPDB {
 }
 
 class CartRenew_WC_Settings {
+	public static $settings = array(
+		'enabled'         => true,
+		'abandon_minutes' => 20,
+		'store_id'        => 'hermetic-store',
+		'api_key'         => 'not-a-real-secret',
+		'api_base'        => 'https://api.example.invalid/api/woocommerce/',
+	);
+
 	public static function get_settings() {
-		return array(
-			'enabled'         => true,
-			'abandon_minutes' => 20,
-			'store_id'        => 'hermetic-store',
-			'api_key'         => 'not-a-real-secret',
-			'api_base'        => 'https://api.example.invalid/api/woocommerce/',
-		);
+		return self::$settings;
 	}
 }
 
 $http_requests           = 0;
 $backend_insert_attempts = 0;
+$http_responses          = array();
 
 function wp_remote_post( $endpoint, $args ) {
-	global $http_requests;
+	global $http_requests, $http_responses;
 	++$http_requests;
 
-	// Simulate a transient gateway/backend HTTP 500 before the route inserts a row.
-	return array(
-		'response' => array( 'code' => 500 ),
-		'body'     => '{"error":"transient upstream failure"}',
-	);
+	if ( empty( $http_responses ) ) {
+		throw new RuntimeException( 'No hermetic HTTP response queued.' );
+	}
+
+	return array_shift( $http_responses );
 }
 
 $wpdb = new Fake_WPDB();
 
-require_once __DIR__ . '/../includes/class-cr-db.php';
-require_once __DIR__ . '/../includes/class-cr-api.php';
-require_once __DIR__ . '/../includes/class-cr-cron.php';
+$source_root = isset( $argv[1] ) ? realpath( $argv[1] ) : realpath( __DIR__ . '/..' );
+if ( ! $source_root || ! is_file( $source_root . '/includes/class-cr-cron.php' ) ) {
+	throw new RuntimeException( 'Pass the plugin source root containing includes/class-cr-cron.php.' );
+}
 
-CartRenew_WC_Cron::run();
+require_once $source_root . '/includes/class-cr-db.php';
+require_once $source_root . '/includes/class-cr-api.php';
+require_once $source_root . '/includes/class-cr-cron.php';
 
-assert_same( 1, $http_requests, 'first sweep must attempt one HTTP request' );
-assert_same( 0, $backend_insert_attempts, 'simulated failure occurs before backend insert' );
-assert_same( 'send_failed', $wpdb->row->status, 'transient HTTP 500 is marked terminal' );
+function response_with_code( $code ) {
+	return array(
+		'response' => array( 'code' => $code ),
+		'body'     => 500 === $code ? '{"error":"transient upstream failure"}' : '{}',
+	);
+}
 
-CartRenew_WC_Cron::run();
+function reset_scenario() {
+	global $wpdb, $http_requests, $http_responses;
+	$wpdb->reset();
+	$http_requests  = 0;
+	$http_responses = array();
+	CartRenew_WC_Settings::$settings['api_key'] = 'not-a-real-secret';
+}
 
-assert_same( 1, $http_requests, 'second sweep must demonstrate that the cart is never retried' );
-assert_same( 'send_failed', $wpdb->row->status, 'second sweep leaves the cart terminal' );
+$tests = array(
+	'HTTP 500 retries on the next sweep' => function () {
+		global $wpdb, $http_requests, $http_responses, $backend_insert_attempts;
+		reset_scenario();
+		$http_responses = array( response_with_code( 500 ), response_with_code( 200 ) );
+
+		CartRenew_WC_Cron::run();
+		assert_same( 1, $http_requests, 'first sweep must attempt one HTTP request' );
+		assert_same( 0, $backend_insert_attempts, 'simulated failure occurs before backend insert' );
+		assert_same( 'tracking', $wpdb->row->status, 'transient HTTP 500 must remain retryable' );
+		assert_same( null, $wpdb->row->sent_at, 'retryable failure must not set sent_at' );
+
+		CartRenew_WC_Cron::run();
+		assert_same( 2, $http_requests, 'second sweep must retry the request' );
+		assert_same( 'sent', $wpdb->row->status, 'successful retry must finish sent' );
+	},
+	'transport failure retries on the next sweep' => function () {
+		global $wpdb, $http_requests, $http_responses;
+		reset_scenario();
+		$http_responses = array(
+			new WP_Error( 'http_request_failed', 'Connection timed out.' ),
+			response_with_code( 200 ),
+		);
+
+		CartRenew_WC_Cron::run();
+		assert_same( 'tracking', $wpdb->row->status, 'transport error must remain retryable' );
+		CartRenew_WC_Cron::run();
+		assert_same( 2, $http_requests, 'transport error must be retried' );
+		assert_same( 'sent', $wpdb->row->status, 'successful transport retry must finish sent' );
+	},
+	'HTTP 400 remains terminal' => function () {
+		global $wpdb, $http_requests, $http_responses;
+		reset_scenario();
+		$http_responses = array( response_with_code( 400 ) );
+
+		CartRenew_WC_Cron::run();
+		assert_same( 'send_failed', $wpdb->row->status, 'non-retryable HTTP 400 must be terminal' );
+		CartRenew_WC_Cron::run();
+		assert_same( 1, $http_requests, 'terminal HTTP 400 must not be retried' );
+	},
+	'not configured remains terminal' => function () {
+		global $wpdb, $http_requests;
+		reset_scenario();
+		CartRenew_WC_Settings::$settings['api_key'] = '';
+
+		CartRenew_WC_Cron::run();
+		assert_same( 'send_failed', $wpdb->row->status, 'configuration error must be terminal' );
+		assert_same( 0, $http_requests, 'configuration error must not call the backend' );
+	},
+	'atomic-claim retry release preserves terminal races' => function () {
+		global $wpdb;
+		reset_scenario();
+		$wpdb->row->status = 'pending_send';
+		CartRenew_WC_DB::release_for_retry( $wpdb->row->cart_key );
+		assert_same( 'tracking', $wpdb->row->status, 'pending_send claim must release for retry' );
+
+		$wpdb->row->status = 'recovered';
+		CartRenew_WC_DB::release_for_retry( $wpdb->row->cart_key );
+		assert_same( 'recovered', $wpdb->row->status, 'retry release must preserve concurrent recovery' );
+	},
+);
+
+$failures = 0;
+foreach ( $tests as $name => $test ) {
+	try {
+		$test();
+		echo "PASS: {$name}\n";
+	} catch ( Throwable $error ) {
+		++$failures;
+		fwrite( STDERR, "FAIL: {$name}: {$error->getMessage()}\n" );
+	}
+}
 
 echo wp_json_encode(
 	array(
-		'http_requests'           => $http_requests,
-		'backend_insert_attempts' => $backend_insert_attempts,
-		'final_status'            => $wpdb->row->status,
-		'transitions'             => $wpdb->transitions,
+		'source_root' => $source_root,
+		'tests'       => count( $tests ),
+		'failures'    => $failures,
 	)
 ) . PHP_EOL;
+
+exit( 0 === $failures ? 0 : 1 );
