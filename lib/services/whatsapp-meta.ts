@@ -55,16 +55,13 @@ function cleanEnv(value?: string | null): string {
     }
   }
   
-  /** Strip to digits and apply local→E.164 rules (same behaviour as the old Twilio helper). */
+  /** Strip an explicitly international number to the digits Meta expects. */
   export function normalizePhoneDigits(phone: string): string {
     let digits = phone.trim()
     if (digits.startsWith('whatsapp:')) {
       digits = digits.slice('whatsapp:'.length)
     }
     digits = digits.replace(/\D/g, '')
-    if (digits.length === 10) {
-      digits = `91${digits}`
-    }
     return digits
   }
   
@@ -72,6 +69,10 @@ function cleanEnv(value?: string | null): string {
   export function isValidWhatsAppPhone(phone: string): boolean {
     const digits = normalizePhoneDigits(phone)
     if (digits.length < 10 || digits.length > 15) return false
+    // A bare 10-digit value is ambiguous: it may be a local number from any
+    // country. Never guess a country code and risk messaging another person.
+    const withoutWhatsAppPrefix = phone.trim().replace(/^whatsapp:/i, '').trim()
+    if (digits.length === 10 && !withoutWhatsAppPrefix.startsWith('+')) return false
     if (/^1?555\d{0,7}$/.test(digits)) return false
     if (digits.includes('5551212')) return false
     return true
