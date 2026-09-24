@@ -47,11 +47,18 @@ class CartRenew_WC_API {
 			)
 		);
 
+		// #region agent log
+		file_put_contents( '/opt/cursor/logs/debug.log', wp_json_encode( array( 'hypothesisId' => 'B,C', 'location' => 'includes/class-cr-api.php:50', 'message' => 'WordPress HTTP request completed', 'data' => array( 'transport_error' => is_wp_error( $response ) ), 'timestamp' => (int) round( microtime( true ) * 1000 ) ) ) . PHP_EOL, FILE_APPEND | LOCK_EX );
+		// #endregion
+
 		if ( is_wp_error( $response ) ) {
 			return $response;
 		}
 
 		$code = wp_remote_retrieve_response_code( $response );
+		// #region agent log
+		file_put_contents( '/opt/cursor/logs/debug.log', wp_json_encode( array( 'hypothesisId' => 'B,D', 'location' => 'includes/class-cr-api.php:59', 'message' => 'Backend HTTP response classified', 'data' => array( 'http_code' => $code, 'successful' => 200 <= $code && 300 > $code ), 'timestamp' => (int) round( microtime( true ) * 1000 ) ) ) . PHP_EOL, FILE_APPEND | LOCK_EX );
+		// #endregion
 		if ( $code < 200 || $code >= 300 ) {
 			return new WP_Error(
 				'cartrenew_api_error',

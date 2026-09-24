@@ -112,9 +112,13 @@ class CartRenew_WC_DB {
 
 		$cutoff = gmdate( 'Y-m-d H:i:s', time() - ( $minutes * 60 ) - ( get_option( 'gmt_offset' ) * HOUR_IN_SECONDS ) );
 
+		// #region agent log
+		file_put_contents( '/opt/cursor/logs/debug.log', wp_json_encode( array( 'hypothesisId' => 'A,E', 'location' => 'includes/class-cr-db.php:115', 'message' => 'Querying abandonment candidates', 'data' => array( 'required_status' => 'tracking', 'minutes' => $minutes, 'limit' => $limit ), 'timestamp' => (int) round( microtime( true ) * 1000 ) ) ) . PHP_EOL, FILE_APPEND | LOCK_EX );
+		// #endregion
+
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- custom table, no core API available
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.NoCaching -- transient cart data, caching not beneficial
-		return $wpdb->get_results(
+		$results = $wpdb->get_results(
 			$wpdb->prepare(
 				"SELECT * FROM {$wpdb->prefix}cartrenew_carts
 				 WHERE status = %s
@@ -130,5 +134,11 @@ class CartRenew_WC_DB {
 				$limit
 			)
 		);
+
+		// #region agent log
+		file_put_contents( '/opt/cursor/logs/debug.log', wp_json_encode( array( 'hypothesisId' => 'A,E', 'location' => 'includes/class-cr-db.php:140', 'message' => 'Abandonment query returned', 'data' => array( 'candidate_count' => count( $results ), 'returned_statuses' => array_values( array_unique( array_map( static function ( $cart ) { return isset( $cart->status ) ? $cart->status : null; }, $results ) ) ) ), 'timestamp' => (int) round( microtime( true ) * 1000 ) ) ) . PHP_EOL, FILE_APPEND | LOCK_EX );
+		// #endregion
+
+		return $results;
 	}
 }

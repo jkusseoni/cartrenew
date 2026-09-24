@@ -25,10 +25,24 @@ class CartRenew_WC_Cron {
 		$minutes = ! empty( $settings['abandon_minutes'] ) ? absint( $settings['abandon_minutes'] ) : 20;
 		$carts   = CartRenew_WC_DB::get_abandoned_carts( $minutes );
 
+		// #region agent log
+		file_put_contents( '/opt/cursor/logs/debug.log', wp_json_encode( array( 'hypothesisId' => 'A,E', 'location' => 'includes/class-cr-cron.php:27', 'message' => 'Cron selected abandonment candidates', 'data' => array( 'minutes' => $minutes, 'candidate_count' => count( $carts ) ), 'timestamp' => (int) round( microtime( true ) * 1000 ) ) ) . PHP_EOL, FILE_APPEND | LOCK_EX );
+		// #endregion
+
 		foreach ( $carts as $cart ) {
+			// #region agent log
+			file_put_contents( '/opt/cursor/logs/debug.log', wp_json_encode( array( 'hypothesisId' => 'B,C', 'location' => 'includes/class-cr-cron.php:33', 'message' => 'Cron dispatching selected cart', 'data' => array( 'selected_status' => isset( $cart->status ) ? $cart->status : null ), 'timestamp' => (int) round( microtime( true ) * 1000 ) ) ) . PHP_EOL, FILE_APPEND | LOCK_EX );
+			// #endregion
 			$result = CartRenew_WC_API::send_abandoned_cart( $cart );
 
+			// #region agent log
+			file_put_contents( '/opt/cursor/logs/debug.log', wp_json_encode( array( 'hypothesisId' => 'B,C', 'location' => 'includes/class-cr-cron.php:39', 'message' => 'Cron received API result', 'data' => array( 'is_wp_error' => is_wp_error( $result ), 'error_code' => is_wp_error( $result ) ? $result->get_error_code() : null ), 'timestamp' => (int) round( microtime( true ) * 1000 ) ) ) . PHP_EOL, FILE_APPEND | LOCK_EX );
+			// #endregion
+
 			if ( is_wp_error( $result ) ) {
+				// #region agent log
+				file_put_contents( '/opt/cursor/logs/debug.log', wp_json_encode( array( 'hypothesisId' => 'A,E', 'location' => 'includes/class-cr-cron.php:45', 'message' => 'Cron taking terminal failure branch', 'data' => array( 'target_status' => 'send_failed' ), 'timestamp' => (int) round( microtime( true ) * 1000 ) ) ) . PHP_EOL, FILE_APPEND | LOCK_EX );
+				// #endregion
 				CartRenew_WC_DB::mark_status(
 					$cart->cart_key,
 					'send_failed',
