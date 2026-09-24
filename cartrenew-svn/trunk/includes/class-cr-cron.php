@@ -6,9 +6,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Runs every 5 minutes (registered in the main plugin file). Finds carts
  * that have gone quiet past the configured wait time, with phone + consent
- * present, and hands each one to CartRenew_WC_API. Rate-limited implicitly
- * by "status='tracking'" only matching once per cart (marked 'sent' or
- * 'send_failed' afterwards, never resent).
+ * present, and hands each one to CartRenew_WC_API. Successful or permanent
+ * failures leave the tracking queue; transient failures remain eligible for
+ * a later sweep.
  */
 class CartRenew_WC_Cron {
 
@@ -29,11 +29,15 @@ class CartRenew_WC_Cron {
 			$result = CartRenew_WC_API::send_abandoned_cart( $cart );
 
 			if ( is_wp_error( $result ) ) {
-				CartRenew_WC_DB::mark_status(
-					$cart->cart_key,
-					'send_failed',
-					array( 'sent_at' => current_time( 'mysql' ) )
-				);
+				if ( CartRenew_WC_API::is_retryable_error( $result ) ) {
+					CartRenew_WC_DB::release_for_retry( $cart->cart_key );
+				} else {
+					CartRenew_WC_DB::mark_status(
+						$cart->cart_key,
+						'send_failed',
+						array( 'sent_at' => current_time( 'mysql' ) )
+					);
+				}
 				// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- intentional debug trail during dev.
 				error_log( 'CartRenew WC send failed for cart ' . $cart->cart_key . ': ' . $result->get_error_message() );
 				continue;

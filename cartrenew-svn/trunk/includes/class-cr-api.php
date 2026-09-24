@@ -56,10 +56,37 @@ class CartRenew_WC_API {
 			return new WP_Error(
 				'cartrenew_api_error',
 				sprintf( 'CartRenew API returned HTTP %d', $code ),
-				array( 'body' => wp_remote_retrieve_body( $response ) )
+				array(
+					'body'        => wp_remote_retrieve_body( $response ),
+					'status_code' => $code,
+				)
 			);
 		}
 
 		return true;
+	}
+
+	/**
+	 * Whether a failed request is safe to retry on a later cron sweep.
+	 */
+	public static function is_retryable_error( $error ) {
+		if ( ! is_wp_error( $error ) ) {
+			return false;
+		}
+
+		$error_code = $error->get_error_code();
+		if ( 'cartrenew_not_configured' === $error_code ) {
+			return false;
+		}
+
+		// WordPress transport errors (timeouts, DNS, connection failures) are transient.
+		if ( 'cartrenew_api_error' !== $error_code ) {
+			return true;
+		}
+
+		$error_data = $error->get_error_data();
+		$status     = isset( $error_data['status_code'] ) ? (int) $error_data['status_code'] : 0;
+
+		return 408 === $status || 425 === $status || 429 === $status || 500 <= $status;
 	}
 }
