@@ -118,23 +118,6 @@ function reloadEmbeddedApp(shop?: string | null): boolean {
   return true;
 }
 
-function emptyDashboard(shop: string, storeId?: string | null): DashboardResponse {
-  return normalizeDashboard(
-    {
-      shop,
-      store: {
-        id: storeId || "pending",
-        shopify_domain: shop,
-      },
-      metrics: EMPTY_METRICS,
-      carts: [],
-      needsInstall: false,
-      degraded: true,
-    },
-    shop
-  );
-}
-
 function Shell({ children }: { children: React.ReactNode }) {
   return (
     <main className="min-h-screen bg-[#0B0F17] text-white flex flex-col">
@@ -269,11 +252,6 @@ async function completeInstallAndLoadDashboard(
     }
   }
 
-  const shop = lastExchange.shop || fallbackShop || "";
-  if (shop) {
-    return emptyDashboard(shop, lastExchange.storeId);
-  }
-
   return null;
 }
 
@@ -289,6 +267,10 @@ export default function EmbeddedAppHomePage() {
     let cancelled = false;
 
     const applyData = (next: DashboardResponse) => {
+      if (next.degraded) {
+        failSetup();
+        return;
+      }
       clearRemountCount();
       startTransition(() => {
         setSetupError(false);
@@ -325,7 +307,11 @@ export default function EmbeddedAppHomePage() {
           setStatusMessage("Finishing install…");
           const installed = await completeInstallAndLoadDashboard(url, json.shop);
           if (cancelled) return;
-          applyData(installed ?? emptyDashboard(json.shop));
+          if (installed) {
+            applyData(installed);
+          } else {
+            failSetup();
+          }
           return;
         }
 
@@ -342,7 +328,11 @@ export default function EmbeddedAppHomePage() {
             setStatusMessage("Finishing install…");
             const installed = await completeInstallAndLoadDashboard(url, json.shop);
             if (cancelled) return;
-            applyData(installed ?? emptyDashboard(json.shop));
+            if (installed) {
+              applyData(installed);
+            } else {
+              failSetup();
+            }
             return;
           }
 
@@ -369,7 +359,11 @@ export default function EmbeddedAppHomePage() {
             setStatusMessage("Recovering session…");
             const installed = await completeInstallAndLoadDashboard(url, shop);
             if (cancelled) return;
-            applyData(installed ?? emptyDashboard(shop));
+            if (installed) {
+              applyData(installed);
+            } else {
+              failSetup();
+            }
             return;
           }
 
@@ -383,7 +377,11 @@ export default function EmbeddedAppHomePage() {
           if (shop) {
             const installed = await completeInstallAndLoadDashboard(url, shop);
             if (cancelled) return;
-            applyData(installed ?? emptyDashboard(shop));
+            if (installed) {
+              applyData(installed);
+            } else {
+              failSetup();
+            }
             return;
           }
           remountOrFail(shopParam);
@@ -408,12 +406,7 @@ export default function EmbeddedAppHomePage() {
         );
       } catch {
         if (cancelled) return;
-        const shop = new URLSearchParams(window.location.search).get("shop");
-        if (shop) {
-          applyData(emptyDashboard(shop));
-          return;
-        }
-        remountOrFail(shop);
+        remountOrFail(new URLSearchParams(window.location.search).get("shop"));
       }
     };
 
