@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 import * as Sentry from "@sentry/nextjs";
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 
 import { supabaseAdmin } from "@/lib/supabase";
 import {
@@ -89,18 +89,21 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Prisma is optional infra — never block the install response on it.
-    void findOrCreateMerchantByShopDomain(shop).catch((merchantError) => {
-      console.error(
-        "[token-exchange] merchant upsert failed (background):",
-        shop,
-        merchantError
-      );
-      Sentry.captureException(merchantError, {
-        tags: { area: "token-exchange", step: "prisma-merchant" },
-        extra: { shop },
-      });
-    });
+    // Prisma is optional infra — keep it off the install response path while
+    // extending the serverless invocation until the write has settled.
+    after(() =>
+      findOrCreateMerchantByShopDomain(shop).catch((merchantError) => {
+        console.error(
+          "[token-exchange] merchant upsert failed (background):",
+          shop,
+          merchantError
+        );
+        Sentry.captureException(merchantError, {
+          tags: { area: "token-exchange", step: "prisma-merchant" },
+          extra: { shop },
+        });
+      })
+    );
 
     // Preserve existing clerk_user_id (e.g. standalone Clerk login). Only set the
     // synthetic webhook_* value when inserting a brand-new store row.
@@ -182,51 +185,54 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Best-effort webhooks — do not hold the install response open.
-    void registerShopifyWebhooks(shop, accessToken)
-      .then(async (registered) => {
-        if (registered.length === 0) {
-          console.error(
-            "[token-exchange] webhook registration returned no topics (background):",
-            shop
-          );
-          Sentry.captureMessage(
-            "Shopify webhook registration returned no topics after install",
-            {
-              level: "error",
-              tags: { area: "token-exchange", step: "webhooks" },
+    // Best-effort webhooks — respond first, but keep the serverless invocation
+    // alive so a fresh install cannot lose its only registration attempt.
+    after(() =>
+      registerShopifyWebhooks(shop, accessToken)
+        .then(async (registered) => {
+          if (registered.length === 0) {
+            console.error(
+              "[token-exchange] webhook registration returned no topics (background):",
+              shop
+            );
+            Sentry.captureMessage(
+              "Shopify webhook registration returned no topics after install",
+              {
+                level: "error",
+                tags: { area: "token-exchange", step: "webhooks" },
+                extra: { shop, storeId },
+              }
+            );
+            return;
+          }
+          const { error: webhookUpdateError } = await supabaseAdmin
+            .from("stores")
+            .update({ webhook_ids: registered })
+            .eq("id", storeId);
+          if (webhookUpdateError) {
+            console.error(
+              "[token-exchange] webhook_ids update failed (background):",
+              shop,
+              webhookUpdateError
+            );
+            Sentry.captureException(webhookUpdateError, {
+              tags: { area: "token-exchange", step: "webhook-ids" },
               extra: { shop, storeId },
-            }
-          );
-          return;
-        }
-        const { error: webhookUpdateError } = await supabaseAdmin
-          .from("stores")
-          .update({ webhook_ids: registered })
-          .eq("id", storeId);
-        if (webhookUpdateError) {
+            });
+          }
+        })
+        .catch((webhookError) => {
           console.error(
-            "[token-exchange] webhook_ids update failed (background):",
+            "[token-exchange] webhook registration failed (background):",
             shop,
-            webhookUpdateError
+            webhookError
           );
-          Sentry.captureException(webhookUpdateError, {
-            tags: { area: "token-exchange", step: "webhook-ids" },
+          Sentry.captureException(webhookError, {
+            tags: { area: "token-exchange", step: "webhooks" },
             extra: { shop, storeId },
           });
-        }
-      })
-      .catch((webhookError) => {
-        console.error(
-          "[token-exchange] webhook registration failed (background):",
-          shop,
-          webhookError
-        );
-        Sentry.captureException(webhookError, {
-          tags: { area: "token-exchange", step: "webhooks" },
-          extra: { shop, storeId },
-        });
-      });
+        })
+    );
 
     return NextResponse.json({ ok: true, shop, storeId });
   } catch (error) {
