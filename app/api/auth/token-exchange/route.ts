@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 import * as Sentry from "@sentry/nextjs";
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 
 import { supabaseAdmin } from "@/lib/supabase";
 import {
@@ -89,17 +89,21 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Prisma is optional infra — never block the install response on it.
-    void findOrCreateMerchantByShopDomain(shop).catch((merchantError) => {
-      console.error(
-        "[token-exchange] merchant upsert failed (background):",
-        shop,
-        merchantError
-      );
-      Sentry.captureException(merchantError, {
-        tags: { area: "token-exchange", step: "prisma-merchant" },
-        extra: { shop },
-      });
+    // Prisma is optional infra — track the work without blocking the response.
+    after(async () => {
+      try {
+        await findOrCreateMerchantByShopDomain(shop);
+      } catch (merchantError) {
+        console.error(
+          "[token-exchange] merchant upsert failed (background):",
+          shop,
+          merchantError
+        );
+        Sentry.captureException(merchantError, {
+          tags: { area: "token-exchange", step: "prisma-merchant" },
+          extra: { shop },
+        });
+      }
     });
 
     // Preserve existing clerk_user_id (e.g. standalone Clerk login). Only set the
@@ -182,9 +186,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Best-effort webhooks — do not hold the install response open.
-    void registerShopifyWebhooks(shop, accessToken)
-      .then(async (registered) => {
+    // Best-effort webhooks — track the work without holding the response open.
+    after(async () => {
+      try {
+        const registered = await registerShopifyWebhooks(shop, accessToken);
         if (registered.length === 0) {
           console.error(
             "[token-exchange] webhook registration returned no topics (background):",
@@ -215,8 +220,7 @@ export async function POST(req: NextRequest) {
             extra: { shop, storeId },
           });
         }
-      })
-      .catch((webhookError) => {
+      } catch (webhookError) {
         console.error(
           "[token-exchange] webhook registration failed (background):",
           shop,
@@ -226,7 +230,8 @@ export async function POST(req: NextRequest) {
           tags: { area: "token-exchange", step: "webhooks" },
           extra: { shop, storeId },
         });
-      });
+      }
+    });
 
     return NextResponse.json({ ok: true, shop, storeId });
   } catch (error) {
