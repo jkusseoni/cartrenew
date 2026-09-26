@@ -75,16 +75,64 @@ function normalizeDashboard(
   };
 }
 
+const REMOUNT_STORAGE_KEY = "cartrenew_embed_remounts";
+const MAX_EMBEDDED_RELOADS = 2;
+
+function getRemountCount(): number {
+  try {
+    return Math.max(0, Number(sessionStorage.getItem(REMOUNT_STORAGE_KEY) || "0") || 0);
+  } catch {
+    return 0;
+  }
+}
+
+function clearRemountCount() {
+  try {
+    sessionStorage.removeItem(REMOUNT_STORAGE_KEY);
+  } catch {
+    // sessionStorage may be blocked in some embeds
+  }
+}
+
 /**
  * Stay inside the Shopify Admin iframe.
  * NEVER navigate window.top — that breaks out of Admin and looks like an
  * "error page after installing" (App Store review 2.1.1).
+ * Returns false when the remount cap is reached so the caller can show retry UI.
  */
-function reloadEmbeddedApp(shop?: string | null) {
+function reloadEmbeddedApp(shop?: string | null): boolean {
+  const count = getRemountCount();
+  if (count >= MAX_EMBEDDED_RELOADS) {
+    return false;
+  }
+
+  try {
+    sessionStorage.setItem(REMOUNT_STORAGE_KEY, String(count + 1));
+  } catch {
+    // If we cannot persist the counter, still allow this remount.
+  }
+
   const params = new URLSearchParams(window.location.search);
   if (shop && !params.get("shop")) params.set("shop", shop);
-  const next = `/app?${params.toString()}`;
-  window.location.assign(next);
+  window.location.assign(`/app?${params.toString()}`);
+  return true;
+}
+
+function emptyDashboard(shop: string, storeId?: string | null): DashboardResponse {
+  return normalizeDashboard(
+    {
+      shop,
+      store: {
+        id: storeId || "pending",
+        shopify_domain: shop,
+      },
+      metrics: EMPTY_METRICS,
+      carts: [],
+      needsInstall: false,
+      degraded: true,
+    },
+    shop
+  );
 }
 
 function Shell({ children }: { children: React.ReactNode }) {
@@ -106,12 +154,29 @@ function Shell({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Notice({ title, body }: { title: string; body: string }) {
+function Notice({
+  title,
+  body,
+  action,
+}: {
+  title: string;
+  body: string;
+  action?: { label: string; onClick: () => void };
+}) {
   return (
     <Shell>
       <div className="max-w-md mx-auto mt-20 rounded-2xl border border-neutral-800 bg-neutral-950/40 p-8 text-center">
         <h1 className="text-xl font-black text-white">{title}</h1>
         <p className="mt-3 text-sm text-neutral-400 leading-relaxed">{body}</p>
+        {action ? (
+          <button
+            type="button"
+            onClick={action.onClick}
+            className="mt-6 rounded-xl bg-[#00DF89] px-5 py-2.5 text-xs font-black text-neutral-950 transition hover:bg-[#00c978]"
+          >
+            {action.label}
+          </button>
+        ) : null}
       </div>
     </Shell>
   );
@@ -204,21 +269,9 @@ async function completeInstallAndLoadDashboard(
     }
   }
 
-  if (lastExchange.storeId) {
-    const shop = lastExchange.shop || fallbackShop || "";
-    return normalizeDashboard(
-      {
-        shop,
-        store: {
-          id: lastExchange.storeId,
-          shopify_domain: shop,
-        },
-        metrics: EMPTY_METRICS,
-        carts: [],
-        needsInstall: false,
-      },
-      shop
-    );
+  const shop = lastExchange.shop || fallbackShop || "";
+  if (shop) {
+    return emptyDashboard(shop, lastExchange.storeId);
   }
 
   return null;
@@ -228,16 +281,31 @@ export default function EmbeddedAppHomePage() {
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [statusMessage, setStatusMessage] = useState("Connecting to Shopify…");
   const [loading, setLoading] = useState(true);
+  const [setupError, setSetupError] = useState(false);
+  const [loadNonce, setLoadNonce] = useState(0);
   const [, startTransition] = useTransition();
 
   useEffect(() => {
     let cancelled = false;
 
     const applyData = (next: DashboardResponse) => {
+      clearRemountCount();
       startTransition(() => {
+        setSetupError(false);
         setData(next);
         setLoading(false);
       });
+    };
+
+    const failSetup = () => {
+      setSetupError(true);
+      setLoading(false);
+    };
+
+    const remountOrFail = (shop?: string | null) => {
+      if (!reloadEmbeddedApp(shop)) {
+        failSetup();
+      }
     };
 
     const load = async () => {
@@ -257,16 +325,7 @@ export default function EmbeddedAppHomePage() {
           setStatusMessage("Finishing install…");
           const installed = await completeInstallAndLoadDashboard(url, json.shop);
           if (cancelled) return;
-
-          if (installed) {
-            applyData(installed);
-            return;
-          }
-
-          // Soft in-iframe retry — never break out of Admin via window.top.
-          setStatusMessage("Almost ready — refreshing…");
-          await sleep(800);
-          if (!cancelled) reloadEmbeddedApp(json.shop);
+          applyData(installed ?? emptyDashboard(json.shop));
           return;
         }
 
@@ -283,10 +342,8 @@ export default function EmbeddedAppHomePage() {
             setStatusMessage("Finishing install…");
             const installed = await completeInstallAndLoadDashboard(url, json.shop);
             if (cancelled) return;
-            if (installed) {
-              applyData(installed);
-              return;
-            }
+            applyData(installed ?? emptyDashboard(json.shop));
+            return;
           }
 
           if (res.ok && (json.store || json.shop)) {
@@ -312,18 +369,11 @@ export default function EmbeddedAppHomePage() {
             setStatusMessage("Recovering session…");
             const installed = await completeInstallAndLoadDashboard(url, shop);
             if (cancelled) return;
-            if (installed) {
-              applyData(installed);
-              return;
-            }
-            await sleep(600);
-            if (!cancelled) reloadEmbeddedApp(shop);
+            applyData(installed ?? emptyDashboard(shop));
             return;
           }
 
-          setStatusMessage("Waiting for Shopify Admin session…");
-          await sleep(1000);
-          if (!cancelled) reloadEmbeddedApp(shopParam);
+          remountOrFail(shopParam);
           return;
         }
 
@@ -333,17 +383,10 @@ export default function EmbeddedAppHomePage() {
           if (shop) {
             const installed = await completeInstallAndLoadDashboard(url, shop);
             if (cancelled) return;
-            if (installed) {
-              applyData(installed);
-              return;
-            }
-            await sleep(600);
-            if (!cancelled) reloadEmbeddedApp(shop);
+            applyData(installed ?? emptyDashboard(shop));
             return;
           }
-          setStatusMessage("Waiting for Shopify Admin session…");
-          await sleep(1000);
-          if (!cancelled) reloadEmbeddedApp(shopParam);
+          remountOrFail(shopParam);
           return;
         }
 
@@ -365,17 +408,19 @@ export default function EmbeddedAppHomePage() {
         );
       } catch {
         if (cancelled) return;
-        // Stay in iframe — soft remount, never a static error page.
-        setStatusMessage("Reconnecting…");
         const shop = new URLSearchParams(window.location.search).get("shop");
-        await sleep(600);
-        if (!cancelled) reloadEmbeddedApp(shop);
+        if (shop) {
+          applyData(emptyDashboard(shop));
+          return;
+        }
+        remountOrFail(shop);
       }
     };
 
     // App Bridge injects window.shopify after the sync CDN script runs.
     let attempts = 0;
     const tryLoad = () => {
+      if (cancelled) return;
       const shopify = (
         window as Window & { shopify?: { idToken?: () => Promise<string> } }
       ).shopify;
@@ -385,11 +430,7 @@ export default function EmbeddedAppHomePage() {
       }
       attempts += 1;
       if (attempts > 100) {
-        // ~5s without App Bridge — in-iframe remount only.
-        setStatusMessage("Reconnecting to Shopify…");
-        reloadEmbeddedApp(
-          new URLSearchParams(window.location.search).get("shop")
-        );
+        remountOrFail(new URLSearchParams(window.location.search).get("shop"));
         return;
       }
       window.setTimeout(tryLoad, 50);
@@ -400,7 +441,26 @@ export default function EmbeddedAppHomePage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadNonce]);
+
+  const retrySetup = () => {
+    clearRemountCount();
+    setSetupError(false);
+    setData(null);
+    setLoading(true);
+    setStatusMessage("Connecting to Shopify…");
+    setLoadNonce((value) => value + 1);
+  };
+
+  if (setupError) {
+    return (
+      <Notice
+        title="Something went wrong"
+        body="CartRenew could not finish setup. Your install is not lost — try again."
+        action={{ label: "Try again", onClick: retrySetup }}
+      />
+    );
+  }
 
   if (loading || !data) {
     return <Notice title="Setting up CartRenew" body={statusMessage} />;
