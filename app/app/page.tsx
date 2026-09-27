@@ -245,7 +245,17 @@ async function completeInstallAndLoadDashboard(
 
     await sleep(250 * (attempt + 1));
 
-    const { res, json } = await fetchDashboard(dashboardUrl);
+    let dashboard: Awaited<ReturnType<typeof fetchDashboard>>;
+    try {
+      dashboard = await fetchDashboard(dashboardUrl);
+    } catch {
+      const shop = lastExchange.shop || fallbackShop || "";
+      return lastExchange.storeId && shop
+        ? emptyDashboard(shop, lastExchange.storeId)
+        : null;
+    }
+
+    const { res, json } = dashboard;
     if (res.ok && json.store && !json.needsInstall) {
       return json;
     }
@@ -270,7 +280,7 @@ async function completeInstallAndLoadDashboard(
   }
 
   const shop = lastExchange.shop || fallbackShop || "";
-  if (shop) {
+  if (lastExchange.ok && lastExchange.storeId && shop) {
     return emptyDashboard(shop, lastExchange.storeId);
   }
 
@@ -325,7 +335,11 @@ export default function EmbeddedAppHomePage() {
           setStatusMessage("Finishing install…");
           const installed = await completeInstallAndLoadDashboard(url, json.shop);
           if (cancelled) return;
-          applyData(installed ?? emptyDashboard(json.shop));
+          if (installed) {
+            applyData(installed);
+          } else {
+            failSetup();
+          }
           return;
         }
 
@@ -342,7 +356,11 @@ export default function EmbeddedAppHomePage() {
             setStatusMessage("Finishing install…");
             const installed = await completeInstallAndLoadDashboard(url, json.shop);
             if (cancelled) return;
-            applyData(installed ?? emptyDashboard(json.shop));
+            if (installed) {
+              applyData(installed);
+            } else {
+              failSetup();
+            }
             return;
           }
 
@@ -369,7 +387,11 @@ export default function EmbeddedAppHomePage() {
             setStatusMessage("Recovering session…");
             const installed = await completeInstallAndLoadDashboard(url, shop);
             if (cancelled) return;
-            applyData(installed ?? emptyDashboard(shop));
+            if (installed) {
+              applyData(installed);
+            } else {
+              failSetup();
+            }
             return;
           }
 
@@ -383,7 +405,11 @@ export default function EmbeddedAppHomePage() {
           if (shop) {
             const installed = await completeInstallAndLoadDashboard(url, shop);
             if (cancelled) return;
-            applyData(installed ?? emptyDashboard(shop));
+            if (installed) {
+              applyData(installed);
+            } else {
+              failSetup();
+            }
             return;
           }
           remountOrFail(shopParam);
@@ -408,12 +434,7 @@ export default function EmbeddedAppHomePage() {
         );
       } catch {
         if (cancelled) return;
-        const shop = new URLSearchParams(window.location.search).get("shop");
-        if (shop) {
-          applyData(emptyDashboard(shop));
-          return;
-        }
-        remountOrFail(shop);
+        failSetup();
       }
     };
 
