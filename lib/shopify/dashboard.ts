@@ -16,6 +16,10 @@ export type ShopifyStoreRow = {
   billing_status?: string | null;
 };
 
+type ShopifyStoreRecord = ShopifyStoreRow & {
+  shopify_access_token: string | null;
+};
+
 export type ShopifyDashboardMetrics = {
   trackedCarts: number;
   recovered: number;
@@ -24,9 +28,17 @@ export type ShopifyDashboardMetrics = {
 
 export type ShopifyDashboardData = {
   store: ShopifyStoreRow | null;
+  hasOfflineAccessToken: boolean;
   carts: ShopifyCartRow[];
   metrics: ShopifyDashboardMetrics;
 };
+
+export function needsShopifyInstall(
+  dashboard: Pick<ShopifyDashboardData, "store" | "hasOfflineAccessToken">,
+  isDev: boolean
+): boolean {
+  return !isDev && (!dashboard.store || !dashboard.hasOfflineAccessToken);
+}
 
 function describeSupabaseError(error: unknown): string {
   if (!error) return "";
@@ -40,7 +52,7 @@ function describeSupabaseError(error: unknown): string {
   return String(error);
 }
 
-async function ensureDevStore(shop: string): Promise<ShopifyStoreRow | null> {
+async function ensureDevStore(shop: string): Promise<ShopifyStoreRecord | null> {
   const { data, error } = await supabaseAdmin
     .from("stores")
     .upsert(
@@ -51,7 +63,7 @@ async function ensureDevStore(shop: string): Promise<ShopifyStoreRow | null> {
       },
       { onConflict: "shopify_domain" }
     )
-    .select("id, shopify_domain, billing_plan, billing_status")
+    .select("id, shopify_domain, shopify_access_token, billing_plan, billing_status")
     .maybeSingle();
 
   if (error) {
@@ -62,7 +74,7 @@ async function ensureDevStore(shop: string): Promise<ShopifyStoreRow | null> {
     return null;
   }
 
-  return (data as ShopifyStoreRow | null) ?? null;
+  return (data as ShopifyStoreRecord | null) ?? null;
 }
 
 export async function loadShopifyStoreDashboard(
@@ -71,6 +83,7 @@ export async function loadShopifyStoreDashboard(
 ): Promise<ShopifyDashboardData> {
   const empty: ShopifyDashboardData = {
     store: null,
+    hasOfflineAccessToken: false,
     carts: [],
     metrics: { trackedCarts: 0, recovered: 0, recoveredValue: 0 },
   };
@@ -78,7 +91,7 @@ export async function loadShopifyStoreDashboard(
   try {
     const { data: storeRow, error: storeError } = await supabaseAdmin
       .from("stores")
-      .select("id, shopify_domain, billing_plan, billing_status")
+      .select("id, shopify_domain, shopify_access_token, billing_plan, billing_status")
       .eq("shopify_domain", shop)
       .maybeSingle();
 
@@ -90,7 +103,7 @@ export async function loadShopifyStoreDashboard(
       return empty;
     }
 
-    let store = (storeRow as ShopifyStoreRow | null) ?? null;
+    let store = (storeRow as ShopifyStoreRecord | null) ?? null;
 
     if (!store && options?.autoProvision) {
       store = await ensureDevStore(shop);
@@ -165,9 +178,12 @@ export async function loadShopifyStoreDashboard(
 
     return {
       store: {
-        ...store,
+        id: store.id,
         shopify_domain: store.shopify_domain || shop,
+        billing_plan: store.billing_plan,
+        billing_status: store.billing_status,
       },
+      hasOfflineAccessToken: Boolean(store.shopify_access_token?.trim()),
       carts,
       metrics,
     };
