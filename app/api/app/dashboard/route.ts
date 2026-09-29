@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { loadShopifyStoreDashboard } from "@/lib/shopify/dashboard";
+import {
+  loadShopifyStoreDashboard,
+  needsShopifyInstall,
+} from "@/lib/shopify/dashboard";
 import { findOrCreateMerchantByShopDomain } from "@/lib/shopify/merchant";
 import { isValidShopDomain } from "@/lib/shopify/config";
 import {
@@ -63,7 +66,7 @@ export async function GET(request: NextRequest) {
     const metrics = dashboard.metrics ?? EMPTY_METRICS;
     const carts = Array.isArray(dashboard.carts) ? dashboard.carts : [];
 
-    if (!dashboard.store && !isDev) {
+    if (needsShopifyInstall(dashboard, isDev)) {
       return NextResponse.json(
         {
           shop,
