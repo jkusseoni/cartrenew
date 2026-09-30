@@ -11,6 +11,11 @@ type ShopifyIdTokenWindow = Window & {
   };
 };
 
+export type AuthFetchOptions = RequestInit & {
+  /** Request timeout in milliseconds. Use null only for unsafe-to-retry mutations. */
+  timeoutMs?: number | null;
+};
+
 function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = window.setTimeout(() => reject(new Error(message)), ms);
@@ -53,10 +58,11 @@ async function getSessionToken(): Promise<string> {
 
 export async function authFetch(
   url: string | URL,
-  options: RequestInit = {}
+  options: AuthFetchOptions = {}
 ): Promise<Response> {
+  const { timeoutMs = AUTH_TIMEOUT_MS, ...requestOptions } = options;
   const token = await getSessionToken();
-  const headers = new Headers(options.headers);
+  const headers = new Headers(requestOptions.headers);
 
   if (!headers.has("Authorization")) {
     headers.set("Authorization", `Bearer ${token}`);
@@ -64,21 +70,20 @@ export async function authFetch(
 
   const controller = new AbortController();
   const abortFromCaller = () => controller.abort();
-  options.signal?.addEventListener("abort", abortFromCaller);
+  requestOptions.signal?.addEventListener("abort", abortFromCaller);
 
-  const method = (options.method ?? "GET").toUpperCase();
-  const canSafelyTimeout = method === "GET" || method === "HEAD";
   let timedOut = false;
-  const timer = canSafelyTimeout
-    ? window.setTimeout(() => {
-        timedOut = true;
-        controller.abort();
-      }, AUTH_TIMEOUT_MS)
-    : null;
+  const timer =
+    timeoutMs === null
+      ? null
+      : window.setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+        }, timeoutMs);
 
   try {
     return await fetch(url, {
-      ...options,
+      ...requestOptions,
       headers,
       signal: controller.signal,
     });
@@ -91,6 +96,6 @@ export async function authFetch(
     if (timer !== null) {
       window.clearTimeout(timer);
     }
-    options.signal?.removeEventListener("abort", abortFromCaller);
+    requestOptions.signal?.removeEventListener("abort", abortFromCaller);
   }
 }
