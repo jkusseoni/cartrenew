@@ -35,6 +35,7 @@ export default function ShopifyBillingPlans({
     try {
       const res = await authFetch("/api/app/billing/subscribe", {
         method: "POST",
+        timeoutMs: null,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ planId, host, shop }),
       });
