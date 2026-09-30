@@ -43,12 +43,17 @@ class CartRenew_WC_Tracker {
 			return;
 		}
 
-		if ( ! WC()->cart || WC()->cart->is_empty() ) {
+		if ( ! WC()->cart ) {
 			return;
 		}
 
 		$cart_key = self::get_cart_key();
 		if ( ! $cart_key ) {
+			return;
+		}
+
+		if ( WC()->cart->is_empty() ) {
+			CartRenew_WC_DB::delete_tracking_cart( $cart_key );
 			return;
 		}
 
