@@ -5,7 +5,7 @@ import { expect, test } from "@playwright/test";
 const DEBUG_LOG = "/opt/cursor/logs/debug.log";
 const MOCK_RESPONSE_DELAY_MS = 8_750;
 
-test("billing POST times out before a later successful response", async ({ page }) => {
+test("billing POST waits for a later successful response", async ({ page }) => {
   const shop = "timeout-regression.myshopify.com";
   const startedAt = Date.now();
   let requestStartedAt = 0;
@@ -18,6 +18,15 @@ test("billing POST times out before a later successful response", async ({ page 
 
   await page.route("https://cdn.shopify.com/shopifycloud/app-bridge.js", (route) =>
     route.fulfill({ contentType: "application/javascript", body: "" })
+  );
+  await page.route(
+    "https://admin.shopify.test/subscriptions/mock-1",
+    (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "text/html",
+        body: "<title>Mock Shopify confirmation</title>",
+      })
   );
   await page.addInitScript(() => {
     Object.defineProperty(window, "shopify", {
@@ -92,21 +101,31 @@ test("billing POST times out before a later successful response", async ({ page 
     .getByRole("button", { name: "Subscribe via Shopify" })
     .first();
   await subscriptionButton.click();
-  await expect(page.getByText("Shopify request timed out")).toBeVisible({
-    timeout: 10_000,
-  });
-  const clientTimeoutAt = Date.now();
-
-  // #region agent log
-  appendFileSync(DEBUG_LOG, `${JSON.stringify({ hypothesisId: "A,B", location: "tests/e2e/shopify-billing-timeout.spec.ts:98", message: "Billing UI observed client timeout", data: { elapsedSinceRequestMs: clientTimeoutAt - requestStartedAt, stillOnAppPage: new URL(page.url()).pathname === "/app" }, timestamp: Date.now() })}\n`);
-  // #endregion
-
+  await page.waitForURL(
+    "https://admin.shopify.test/subscriptions/mock-1",
+    { timeout: 11_000 }
+  );
+  const confirmationReceivedAt = Date.now();
   await mockCompleted;
-  expect(clientTimeoutAt - requestStartedAt).toBeLessThan(MOCK_RESPONSE_DELAY_MS);
-  await expect(page).toHaveURL(/\/app\?/);
-  await expect(subscriptionButton).toHaveText("Subscribe via Shopify");
+  await expect(page).toHaveURL(
+    "https://admin.shopify.test/subscriptions/mock-1"
+  );
+
+  const timeoutMessage = page.getByText("Shopify request timed out");
+  const timedOut = await timeoutMessage.isVisible().catch(() => false);
+  if (timedOut) {
+    const clientTimeoutAt = Date.now();
+
+    // #region agent log
+    appendFileSync(DEBUG_LOG, `${JSON.stringify({ hypothesisId: "A,B", location: "tests/e2e/shopify-billing-timeout.spec.ts:98", message: "Billing UI observed client timeout", data: { elapsedSinceRequestMs: clientTimeoutAt - requestStartedAt, stillOnAppPage: new URL(page.url()).pathname === "/app" }, timestamp: Date.now() })}\n`);
+    // #endregion
+
+    // #region agent log
+    appendFileSync(DEBUG_LOG, `${JSON.stringify({ hypothesisId: "B,C,D", location: "tests/e2e/shopify-billing-timeout.spec.ts:108", message: "Client lost later successful confirmation", data: { clientTimedOutBeforeServer: clientTimeoutAt - requestStartedAt < MOCK_RESPONSE_DELAY_MS, serverReturnedConfirmationUrl: true, retryEnabled: await subscriptionButton.isEnabled(), stillOnAppPage: new URL(page.url()).pathname === "/app" }, timestamp: Date.now() })}\n`);
+    // #endregion
+  }
 
   // #region agent log
-  appendFileSync(DEBUG_LOG, `${JSON.stringify({ hypothesisId: "B,C,D", location: "tests/e2e/shopify-billing-timeout.spec.ts:108", message: "Client lost later successful confirmation", data: { clientTimedOutBeforeServer: clientTimeoutAt - requestStartedAt < MOCK_RESPONSE_DELAY_MS, serverReturnedConfirmationUrl: true, retryEnabled: await subscriptionButton.isEnabled(), stillOnAppPage: new URL(page.url()).pathname === "/app" }, timestamp: Date.now() })}\n`);
+  appendFileSync(DEBUG_LOG, `${JSON.stringify({ hypothesisId: "A,B,C", location: "tests/e2e/shopify-billing-timeout.spec.ts:124", message: "Billing UI received late confirmation", data: { elapsedSinceRequestMs: confirmationReceivedAt - requestStartedAt, timedOut, reachedConfirmationUrl: page.url() === "https://admin.shopify.test/subscriptions/mock-1" }, timestamp: Date.now() })}\n`);
   // #endregion
 });

@@ -66,7 +66,15 @@ export async function authFetch(
   const abortFromCaller = () => controller.abort();
   options.signal?.addEventListener("abort", abortFromCaller);
 
-  const timer = window.setTimeout(() => controller.abort(), AUTH_TIMEOUT_MS);
+  const method = (options.method ?? "GET").toUpperCase();
+  const canSafelyTimeout = method === "GET" || method === "HEAD";
+  let timedOut = false;
+  const timer = canSafelyTimeout
+    ? window.setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, AUTH_TIMEOUT_MS)
+    : null;
 
   try {
     return await fetch(url, {
@@ -75,12 +83,14 @@ export async function authFetch(
       signal: controller.signal,
     });
   } catch (error) {
-    if (controller.signal.aborted) {
+    if (timedOut) {
       throw new Error("Shopify request timed out");
     }
     throw error;
   } finally {
-    window.clearTimeout(timer);
+    if (timer !== null) {
+      window.clearTimeout(timer);
+    }
     options.signal?.removeEventListener("abort", abortFromCaller);
   }
 }
