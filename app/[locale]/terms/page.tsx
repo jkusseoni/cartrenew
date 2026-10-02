@@ -11,7 +11,7 @@ export default function TermsOfService() {
             ← Back to Home
           </Link>
           <h1 className="text-3xl sm:text-4xl font-black text-white tracking-tight mt-4">Terms of Service</h1>
-          <p className="text-xs text-neutral-500 mt-2">Last updated: June 5, 2026</p>
+          <p className="text-xs text-neutral-500 mt-2">Last updated: October 2, 2026</p>
         </div>
 
         <div className="space-y-6 text-sm sm:text-base leading-relaxed">
@@ -23,6 +23,7 @@ export default function TermsOfService() {
           <section className="space-y-2">
             <h2 className="text-lg font-bold text-white tracking-tight">2. Service Description and Deployment</h2>
             <p>CartRenew provides automated cloud-based B2B recovery systems utilizing Next.js workflows. Services are deployed over production clusters to help merchants manage abandoned checkout sequences. You are responsible for ensuring your store setup complies with local consumer communication laws.</p>
+            <p>Merchants may only message customers who have given consent to receive WhatsApp messages, and must comply with WhatsApp&apos;s Business and Commerce policies.</p>
           </section>
 
           <section className="space-y-2">
@@ -38,6 +39,11 @@ export default function TermsOfService() {
           <section className="space-y-2">
             <h2 className="text-lg font-bold text-white tracking-tight">5. Termination</h2>
             <p>We reserve the right to suspend or terminate access to our services immediately, without prior notice or liability, for any breach of these contractual terms.</p>
+          </section>
+
+          <section className="space-y-2">
+            <h2 className="text-lg font-bold text-white tracking-tight">6. No Affiliation</h2>
+            <p>CartRenew is not affiliated with or endorsed by WhatsApp or Meta.</p>
           </section>
         </div>
 

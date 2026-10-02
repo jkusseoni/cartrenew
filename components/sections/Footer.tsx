@@ -83,6 +83,9 @@ export default function Footer() {
           <Link href="/terms" className="hover:text-slate-900 transition-colors">
             Terms of Service
           </Link>
+          <Link href="/data-deletion" className="hover:text-slate-900 transition-colors">
+            Data Deletion
+          </Link>
           <Link href="/refund" className="hover:text-slate-900 transition-colors">
             Refund Policy
           </Link>
