@@ -11,6 +11,8 @@
  *   WHATSAPP_API_VERSION       optional, defaults to "v22.0"
  */
 
+import { e164ToWhatsAppRecipient, maskPhone, toE164 } from '@/lib/phone'
+
 function cleanEnv(value?: string | null): string {
     return (value ?? '').replace(/['"]/g, '').trim()
   }
@@ -55,33 +57,45 @@ function cleanEnv(value?: string | null): string {
     }
   }
   
-  /** Strip to digits and apply local→E.164 rules (same behaviour as the old Twilio helper). */
-  export function normalizePhoneDigits(phone: string): string {
-    let digits = phone.trim()
-    if (digits.startsWith('whatsapp:')) {
-      digits = digits.slice('whatsapp:'.length)
-    }
-    digits = digits.replace(/\D/g, '')
-    if (digits.length === 10) {
-      digits = `91${digits}`
-    }
-    return digits
+  /** E.164 digits (no "+"), or null when the country can't be determined. Never assumes a default country. */
+  export function normalizePhoneDigits(phone: string): string | null {
+    const result = toE164(phone)
+    return result.ok ? e164ToWhatsAppRecipient(result.e164) : null
   }
-  
-  /** True when the number looks like a real E.164 mobile Meta can message. */
+
+  function isPlaceholderPhoneDigits(digits: string): boolean {
+    return /^1?555\d{0,7}$/.test(digits) || digits.includes('5551212')
+  }
+
+  /** Resolve a phone to a Graph API recipient, or the reason it can't be messaged. */
+  export function resolveWhatsAppRecipient(
+    phone: string
+  ): { ok: true; to: string } | { ok: false; error: 'phone_missing' | 'phone_invalid' | 'phone_country_unknown' } {
+    const result = toE164(phone)
+    if (!result.ok) {
+      const error =
+        result.reason === 'country_unknown'
+          ? 'phone_country_unknown'
+          : result.reason === 'missing'
+            ? 'phone_missing'
+            : 'phone_invalid'
+      return { ok: false, error }
+    }
+    const to = e164ToWhatsAppRecipient(result.e164)
+    if (isPlaceholderPhoneDigits(to)) return { ok: false, error: 'phone_invalid' }
+    return { ok: true, to }
+  }
+
+  /** True when the number is a real E.164 mobile Meta can message. */
   export function isValidWhatsAppPhone(phone: string): boolean {
-    const digits = normalizePhoneDigits(phone)
-    if (digits.length < 10 || digits.length > 15) return false
-    if (/^1?555\d{0,7}$/.test(digits)) return false
-    if (digits.includes('5551212')) return false
-    return true
+    return resolveWhatsAppRecipient(phone).ok
   }
-  
+
   /**
    * Meta's Graph API wants bare digits, no "+" and no "whatsapp:" prefix
    * (unlike Twilio's `whatsapp:+E164` format).
    */
-  export function formatWhatsAppRecipient(phone: string): string {
+  export function formatWhatsAppRecipient(phone: string): string | null {
     return normalizePhoneDigits(phone)
   }
   
@@ -174,19 +188,20 @@ function cleanEnv(value?: string | null): string {
       return { success: false, error: 'WhatsApp credentials missing or placeholder' }
     }
   
-    if (!isValidWhatsAppPhone(toPhone)) {
-      console.error('❌ Invalid WhatsApp destination phone:', {
-        raw: toPhone,
-        normalized: normalizePhoneDigits(toPhone),
+    const recipient = resolveWhatsAppRecipient(toPhone)
+    if (!recipient.ok) {
+      console.warn('⚠️ WhatsApp send skipped — destination phone not sendable:', {
+        reason: recipient.error,
+        phone: maskPhone(toPhone),
       })
-      return { success: false, error: `Invalid phone number: ${toPhone}`, to: toPhone }
+      return { success: false, error: recipient.error, to: null }
     }
   
     if (!options.templateName) {
       return { success: false, error: 'Missing templateName — Meta requires an approved template' }
     }
   
-    const to = formatWhatsAppRecipient(toPhone)
+    const to = recipient.to
     const token = cleanEnv(process.env.WHATSAPP_ACCESS_TOKEN)
     const phoneNumberId = cleanEnv(process.env.WHATSAPP_PHONE_NUMBER_ID)
     const apiVersion = cleanEnv(process.env.WHATSAPP_API_VERSION) || 'v22.0'

@@ -2,6 +2,8 @@
  * Messaging provider router: Meta WhatsApp Cloud API → Twilio → mock (no fetch).
  */
 
+import { e164ToWhatsAppRecipient, toE164 } from '@/lib/phone'
+
 export type ProviderSendResult = {
   success: boolean
   providerId?: string | null
@@ -63,17 +65,18 @@ export function shouldUseMockWhatsAppSend(): boolean {
   return !hasMetaWhatsAppCredentials() && !hasTwilioWhatsAppCredentials()
 }
 
-function sanitizePhoneNumber(phone: string): string {
-  let cleaned = phone.replace(/\D/g, '')
-  if (cleaned.length === 10) {
-    cleaned = `91${cleaned}`
-  }
-  return cleaned
-}
-
 export async function sendMessageViaMetaWhatsApp(msg: ProviderMessage): Promise<ProviderSendResult> {
   if (!hasMetaWhatsAppCredentials()) {
     return { success: false, error: 'Meta WhatsApp credentials missing or placeholder' }
+  }
+
+  const normalized = toE164(msg.to)
+  if (!normalized.ok) {
+    return {
+      success: false,
+      error: normalized.reason === 'country_unknown' ? 'phone_country_unknown' : 'phone_invalid',
+      provider: 'meta_whatsapp',
+    }
   }
 
   const accessToken = cleanEnv(process.env.WHATSAPP_ACCESS_TOKEN)
@@ -81,7 +84,7 @@ export async function sendMessageViaMetaWhatsApp(msg: ProviderMessage): Promise<
   const templateName = msg.templateName || cleanEnv(process.env.WHATSAPP_TEMPLATE_NAME)
 
   try {
-    const to = sanitizePhoneNumber(msg.to)
+    const to = e164ToWhatsAppRecipient(normalized.e164)
     const metaUrl = `https://graph.facebook.com/v20.0/${phoneNumberId}/messages`
 
     const whatsappPayload = templateName && !isPlaceholderCredential(templateName)

@@ -91,6 +91,8 @@ export interface Database {
           message_sent_at: string | null
           message_delivered_at: string | null
           message_read_at: string | null
+          last_send_error: string | null
+          last_send_failed_at: string | null
           recovery_completed_at: string | null
           created_at: string
           updated_at: string
@@ -111,6 +113,8 @@ export interface Database {
           message_sent_at?: string | null
           message_delivered_at?: string | null
           message_read_at?: string | null
+          last_send_error?: string | null
+          last_send_failed_at?: string | null
           recovery_completed_at?: string | null
           created_at?: string
           updated_at?: string
@@ -131,6 +135,8 @@ export interface Database {
           message_sent_at?: string | null
           message_delivered_at?: string | null
           message_read_at?: string | null
+          last_send_error?: string | null
+          last_send_failed_at?: string | null
           recovery_completed_at?: string | null
           created_at?: string
           updated_at?: string

@@ -1,10 +1,17 @@
 import { supabaseAdmin } from '@/lib/supabase'
+import { maskPhone } from '@/lib/phone'
 import {
   hasWhatsAppCredentials,
   resolveRecoveryCustomerName,
-  sendWhatsAppMessage,
+  resolveWhatsAppRecipient,
 } from '@/lib/services/whatsapp-meta'
 import { sendMessage } from '@/lib/services/provider'
+import {
+  RECOVERY_TEMPLATE_NAME,
+  recordAttemptOutcome,
+  recordCartSendFailure,
+  sendRecoveryTemplate,
+} from '@/lib/services/recovery-dispatch'
 import { getTrackedRecoveryUrl } from '@/lib/recovery-link'
 
 export type RecoveryMessageContext = {
@@ -23,6 +30,7 @@ export type WhatsAppRecoveryResult = {
   queued: boolean
   sent: boolean
   mocked?: boolean
+  retryScheduled?: boolean
   messageId?: string | null
   error?: string | null
 }
@@ -127,6 +135,18 @@ export async function triggerWhatsAppRecoveryForCart({
     return { queued: false, sent: false, error: 'missing_phone' }
   }
 
+  const recipient = resolveWhatsAppRecipient(customerPhone)
+  if (!recipient.ok) {
+    console.warn('WhatsApp recovery not sent — phone not sendable', {
+      cartId,
+      reason: recipient.error,
+      phone: maskPhone(customerPhone),
+    })
+    await recordCartSendFailure(cartId, recipient.error, { final: true })
+    return { queued: false, sent: false, error: recipient.error }
+  }
+  const phoneE164 = `+${recipient.to}`
+
   try {
     const { messageBody, templateName } = await buildRecoveryMessageBody({
       storeId,
@@ -142,14 +162,14 @@ export async function triggerWhatsAppRecoveryForCart({
     const trackedCheckoutUrl = getTrackedRecoveryUrl(cartId)
     const safeName = resolveRecoveryCustomerName(customerName)
     // Per-merchant free-text kept for reference only — WhatsApp requires pre-approved templates for business-initiated sends. Will move to variable-based customization (discount/expiry/store name) once the richer template is approved.
-    const whatsappTemplateName = 'abandoned_cart_reminder'
+    const whatsappTemplateName = RECOVERY_TEMPLATE_NAME
 
     const { data: messageRow, error: insertError } = await supabaseAdmin
       .from('messages')
       .insert({
         cart_id: cartId,
         store_id: storeId,
-        phone: customerPhone,
+        phone: phoneE164,
         template_name: whatsappTemplateName,
         body: messageBody,
         status: 'queued',
@@ -166,16 +186,16 @@ export async function triggerWhatsAppRecoveryForCart({
 
     console.log('📤 triggerWhatsAppRecoveryForCart Meta template payload', {
       cartId,
-      to: customerPhone,
+      to: maskPhone(phoneE164),
       templateName: whatsappTemplateName,
       bodyVariables: [safeName, trackedCheckoutUrl],
     })
 
     const dispatch = hasWhatsAppCredentials()
-      ? await sendWhatsAppMessage(customerPhone, {
-          templateName: whatsappTemplateName,
-          languageCode: 'en',
-          bodyVariables: [safeName, trackedCheckoutUrl],
+      ? await sendRecoveryTemplate({
+          phone: phoneE164,
+          customerName: safeName,
+          checkoutUrl: trackedCheckoutUrl,
         }).then((result) => ({
           success: result.success,
           providerId: result.messageId,
@@ -184,52 +204,38 @@ export async function triggerWhatsAppRecoveryForCart({
         }))
       : await sendMessage({
           id: messageRow.id,
-          to: customerPhone,
+          to: phoneE164,
           body: messageBody,
           templateName,
         })
 
-    if (dispatch.success) {
-      await supabaseAdmin
-        .from('messages')
-        .update({
-          status: 'sent',
-          whatsapp_message_id: dispatch.providerId || null,
-          sent_at: new Date().toISOString(),
-          attempt_count: 1,
-          error_message: null,
-        })
-        .eq('id', messageRow.id)
+    const decision = await recordAttemptOutcome({
+      messageId: messageRow.id,
+      cartId,
+      attemptsMade: 1,
+      accepted: dispatch.success,
+      whatsappMessageId: dispatch.providerId,
+      error: dispatch.error,
+    })
 
-      await supabaseAdmin
-        .from('abandoned_carts')
-        .update({
-          status: 'messaged',
-          message_sent_at: new Date().toISOString(),
-        })
-        .eq('id', cartId)
-        .eq('status', 'pending')
-
+    if (decision.kind === 'sent') {
       console.log(
         `✅ WhatsApp recovery sent for cart ${cartId} via ${dispatch.provider ?? 'provider'}`
       )
-
       return { queued: true, sent: true, messageId: dispatch.providerId }
     }
 
-    await supabaseAdmin
-      .from('messages')
-      .update({
-        status: 'pending',
-        error_message: dispatch.error || 'send_failed',
-        attempt_count: 1,
-        next_retry_at: new Date(Date.now() + 5 * 60_000).toISOString(),
-      })
-      .eq('id', messageRow.id)
+    console.warn(`WhatsApp recovery dispatch failed for cart ${cartId}:`, {
+      error: dispatch.error,
+      outcome: decision.kind,
+    })
 
-    console.warn(`WhatsApp recovery dispatch failed for cart ${cartId}:`, dispatch.error)
-
-    return { queued: true, sent: false, error: dispatch.error }
+    return {
+      queued: true,
+      sent: false,
+      retryScheduled: decision.kind === 'retry',
+      error: dispatch.error,
+    }
   } catch (error) {
     console.error('Failed to trigger WhatsApp recovery:', error)
     return {

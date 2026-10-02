@@ -283,7 +283,10 @@ function handleRecoveryRedirectRequest(request: NextRequest): NextResponse | nul
 
 function handleApiRequest(request: NextRequest) {
   // Shopify (and other providers) must not be rate-limited on webhook delivery.
-  if (request.nextUrl.pathname.startsWith("/api/webhooks")) {
+  if (
+    request.nextUrl.pathname.startsWith("/api/webhooks") ||
+    request.nextUrl.pathname === "/api/whatsapp/webhook"
+  ) {
     return NextResponse.next();
   }
 

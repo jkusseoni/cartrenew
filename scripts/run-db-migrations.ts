@@ -30,6 +30,7 @@ const SUPABASE_SQL_MIGRATIONS = [
   "db/migrations/2026-06-05-add-geo-delivery-metrics.sql",
   "db/migrations/2026-08-17-woocommerce-store-api-key.sql",
   "db/migrations/2026-08-22-woocommerce-store-platform.sql",
+  "db/migrations/2026-10-02-whatsapp-send-failures.sql",
 ] as const;
 
 function run(command: string) {

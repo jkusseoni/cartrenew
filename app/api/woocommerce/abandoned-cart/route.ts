@@ -12,6 +12,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
+import { maskPhone, toE164 } from '@/lib/phone'
 import { triggerWhatsAppRecoveryForCart } from '@/lib/services/messaging'
 
 export const dynamic = 'force-dynamic'
@@ -95,6 +96,27 @@ export async function POST(req: NextRequest) {
   if (existing && existing.status === 'messaged') {
     return NextResponse.json({ status: 'already_sent' }, { status: 200 })
   }
+  // recovered / lost / opted_out carts must never get another reminder.
+  if (existing && existing.status !== 'pending') {
+    return NextResponse.json({ status: existing.status }, { status: 200 })
+  }
+
+  if (existing) {
+    const { data: priorMessages } = await supabaseAdmin
+      .from('messages')
+      .select('id')
+      .eq('cart_id', existing.id)
+      .limit(1)
+    // A send was already attempted; the retry worker owns this cart now.
+    if (priorMessages?.length) {
+      return NextResponse.json({ status: 'retry_scheduled' }, { status: 202 })
+    }
+  }
+
+  // The plugin sends E.164 built from the billing country; older plugin
+  // versions send what the shopper typed, and bare national numbers are refused.
+  const normalizedPhone = toE164(phone_number)
+  const customerPhone = normalizedPhone.ok ? normalizedPhone.e164 : phone_number
 
   const cartValue = Number(payload.cart_total) || 0
   const items = (cart_contents || []).map((item) => ({
@@ -117,7 +139,7 @@ export async function POST(req: NextRequest) {
         external_cart_key: externalCartKey,
         shopify_cart_token: externalCartKey,
         customer_name: payload.customer_name || null,
-        customer_phone: phone_number,
+        customer_phone: customerPhone,
         checkout_url,
         cart_value: cartValue,
         items,
@@ -131,6 +153,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Failed to record cart.' }, { status: 500 })
     }
     cartId = inserted.id
+  } else {
+    await supabaseAdmin
+      .from('abandoned_carts')
+      .update({ customer_phone: customerPhone })
+      .eq('id', cartId)
+  }
+
+  if (!normalizedPhone.ok) {
+    console.warn('CartRenew WooCommerce: phone not sendable, no WhatsApp sent', {
+      cartId,
+      reason: normalizedPhone.reason,
+      phone: maskPhone(phone_number),
+    })
   }
 
   // --- 3. Send the WhatsApp recovery message ----------------------------
@@ -140,7 +175,7 @@ export async function POST(req: NextRequest) {
     const result = await triggerWhatsAppRecoveryForCart({
       storeId: store_id,
       cartId,
-      customerPhone: phone_number,
+      customerPhone,
       customerName: payload.customer_name || null,
       checkoutUrl: checkout_url,
       cartValue,
@@ -149,39 +184,29 @@ export async function POST(req: NextRequest) {
       cartToken: cart_key,
     })
 
-    if (!result.sent) {
-      // Keep pending so /api/cart-recovery cron can retry. No "send_failed" status
-      // exists in the CHECK constraint.
-      await supabaseAdmin
-        .from('abandoned_carts')
-        .update({ status: 'pending' })
-        .eq('id', cartId)
+    // Cart status/failure bookkeeping happens in triggerWhatsAppRecoveryForCart:
+    // 'messaged' only after Graph accepts, failures recorded on the cart.
+    if (result.sent) {
+      return NextResponse.json({ status: 'sent', result }, { status: 200 })
+    }
 
+    if (result.retryScheduled) {
       return NextResponse.json(
-        { error: result.error || 'WhatsApp send failed.', status: 'pending' },
-        { status: 502 }
+        { status: 'retry_scheduled', error: result.error || 'WhatsApp send failed.' },
+        { status: 202 }
       )
     }
 
-    // messaging.ts already sets status=messaged + message_sent_at on success;
-    // reinforce message_sent_at for clarity (column is message_sent_at, not sent_at).
-    await supabaseAdmin
-      .from('abandoned_carts')
-      .update({
-        status: 'messaged',
-        message_sent_at: new Date().toISOString(),
-      })
-      .eq('id', cartId)
+    if (result.error?.startsWith('phone_')) {
+      return NextResponse.json({ status: 'not_sent', error: result.error }, { status: 422 })
+    }
 
-    return NextResponse.json({ status: 'sent', result }, { status: 200 })
+    return NextResponse.json(
+      { status: 'failed', error: result.error || 'WhatsApp send failed.' },
+      { status: 502 }
+    )
   } catch (err) {
     console.error('CartRenew WooCommerce: WhatsApp send failed', err)
-
-    await supabaseAdmin
-      .from('abandoned_carts')
-      .update({ status: 'pending' })
-      .eq('id', cartId)
-
     return NextResponse.json({ error: 'WhatsApp send failed.' }, { status: 502 })
   }
 }

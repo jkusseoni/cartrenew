@@ -5,16 +5,8 @@ export const maxDuration = 60;
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-const PENDING_STATUS = "pending";
 const MAX_CARTS_PER_RUN = 25;
-
-type CartProcessResult = {
-  cartId: string;
-  status: "processed" | "skipped" | "failed";
-  messageId?: string | null;
-  error?: string;
-  reason?: string;
-};
+const MAX_RETRIES_PER_RUN = 25;
 
 /**
  * GET /api/cart-recovery — Vercel cron worker (see vercel.json).
@@ -22,8 +14,12 @@ type CartProcessResult = {
  * This route does NOT receive Shopify webhook JSON.
  * Shopify Abandoned Checkout webhooks (checkouts/create|update) must POST to
  * /api/webhooks/shopify, which writes Supabase `abandoned_carts`.
- * This cron reads those rows with status=pending and sends Meta WhatsApp
- * (approved template abandoned_cart_reminder).
+ *
+ * Each run (see lib/services/recovery-dispatch.ts):
+ *   1. retries `messages` rows stuck in pending past next_retry_at (capped,
+ *      then failed);
+ *   2. sends the first reminder for recent pending carts never attempted.
+ * Carts are marked 'messaged' only after the Graph API accepts a send.
  */
 export async function GET(request: NextRequest) {
   console.log("⏰ /api/cart-recovery cron HIT (not a Shopify webhook receiver)", {
@@ -40,18 +36,12 @@ export async function GET(request: NextRequest) {
   }
 
   const startedAt = Date.now();
-  const results: CartProcessResult[] = [];
 
   try {
-    const { supabaseAdmin } = await import("@/lib/supabase");
-    const {
-      sendWhatsAppMessage,
-      hasWhatsAppCredentials,
-      buildAbandonedCartTemplateVariables,
-      resolveRecoveryCustomerName,
-      isValidWhatsAppPhone,
-    } = await import("@/lib/services/whatsapp-meta");
-    const { getTrackedRecoveryUrl } = await import("@/lib/recovery-link");
+    const { hasWhatsAppCredentials } = await import("@/lib/services/whatsapp-meta");
+    const { processDueRetries, processFirstAttempts } = await import(
+      "@/lib/services/recovery-dispatch"
+    );
 
     if (!hasWhatsAppCredentials()) {
       console.error("❌ WhatsApp credentials missing — aborting cart-recovery run");
@@ -65,173 +55,25 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const { data: abandonedCarts, error: fetchError } = await supabaseAdmin
-      .from("abandoned_carts")
-      .select(
-        "id, store_id, customer_phone, customer_name, cart_value, items, checkout_url, status"
-      )
-      .eq("status", PENDING_STATUS)
-      .order("updated_at", { ascending: true })
-      .limit(MAX_CARTS_PER_RUN);
+    const retries = await processDueRetries({ limit: MAX_RETRIES_PER_RUN });
+    const firstAttempts = await processFirstAttempts({ limit: MAX_CARTS_PER_RUN });
+    const all = [...retries.results, ...firstAttempts];
+    const count = (outcome: string) => all.filter((result) => result.outcome === outcome).length;
 
-    if (fetchError) {
-      throw new Error(fetchError.message);
-    }
-
-    const pendingCarts = abandonedCarts ?? [];
-
-    console.log("🗂️ /api/cart-recovery pending abandoned carts found:", {
-      count: pendingCarts.length,
-      cartIds: pendingCarts.map((cart) => cart.id),
-    });
-
-    for (const cart of pendingCarts) {
-      // Atomic claim: only one cron run processes a given pending cart.
-      const { data: claimedRows, error: claimError } = await supabaseAdmin
-        .from("abandoned_carts")
-        .update({ status: "messaged" })
-        .eq("id", cart.id)
-        .eq("status", PENDING_STATUS)
-        .select("id");
-
-      if (claimError) {
-        results.push({
-          cartId: cart.id,
-          status: "failed",
-          error: claimError.message,
-        });
-        continue;
-      }
-
-      if (!claimedRows?.length) {
-        results.push({
-          cartId: cart.id,
-          status: "skipped",
-          reason: "cart_already_processed_or_changed",
-        });
-        continue;
-      }
-
-      const customerPhone = cart.customer_phone?.trim();
-      if (!customerPhone) {
-        // Release claim so a later update with a phone can retry.
-        await supabaseAdmin
-          .from("abandoned_carts")
-          .update({ status: PENDING_STATUS })
-          .eq("id", cart.id);
-
-        results.push({
-          cartId: cart.id,
-          status: "skipped",
-          reason: "missing_phone",
-        });
-        continue;
-      }
-
-      // Shopify often stores placeholder phones like +15551212 — Twilio 21211.
-      // Mark lost so cron does not infinite-retry invalid numbers.
-      if (!isValidWhatsAppPhone(customerPhone)) {
-        console.warn("⚠️ Skipping cart with invalid/placeholder phone", {
-          cartId: cart.id,
-          to: customerPhone,
-        });
-
-        await supabaseAdmin
-          .from("abandoned_carts")
-          .update({ status: "lost", updated_at: new Date().toISOString() })
-          .eq("id", cart.id);
-
-        results.push({
-          cartId: cart.id,
-          status: "skipped",
-          reason: "invalid_phone",
-        });
-        continue;
-      }
-
-      try {
-        const customerName = resolveRecoveryCustomerName(cart.customer_name);
-        const checkoutUrl =
-          (typeof cart.checkout_url === "string" && cart.checkout_url) ||
-          getTrackedRecoveryUrl(cart.id);
-        const bodyVariables = buildAbandonedCartTemplateVariables({
-          customerName,
-          checkoutUrl,
-        });
-
-        console.log("📤 Calling sendWhatsAppMessage for pending cart", {
-          cartId: cart.id,
-          to: customerPhone,
-          status: cart.status,
-          templateName: "abandoned_cart_reminder",
-          bodyVariables,
-        });
-
-        const sendResult = await sendWhatsAppMessage(customerPhone, {
-          templateName: "abandoned_cart_reminder",
-          bodyVariables,
-        });
-
-        if (!sendResult.success) {
-          await supabaseAdmin
-            .from("abandoned_carts")
-            .update({ status: PENDING_STATUS })
-            .eq("id", cart.id);
-
-          results.push({
-            cartId: cart.id,
-            status: "failed",
-            error: sendResult.error || "whatsapp_send_failed",
-          });
-          continue;
-        }
-
-        await supabaseAdmin
-          .from("abandoned_carts")
-          .update({
-            status: "messaged",
-            message_sent_at: new Date().toISOString(),
-          })
-          .eq("id", cart.id);
-
-        results.push({
-          cartId: cart.id,
-          status: "processed",
-          messageId: sendResult.messageId ?? null,
-        });
-      } catch (error) {
-        console.error(`Failed to send Meta WhatsApp for cart ${cart.id}:`, error);
-
-        try {
-          await supabaseAdmin
-            .from("abandoned_carts")
-            .update({ status: PENDING_STATUS })
-            .eq("id", cart.id);
-        } catch (releaseError) {
-          console.error(`Failed to release claim for cart ${cart.id}:`, releaseError);
-        }
-
-        results.push({
-          cartId: cart.id,
-          status: "failed",
-          error: getErrorMessage(error),
-        });
-      }
-    }
-
-    const processed = results.filter((result) => result.status === "processed").length;
-    const failed = results.filter((result) => result.status === "failed").length;
-
-    return NextResponse.json({
-      success: failed === 0,
-      message: processed > 0 ? "WhatsApp recovery messages sent" : "No pending carts to process",
-      scanned: pendingCarts.length,
-      processed,
-      skipped: results.filter((result) => result.status === "skipped").length,
-      failed,
+    const summary = {
+      success: true,
+      expiredRetries: retries.expired,
+      retried: retries.results.length,
+      firstAttempts: firstAttempts.length,
+      sent: count("sent"),
+      retryScheduled: count("retry_scheduled"),
+      failed: count("failed"),
+      skipped: count("skipped"),
       durationMs: Date.now() - startedAt,
-      results,
-    });
+    };
+    console.log("🗂️ /api/cart-recovery run summary", summary);
+
+    return NextResponse.json({ ...summary, retries: retries.results, results: firstAttempts });
   } catch (error) {
     console.error("Cart recovery cron route error:", error);
 
