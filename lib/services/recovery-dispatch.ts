@@ -13,7 +13,6 @@
  */
 
 import { supabaseAdmin } from '@/lib/supabase'
-import { appendFileSync } from 'node:fs'
 import { maskPhone } from '@/lib/phone'
 import {
   messageProcessingClaimStaleBefore,
@@ -40,20 +39,6 @@ const CART_CLAIM_STALE_MS = 15 * 60 * 1000
 
 /** Max ids per `.in()` filter, keeps PostgREST URLs short. */
 const IN_FILTER_CHUNK = 100
-
-function writeAgentLog(entry: {
-  hypothesisId: string
-  location: string
-  message: string
-  data: Record<string, unknown>
-}) {
-  try {
-    appendFileSync(
-      '/opt/cursor/logs/debug.log',
-      `${JSON.stringify({ ...entry, timestamp: Date.now() })}\n`
-    )
-  } catch {}
-}
 
 function nowIso() {
   return new Date().toISOString()
@@ -146,15 +131,6 @@ export async function recordAttemptOutcome({
   const decision = decideAfterAttempt(accepted, error, attemptsMade)
   const at = nowIso()
 
-  // #region agent log
-  writeAgentLog({
-    hypothesisId: 'B',
-    location: 'lib/services/recovery-dispatch.ts:recordAttemptOutcome:entry',
-    message: 'Persisting provider attempt outcome',
-    data: { attemptsMade, accepted, hasProviderId: Boolean(whatsappMessageId), hasError: Boolean(error) },
-  })
-  // #endregion
-
   const messageUpdate =
     decision.kind === 'sent'
       ? {
@@ -190,27 +166,6 @@ export async function recordAttemptOutcome({
   if (messageError) {
     console.error(`Failed to record attempt outcome on message ${messageId}:`, messageError.message)
   }
-
-  const { data: persistedMessage, error: persistedReadError } = await supabaseAdmin
-    .from('messages')
-    .select('status, attempt_count, next_retry_at')
-    .eq('id', messageId)
-    .maybeSingle()
-  // #region agent log
-  writeAgentLog({
-    hypothesisId: 'B',
-    location: 'lib/services/recovery-dispatch.ts:recordAttemptOutcome:after-update',
-    message: 'Observed message state after outcome update',
-    data: {
-      decision: decision.kind,
-      updateErrored: Boolean(messageError),
-      readErrored: Boolean(persistedReadError),
-      persistedStatus: persistedMessage?.status ?? null,
-      persistedAttempts: persistedMessage?.attempt_count ?? null,
-      hasNextRetry: Boolean(persistedMessage?.next_retry_at),
-    },
-  })
-  // #endregion
 
   if (decision.kind === 'sent') {
     if (!whatsappMessageId) {
@@ -295,19 +250,6 @@ export async function processFirstAttempts({ limit = 25 } = {}): Promise<Recover
     if (rowsError) throw new Error(`message lookup failed: ${rowsError.message}`)
     for (const row of rows ?? []) attempted.add(row.cart_id as string)
   }
-
-  // #region agent log
-  writeAgentLog({
-    hypothesisId: 'C',
-    location: 'lib/services/recovery-dispatch.ts:processFirstAttempts:message-filter',
-    message: 'Filtered first-attempt carts by existence of any message row',
-    data: {
-      pendingCarts: pending.length,
-      excludedByAnyMessage: pending.filter((cart) => attempted.has(cart.id)).length,
-      eligible: pending.filter((cart) => !attempted.has(cart.id)).length,
-    },
-  })
-  // #endregion
 
   const results: RecoveryRunResult[] = []
 
@@ -429,30 +371,6 @@ export async function processDueRetries({ limit = 25 } = {}): Promise<{
   results: RecoveryRunResult[]
 }> {
   const cutoff = new Date(Date.now() - RECOVERY_SEND_MAX_AGE_MS).toISOString()
-  const staleQueuedBefore = new Date(Date.now() - CART_CLAIM_STALE_MS).toISOString()
-  const [
-    { count: queuedCount, error: queuedCountError },
-    { count: staleQueuedCount, error: staleQueuedCountError },
-  ] = await Promise.all([
-    supabaseAdmin.from('messages').select('id', { count: 'exact', head: true }).eq('status', 'queued'),
-    supabaseAdmin
-      .from('messages')
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'queued')
-      .lt('created_at', staleQueuedBefore),
-  ])
-  // #region agent log
-  writeAgentLog({
-    hypothesisId: 'A,C',
-    location: 'lib/services/recovery-dispatch.ts:processDueRetries:inventory',
-    message: 'Counted queued rows excluded from pending-only retry processing',
-    data: {
-      queuedCount,
-      staleQueuedByCreatedAtCount: staleQueuedCount,
-      inventoryErrored: Boolean(queuedCountError || staleQueuedCountError),
-    },
-  })
-  // #endregion
 
   const messageClaimStaleBefore = messageProcessingClaimStaleBefore()
   const { error: reclaimError } = await supabaseAdmin
@@ -492,15 +410,6 @@ export async function processDueRetries({ limit = 25 } = {}): Promise<{
     .limit(limit)
 
   if (dueError) throw new Error(`due retry query failed: ${dueError.message}`)
-
-  // #region agent log
-  writeAgentLog({
-    hypothesisId: 'A',
-    location: 'lib/services/recovery-dispatch.ts:processDueRetries:pending-selection',
-    message: 'Pending-only retry query completed',
-    data: { selectedPendingRows: dueRows?.length ?? 0, limit },
-  })
-  // #endregion
 
   const results: RecoveryRunResult[] = []
 

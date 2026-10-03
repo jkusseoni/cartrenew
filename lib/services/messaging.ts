@@ -1,5 +1,4 @@
 import { supabaseAdmin } from '@/lib/supabase'
-import { appendFileSync } from 'node:fs'
 import { maskPhone } from '@/lib/phone'
 import {
   hasWhatsAppCredentials,
@@ -34,20 +33,6 @@ export type WhatsAppRecoveryResult = {
   retryScheduled?: boolean
   messageId?: string | null
   error?: string | null
-}
-
-function writeAgentLog(entry: {
-  hypothesisId: string
-  location: string
-  message: string
-  data: Record<string, unknown>
-}) {
-  try {
-    appendFileSync(
-      '/opt/cursor/logs/debug.log',
-      `${JSON.stringify({ ...entry, timestamp: Date.now() })}\n`
-    )
-  } catch {}
 }
 
 export function compileRecoveryMessage(template: string, context: RecoveryMessageContext) {
@@ -199,15 +184,6 @@ export async function triggerWhatsAppRecoveryForCart({
       console.error('Failed to insert recovery message row:', insertError)
       return { queued: false, sent: false, error: insertError?.message || 'insert_failed' }
     }
-
-    // #region agent log
-    writeAgentLog({
-      hypothesisId: 'C',
-      location: 'lib/services/messaging.ts:triggerWhatsAppRecoveryForCart:after-insert',
-      message: 'Inserted queued row before provider dispatch',
-      data: { status: 'queued', attemptCount: 0, hasNextRetry: false },
-    })
-    // #endregion
 
     console.log('📤 triggerWhatsAppRecoveryForCart Meta template payload', {
       cartId,
