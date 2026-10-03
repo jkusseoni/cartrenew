@@ -7,6 +7,8 @@ import { NextResponse } from "next/server";
 
 const MAX_CARTS_PER_RUN = 25;
 const MAX_RETRIES_PER_RUN = 25;
+// Leave time inside maxDuration for the final provider response, DB writes, and HTTP response.
+const WORKER_RUN_BUDGET_MS = 45_000;
 
 /**
  * GET /api/cart-recovery — Vercel cron worker (see vercel.json).
@@ -55,8 +57,9 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const retries = await processDueRetries({ limit: MAX_RETRIES_PER_RUN });
-    const firstAttempts = await processFirstAttempts({ limit: MAX_CARTS_PER_RUN });
+    const deadlineAt = startedAt + WORKER_RUN_BUDGET_MS;
+    const retries = await processDueRetries({ limit: MAX_RETRIES_PER_RUN, deadlineAt });
+    const firstAttempts = await processFirstAttempts({ limit: MAX_CARTS_PER_RUN, deadlineAt });
     const all = [...retries.results, ...firstAttempts];
     const count = (outcome: string) => all.filter((result) => result.outcome === outcome).length;
 

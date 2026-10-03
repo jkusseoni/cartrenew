@@ -145,7 +145,11 @@ function cleanEnv(value?: string | null): string {
     languageCode?: string
     /** Positional body variables — index 0 fills {{1}}, index 1 fills {{2}}, etc. */
     bodyVariables?: string[]
+    /** Internal request budget; exposed so the timeout path can be tested without waiting. */
+    requestTimeoutMs?: number
   }
+
+  const DEFAULT_REQUEST_TIMEOUT_MS = 10_000
   
   /**
    * Build the {{1}}, {{2}} template variables for the abandoned-cart template.
@@ -206,6 +210,13 @@ function cleanEnv(value?: string | null): string {
     const phoneNumberId = cleanEnv(process.env.WHATSAPP_PHONE_NUMBER_ID)
     const apiVersion = cleanEnv(process.env.WHATSAPP_API_VERSION) || 'v22.0'
     const url = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`
+    const configuredTimeout = options.requestTimeoutMs
+    const requestTimeoutMs =
+      typeof configuredTimeout === 'number' &&
+      Number.isFinite(configuredTimeout) &&
+      configuredTimeout > 0
+        ? Math.floor(configuredTimeout)
+        : DEFAULT_REQUEST_TIMEOUT_MS
   
     const components = options.bodyVariables?.length
       ? [
@@ -237,6 +248,7 @@ function cleanEnv(value?: string | null): string {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(requestTimeoutMs),
       })
   
       const data = await response.json()
@@ -266,7 +278,12 @@ function cleanEnv(value?: string | null): string {
       console.error('❌ Meta WhatsApp API request failed:', details)
       return {
         success: false,
-        error: err instanceof Error ? err.message : String(err),
+        error:
+          err instanceof Error && err.name === 'TimeoutError'
+            ? `WhatsApp API request timed out after ${requestTimeoutMs}ms`
+            : err instanceof Error
+              ? err.message
+              : String(err),
         to,
         templateName: options.templateName,
         status: 'failed',
