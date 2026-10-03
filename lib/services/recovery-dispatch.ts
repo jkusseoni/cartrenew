@@ -187,6 +187,12 @@ export type RecoveryRunResult = {
   reason?: string | null
 }
 
+type RecoveryWorkerOptions = {
+  limit?: number
+  /** Do not begin another external send at or after this epoch-millisecond deadline. */
+  deadlineAt?: number
+}
+
 function outcomeFromDecision(decision: SendOutcomeDecision): RecoveryRunResult['outcome'] {
   return decision.kind === 'sent' ? 'sent' : decision.kind === 'retry' ? 'retry_scheduled' : 'failed'
 }
@@ -219,7 +225,10 @@ async function cartHasMessageRow(cartId: string): Promise<boolean> {
  * First send for recent pending carts that have never been attempted (no
  * messages row). Carts with an existing row are owned by the retry pass.
  */
-export async function processFirstAttempts({ limit = 25 } = {}): Promise<RecoveryRunResult[]> {
+export async function processFirstAttempts({
+  limit = 25,
+  deadlineAt = Number.POSITIVE_INFINITY,
+}: RecoveryWorkerOptions = {}): Promise<RecoveryRunResult[]> {
   const since = new Date(Date.now() - RECOVERY_SEND_MAX_AGE_MS).toISOString()
   const { data: carts, error } = await supabaseAdmin
     .from('abandoned_carts')
@@ -247,6 +256,8 @@ export async function processFirstAttempts({ limit = 25 } = {}): Promise<Recover
   const results: RecoveryRunResult[] = []
 
   for (const cart of pending.filter((row) => !attempted.has(row.id)).slice(0, limit)) {
+    if (Date.now() >= deadlineAt) break
+
     try {
       if (!cart.customer_phone?.trim()) {
         results.push({ id: cart.id, cartId: cart.id, outcome: 'skipped', reason: 'missing_phone' })
@@ -353,7 +364,10 @@ async function failMessage(messageId: string, reason: string, fromStatus: 'pendi
  * MAX_SEND_ATTEMPTS). Pending messages older than the send window are
  * marked failed without sending.
  */
-export async function processDueRetries({ limit = 25 } = {}): Promise<{
+export async function processDueRetries({
+  limit = 25,
+  deadlineAt = Number.POSITIVE_INFINITY,
+}: RecoveryWorkerOptions = {}): Promise<{
   expired: number
   results: RecoveryRunResult[]
 }> {
@@ -385,6 +399,8 @@ export async function processDueRetries({ limit = 25 } = {}): Promise<{
   const results: RecoveryRunResult[] = []
 
   for (const message of (dueRows ?? []) as PendingMessageRow[]) {
+    if (Date.now() >= deadlineAt) break
+
     let claimedForSend = false
     try {
       const attemptsSoFar = message.attempt_count ?? 0
