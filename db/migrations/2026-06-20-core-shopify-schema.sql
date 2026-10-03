@@ -97,6 +97,7 @@ create table if not exists messages (
   error_message      text,
   attempt_count      integer not null default 0,
   next_retry_at      timestamptz,
+  processing_started_at timestamptz,
   sent_at            timestamptz not null default now(),
   created_at         timestamptz not null default now()
 );

@@ -155,6 +155,7 @@ export interface Database {
           error_message: string | null
           attempt_count: number
           next_retry_at: string | null
+          processing_started_at: string | null
           sent_at: string
           created_at: string
         }
@@ -170,6 +171,7 @@ export interface Database {
           error_message?: string | null
           attempt_count?: number
           next_retry_at?: string | null
+          processing_started_at?: string | null
           sent_at?: string
           created_at?: string
         }
@@ -185,6 +187,7 @@ export interface Database {
           error_message?: string | null
           attempt_count?: number
           next_retry_at?: string | null
+          processing_started_at?: string | null
           sent_at?: string
           created_at?: string
         }
