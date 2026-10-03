@@ -409,6 +409,7 @@ async function dispatchWhatsAppRecovery({
         status: 'queued',
         attempt_count: 0,
         next_retry_at: null,
+        processing_started_at: new Date().toISOString(),
       })
       .select('id')
       .single()
@@ -460,6 +461,7 @@ async function dispatchWhatsAppRecovery({
           sent_at: new Date().toISOString(),
           attempt_count: 1,
           error_message: null,
+          processing_started_at: null,
         })
         .eq('id', messageRowId)
     }
@@ -490,6 +492,7 @@ async function dispatchWhatsAppRecovery({
         error_message: sendResult.error || 'whatsapp_send_failed',
         attempt_count: 1,
         next_retry_at: new Date(Date.now() + 5 * 60_000).toISOString(),
+        processing_started_at: null,
       })
       .eq('id', messageRowId)
   }

@@ -14,6 +14,10 @@
 
 import { supabaseAdmin } from '@/lib/supabase'
 import { maskPhone } from '@/lib/phone'
+import {
+  messageProcessingClaimStaleBefore,
+  staleMessageProcessingClaimFilter,
+} from '@/lib/message-processing-claim'
 import { getTrackedRecoveryUrl } from '@/lib/recovery-link'
 import {
   decideAfterAttempt,
@@ -136,6 +140,7 @@ export async function recordAttemptOutcome({
           attempt_count: attemptsMade,
           error_message: null,
           next_retry_at: null,
+          processing_started_at: null,
         }
       : decision.kind === 'retry'
         ? {
@@ -143,12 +148,14 @@ export async function recordAttemptOutcome({
             error_message: error || 'send_failed',
             attempt_count: attemptsMade,
             next_retry_at: decision.nextRetryAt,
+            processing_started_at: null,
           }
         : {
             status: 'failed',
             error_message: decision.reason,
             attempt_count: attemptsMade,
             next_retry_at: null,
+            processing_started_at: null,
           }
 
   const { error: messageError } = await supabaseAdmin
@@ -287,6 +294,7 @@ export async function processFirstAttempts({ limit = 25 } = {}): Promise<Recover
           status: 'queued',
           attempt_count: 0,
           next_retry_at: null,
+          processing_started_at: nowIso(),
         })
         .select('id')
         .single()
@@ -342,7 +350,12 @@ type PendingMessageRow = {
 async function failMessage(messageId: string, reason: string, fromStatus: 'pending' | 'queued') {
   const { error } = await supabaseAdmin
     .from('messages')
-    .update({ status: 'failed', error_message: reason, next_retry_at: null })
+    .update({
+      status: 'failed',
+      error_message: reason,
+      next_retry_at: null,
+      processing_started_at: null,
+    })
     .eq('id', messageId)
     .eq('status', fromStatus)
   if (error) console.error(`Failed to mark message ${messageId} failed:`, error.message)
@@ -358,9 +371,25 @@ export async function processDueRetries({ limit = 25 } = {}): Promise<{
   results: RecoveryRunResult[]
 }> {
   const cutoff = new Date(Date.now() - RECOVERY_SEND_MAX_AGE_MS).toISOString()
+
+  const messageClaimStaleBefore = messageProcessingClaimStaleBefore()
+  const { error: reclaimError } = await supabaseAdmin
+    .from('messages')
+    .update({ status: 'pending', processing_started_at: null })
+    .eq('status', 'queued')
+    .or(staleMessageProcessingClaimFilter(messageClaimStaleBefore))
+  if (reclaimError) {
+    throw new Error(`reclaiming stale queued messages failed: ${reclaimError.message}`)
+  }
+
   const { data: expiredRows, error: expireError } = await supabaseAdmin
     .from('messages')
-    .update({ status: 'failed', error_message: 'expired_before_retry', next_retry_at: null })
+    .update({
+      status: 'failed',
+      error_message: 'expired_before_retry',
+      next_retry_at: null,
+      processing_started_at: null,
+    })
     .eq('status', 'pending')
     .lt('created_at', cutoff)
     .select('id, cart_id')
@@ -398,7 +427,7 @@ export async function processDueRetries({ limit = 25 } = {}): Promise<{
 
       const { data: claimed, error: claimError } = await supabaseAdmin
         .from('messages')
-        .update({ status: 'queued' })
+        .update({ status: 'queued', processing_started_at: nowIso() })
         .eq('id', message.id)
         .eq('status', 'pending')
         .select('id')
@@ -451,7 +480,7 @@ export async function processDueRetries({ limit = 25 } = {}): Promise<{
         // Nothing was sent yet — hand the row back to the next run.
         await supabaseAdmin
           .from('messages')
-          .update({ status: 'pending' })
+          .update({ status: 'pending', processing_started_at: null })
           .eq('id', message.id)
           .eq('status', 'queued')
       }

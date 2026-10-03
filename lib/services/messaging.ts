@@ -175,6 +175,7 @@ export async function triggerWhatsAppRecoveryForCart({
         status: 'queued',
         attempt_count: 0,
         next_retry_at: null,
+        processing_started_at: new Date().toISOString(),
       })
       .select('id')
       .single()
