@@ -13,6 +13,7 @@ import {
   hasWhatsAppCredentials,
   sendWhatsAppMessage,
 } from '@/lib/services/whatsapp-meta'
+import { claimCartForFirstAttempt } from '@/lib/services/recovery-dispatch'
 import {
   getShopifyWebhookSecret,
   getShopifyWebhookSecretSource,
@@ -391,6 +392,13 @@ async function dispatchWhatsAppRecovery({
   if (!hasWhatsAppCredentials()) {
     console.error(
       `WhatsApp credentials missing — cannot send recovery for cart ${cartId}`
+    )
+    return
+  }
+
+  if (persistMessageRow && !(await claimCartForFirstAttempt(cartId))) {
+    console.log(
+      `WhatsApp recovery skipped: another first-attempt sender owns cart ${cartId}`
     )
     return
   }
