@@ -191,7 +191,7 @@ function outcomeFromDecision(decision: SendOutcomeDecision): RecoveryRunResult['
   return decision.kind === 'sent' ? 'sent' : decision.kind === 'retry' ? 'retry_scheduled' : 'failed'
 }
 
-async function claimCartForFirstAttempt(cartId: string): Promise<boolean> {
+export async function claimCartForFirstAttempt(cartId: string): Promise<boolean> {
   const staleBefore = new Date(Date.now() - CART_CLAIM_STALE_MS).toISOString()
   const { data, error } = await supabaseAdmin
     .from('abandoned_carts')
