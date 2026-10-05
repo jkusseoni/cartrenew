@@ -986,11 +986,12 @@ async function handleCartDelete(storeId: string, payload: any) {
 // ============================================
 async function handleAppUninstalled(storeId: string, shopDomain: string) {
   try {
-    // Mark all carts for this store as lost
+    // Stop outstanding recovery work without corrupting historical recoveries.
     await supabaseAdmin
       .from('abandoned_carts')
       .update({ status: 'lost', updated_at: new Date().toISOString() })
       .eq('store_id', storeId)
+      .in('status', ['pending', 'messaged'])
 
     // Clear token + mark billing cancelled (keep row for audit / reinstall)
     await supabaseAdmin
