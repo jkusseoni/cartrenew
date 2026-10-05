@@ -21,8 +21,8 @@ export type MetaStatusEvent = {
  * delivery; a later delivered/read report wins over failed.
  */
 export const ALLOWED_PRIOR_STATUSES: Record<MetaStatusEvent['status'], MessageStatus[]> = {
-  sent: ['queued', 'pending'],
-  failed: ['queued', 'pending', 'sent'],
+  sent: ['queued'],
+  failed: ['sent'],
   delivered: ['queued', 'pending', 'sent', 'failed'],
   read: ['queued', 'pending', 'sent', 'failed', 'delivered'],
 }

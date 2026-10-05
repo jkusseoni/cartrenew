@@ -16,6 +16,7 @@
     "seed:shopify": "tsx scripts/seed-shopify-store.ts",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
+    "test:status-sync": "tsx --test test/unit/whatsapp-status-retry.test.ts",
     "shopify": "shopify",
     "shopify:dev": "shopify app dev --store cartrenew-sandbox-store.myshopify.com",
     "shopify:deploy": "shopify app deploy",
