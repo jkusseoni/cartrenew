@@ -12,6 +12,7 @@
  *   than RECOVERY_SEND_MAX_AGE_MS.
  */
 
+import { appendFileSync } from 'node:fs'
 import { supabaseAdmin } from '@/lib/supabase'
 import { maskPhone } from '@/lib/phone'
 import { getTrackedRecoveryUrl } from '@/lib/recovery-link'
@@ -84,6 +85,10 @@ export async function recordCartSendFailure(
 ) {
   const ids = Array.from(new Set(Array.isArray(cartIds) ? cartIds : [cartIds])).filter(Boolean)
   const failedAt = nowIso()
+
+  // #region agent log
+  appendFileSync('/opt/cursor/logs/debug.log', JSON.stringify({ hypothesisId: 'B', location: 'lib/services/recovery-dispatch.ts:89', message: 'recordCartSendFailure mutation mode', data: { cartCount: ids.length, final, willSetLost: final }, timestamp: Date.now() }) + '\n')
+  // #endregion
 
   for (const batch of chunk(ids, IN_FILTER_CHUNK)) {
     if (final) {
@@ -358,6 +363,9 @@ export async function processDueRetries({ limit = 25 } = {}): Promise<{
   results: RecoveryRunResult[]
 }> {
   const cutoff = new Date(Date.now() - RECOVERY_SEND_MAX_AGE_MS).toISOString()
+  // #region agent log
+  appendFileSync('/opt/cursor/logs/debug.log', JSON.stringify({ hypothesisId: 'C', location: 'lib/services/recovery-dispatch.ts:366', message: 'processDueRetries entry', data: { selectedMessageStatus: 'pending', requiredCartStatus: 'pending', limit }, timestamp: Date.now() }) + '\n')
+  // #endregion
   const { data: expiredRows, error: expireError } = await supabaseAdmin
     .from('messages')
     .update({ status: 'failed', error_message: 'expired_before_retry', next_retry_at: null })
@@ -381,6 +389,10 @@ export async function processDueRetries({ limit = 25 } = {}): Promise<{
     .limit(limit)
 
   if (dueError) throw new Error(`due retry query failed: ${dueError.message}`)
+
+  // #region agent log
+  appendFileSync('/opt/cursor/logs/debug.log', JSON.stringify({ hypothesisId: 'A/C', location: 'lib/services/recovery-dispatch.ts:393', message: 'due retry selection result', data: { dueCount: dueRows?.length ?? 0, selectedMessageStatus: 'pending' }, timestamp: Date.now() }) + '\n')
+  // #endregion
 
   const results: RecoveryRunResult[] = []
 
@@ -415,6 +427,10 @@ export async function processDueRetries({ limit = 25 } = {}): Promise<{
         .eq('id', message.cart_id)
         .maybeSingle()
       if (cartError) throw new Error(cartError.message)
+
+      // #region agent log
+      appendFileSync('/opt/cursor/logs/debug.log', JSON.stringify({ hypothesisId: 'D', location: 'lib/services/recovery-dispatch.ts:433', message: 'retry cart eligibility gate', data: { cartFound: !!cart, cartStatus: cart?.status ?? null, requiredCartStatus: 'pending' }, timestamp: Date.now() }) + '\n')
+      // #endregion
 
       if (!cart || cart.status !== 'pending') {
         const reason = `cart_${cart?.status ?? 'missing'}`
