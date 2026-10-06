@@ -3,6 +3,7 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getTrackedRecoveryUrl } from '@/lib/recovery-link'
+import { normalizeShopifyPhoneForSource } from '@/lib/shopify/phone'
 import { supabaseAdmin } from '@/lib/supabase'
 import {
   buildRecoveryWhatsAppBody,
@@ -245,23 +246,23 @@ function extractCustomerPhone(payload: Record<string, unknown>, customer: Record
   const billing = payload.billing_address as Record<string, unknown> | undefined
   const shipping = payload.shipping_address as Record<string, unknown> | undefined
 
-  // Prefer shipping_address.phone, then customer.phone.
-  const fromShipping = asPhoneString(shipping?.phone)
-  if (fromShipping) return fromShipping
-
-  const fromCustomer = asPhoneString(customer.phone)
-  if (fromCustomer) return fromCustomer
-
   const candidates = [
-    payload.phone,
-    billing?.phone,
+    ['shipping_address.phone', shipping?.phone],
+    ['customer.phone', customer.phone],
+    ['payload.phone', payload.phone],
+    ['billing_address.phone', billing?.phone],
     // Some Shopify payloads nest contact phone under default_address.
-    (customer.default_address as Record<string, unknown> | undefined)?.phone,
-  ]
+    [
+      'customer.default_address.phone',
+      (customer.default_address as Record<string, unknown> | undefined)?.phone,
+    ],
+  ] as const
 
-  for (const value of candidates) {
+  for (const [source, value] of candidates) {
     const phone = asPhoneString(value)
-    if (phone) return phone
+    if (phone) {
+      return normalizeShopifyPhoneForSource(phone, source, payload, customer)
+    }
   }
 
   return null
