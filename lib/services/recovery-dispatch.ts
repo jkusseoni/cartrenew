@@ -12,7 +12,6 @@
  *   than RECOVERY_SEND_MAX_AGE_MS.
  */
 
-import { appendFileSync } from 'node:fs'
 import { supabaseAdmin } from '@/lib/supabase'
 import { maskPhone } from '@/lib/phone'
 import { getTrackedRecoveryUrl } from '@/lib/recovery-link'
@@ -245,10 +244,6 @@ export async function processFirstAttempts({ limit = 25 } = {}): Promise<Recover
     for (const row of rows ?? []) attempted.add(row.cart_id as string)
   }
 
-  // #region agent log
-  appendFileSync('/opt/cursor/logs/debug.log', JSON.stringify({ hypothesisId: 'H3', location: 'lib/services/recovery-dispatch.ts:248', message: 'first-attempt eligibility', data: { pendingCartCount: pending.length, cartsWithMessageCount: attempted.size, eligibleCount: pending.filter((cart) => !attempted.has(cart.id)).length }, timestamp: Date.now() }) + '\n')
-  // #endregion
-
   const results: RecoveryRunResult[] = []
 
   for (const cart of pending.filter((row) => !attempted.has(row.id)).slice(0, limit)) {
@@ -386,10 +381,6 @@ export async function processDueRetries({ limit = 25 } = {}): Promise<{
     .limit(limit)
 
   if (dueError) throw new Error(`due retry query failed: ${dueError.message}`)
-
-  // #region agent log
-  appendFileSync('/opt/cursor/logs/debug.log', JSON.stringify({ hypothesisId: 'H3,H5', location: 'lib/services/recovery-dispatch.ts:389', message: 'retry eligibility', data: { expiredCount: expiredCartIds.length, dueCount: dueRows?.length ?? 0 }, timestamp: Date.now() }) + '\n')
-  // #endregion
 
   const results: RecoveryRunResult[] = []
 

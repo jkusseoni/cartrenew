@@ -1,4 +1,3 @@
-import { appendFileSync } from 'node:fs'
 import { supabaseAdmin } from '@/lib/supabase'
 import { recordCartSendFailure } from '@/lib/services/recovery-dispatch'
 import { ALLOWED_PRIOR_STATUSES, type MetaStatusEvent } from '@/lib/whatsapp-status'
@@ -13,10 +12,6 @@ export type StatusApplyResult = 'updated' | 'no_change' | 'unknown_message'
  */
 export async function applyStatusEvent(event: MetaStatusEvent): Promise<StatusApplyResult> {
   const occurredAt = event.occurredAt ?? new Date().toISOString()
-
-  // #region agent log
-  appendFileSync('/opt/cursor/logs/debug.log', JSON.stringify({ hypothesisId: 'H1,H2', location: 'lib/services/whatsapp-status-sync.ts:17', message: 'status apply entry', data: { eventStatus: event.status, hasProviderMessageId: Boolean(event.whatsappMessageId) }, timestamp: Date.now() }) + '\n')
-  // #endregion
 
   const update: Record<string, unknown> = { status: event.status }
   if (event.status === 'failed') {
@@ -34,19 +29,12 @@ export async function applyStatusEvent(event: MetaStatusEvent): Promise<StatusAp
 
   let cartIds = (transitioned ?? []).map((row) => row.cart_id as string)
 
-  // #region agent log
-  appendFileSync('/opt/cursor/logs/debug.log', JSON.stringify({ hypothesisId: 'H1,H2', location: 'lib/services/whatsapp-status-sync.ts:37', message: 'message transition result', data: { eventStatus: event.status, transitionedCount: transitioned?.length ?? 0, mappedCartCount: cartIds.length }, timestamp: Date.now() }) + '\n')
-  // #endregion
-
   if (cartIds.length === 0) {
     const { data: existing, error: lookupError } = await supabaseAdmin
       .from('messages')
       .select('cart_id')
       .eq('whatsapp_message_id', event.whatsappMessageId)
     if (lookupError) throw new Error(`message lookup failed: ${lookupError.message}`)
-    // #region agent log
-    appendFileSync('/opt/cursor/logs/debug.log', JSON.stringify({ hypothesisId: 'H2', location: 'lib/services/whatsapp-status-sync.ts:48', message: 'provider id fallback lookup', data: { eventStatus: event.status, existingCount: existing?.length ?? 0 }, timestamp: Date.now() }) + '\n')
-    // #endregion
     if (!existing?.length) return 'unknown_message'
     // Already at an equal/higher status. delivered/read still backfill cart
     // timestamps in case an earlier delivery of this event failed midway.
@@ -79,9 +67,5 @@ export async function applyStatusEvent(event: MetaStatusEvent): Promise<StatusAp
     })
   }
 
-  const result = (transitioned?.length ?? 0) > 0 ? 'updated' : 'no_change'
-  // #region agent log
-  appendFileSync('/opt/cursor/logs/debug.log', JSON.stringify({ hypothesisId: 'H1', location: 'lib/services/whatsapp-status-sync.ts:82', message: 'status apply exit', data: { eventStatus: event.status, result, cartCount: cartIds.length, cartStatusWriteAttempted: event.status === 'failed' }, timestamp: Date.now() }) + '\n')
-  // #endregion
-  return result
+  return (transitioned?.length ?? 0) > 0 ? 'updated' : 'no_change'
 }
