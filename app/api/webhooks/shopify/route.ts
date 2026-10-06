@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+import { appendFileSync } from 'node:fs'
 import { NextRequest, NextResponse } from 'next/server'
 import { getTrackedRecoveryUrl } from '@/lib/recovery-link'
 import { supabaseAdmin } from '@/lib/supabase'
@@ -440,6 +441,10 @@ async function dispatchWhatsAppRecovery({
     bodyVariables,
   })
 
+  // #region agent log
+  appendFileSync('/opt/cursor/logs/debug.log', JSON.stringify({ hypothesisId: 'H4,H5', location: 'app/api/webhooks/shopify/route.ts:444', message: 'provider send returned', data: { accepted: sendResult.success, hasProviderMessageId: Boolean(sendResult.messageId), cartWasPersisted: persistMessageRow }, timestamp: Date.now() }) + '\n')
+  // #endregion
+
   console.log('📨 Meta WhatsApp message status:', {
     cartId,
     success: sendResult.success,
@@ -709,6 +714,10 @@ async function handleCartWebhook(storeId: string, payload: any) {
   if (created && cart?.id) {
     await incrementAnalytics(storeId, 'carts_created')
   }
+
+  // #region agent log
+  appendFileSync('/opt/cursor/logs/debug.log', JSON.stringify({ hypothesisId: 'H4', location: 'app/api/webhooks/shopify/route.ts:720', message: 'cart webhook dispatch decision', data: { created, cartResolved: Boolean(cart?.id), cartStatus: cart?.status ?? null, canSendWhatsApp, willDispatch: canSendWhatsApp && (!cart || cart.status === 'pending') }, timestamp: Date.now() }) + '\n')
+  // #endregion
 
   if (canSendWhatsApp && (!cart || cart.status === 'pending')) {
     await dispatchWhatsAppRecovery({
