@@ -6,7 +6,7 @@ export type RegisteredWebhook = {
   address: string;
 };
 
-/** Primary abandonment signals — checkouts/* is more reliable than carts/* on many stores. */
+/** Cart activity signals used to schedule recovery after an inactivity window. */
 export const ABANDONMENT_WEBHOOK_TOPICS = [
   "carts/create",
   "carts/update",
@@ -85,9 +85,9 @@ async function upsertShopifyWebhook(
 }
 
 /**
- * Idempotently register abandonment + lifecycle webhooks for a shop.
- * Registers carts/* and checkouts/* (checkout events are the reliable
- * abandonment signal when carts/create does not fire). All topics point at
+ * Idempotently register cart-activity + lifecycle webhooks for a shop.
+ * Registers carts/* and checkouts/* (checkout events reliably carry contact
+ * details when carts/create does not). All topics point at
  * `/api/webhooks/shopify` (alias `/api/shopify/webhook` re-exports the same handler).
  * Stale webhook URLs (e.g. after ngrok restarts) are updated in place.
  */
