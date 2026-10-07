@@ -17,6 +17,7 @@ import { maskPhone } from '@/lib/phone'
 import { getTrackedRecoveryUrl } from '@/lib/recovery-link'
 import {
   decideAfterAttempt,
+  dueRecoveryScheduleFilter,
   MAX_SEND_ATTEMPTS,
   RECOVERY_SEND_MAX_AGE_MS,
   type SendOutcomeDecision,
@@ -226,6 +227,7 @@ export async function processFirstAttempts({ limit = 25 } = {}): Promise<Recover
     .select('id, store_id, customer_phone, customer_name, checkout_url')
     .eq('status', 'pending')
     .gte('created_at', since)
+    .or(dueRecoveryScheduleFilter())
     .order('updated_at', { ascending: true })
     .limit(limit * 4)
 

@@ -8,6 +8,9 @@ export const MAX_SEND_ATTEMPTS = 3
 /** Reminders older than this are not (re)sent — a late cart reminder is spam. */
 export const RECOVERY_SEND_MAX_AGE_MS = 72 * 60 * 60 * 1000
 
+/** A cart must remain inactive for this long before its first reminder. */
+export const RECOVERY_INACTIVITY_MS = 60 * 60 * 1000
+
 const BASE_RETRY_DELAY_MS = 5 * 60 * 1000
 
 /** Errors that will not succeed on retry (bad/unknown phone). */
@@ -25,6 +28,18 @@ export function retryDelayMs(attemptsMade: number): number {
 export function isTooOldToSend(createdAt: string | null | undefined, now = Date.now()): boolean {
   const created = createdAt ? Date.parse(createdAt) : NaN
   return Number.isFinite(created) && now - created > RECOVERY_SEND_MAX_AGE_MS
+}
+
+export function nextRecoveryAt(now = Date.now()): string {
+  return new Date(now + RECOVERY_INACTIVITY_MS).toISOString()
+}
+
+/**
+ * PostgREST filter for first attempts. Null schedules are legacy rows that
+ * predate scheduling and should remain eligible.
+ */
+export function dueRecoveryScheduleFilter(now = Date.now()): string {
+  return `scheduled_message_at.is.null,scheduled_message_at.lte.${new Date(now).toISOString()}`
 }
 
 export type SendOutcomeDecision =
