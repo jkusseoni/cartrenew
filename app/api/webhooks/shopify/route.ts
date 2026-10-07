@@ -2,17 +2,8 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from 'next/server'
-import { getTrackedRecoveryUrl } from '@/lib/recovery-link'
+import { nextRecoveryAt } from '@/lib/recovery-retry-policy'
 import { supabaseAdmin } from '@/lib/supabase'
-import {
-  buildRecoveryWhatsAppBody,
-  resolveRecoveryCustomerName,
-} from '@/lib/services/twilio-whatsapp'
-import {
-  buildAbandonedCartTemplateVariables,
-  hasWhatsAppCredentials,
-  sendWhatsAppMessage,
-} from '@/lib/services/whatsapp-meta'
 import {
   getShopifyWebhookSecret,
   getShopifyWebhookSecretSource,
@@ -48,7 +39,7 @@ function shouldSkipVerification(req: NextRequest): boolean {
 
 // ============================================
 // POST /api/webhooks/shopify
-// Handles cart + checkout abandonment webhooks from Shopify
+// Records cart + checkout activity and schedules recovery after inactivity.
 // (Shopify should point checkouts/create + checkouts/update HERE — not /api/cart-recovery)
 // ============================================
 export async function POST(req: NextRequest) {
@@ -326,181 +317,6 @@ function extractCustomerName(customer: Record<string, unknown>, payload: Record<
   return null
 }
 
-async function dispatchWhatsAppRecovery({
-  storeId,
-  cartId,
-  payload,
-  customer,
-  cartValue,
-  items,
-  persistMessageRow = true,
-}: {
-  storeId: string
-  cartId: string
-  payload: Record<string, unknown>
-  customer: Record<string, unknown>
-  cartValue: number
-  items: unknown[]
-  cartToken: string
-  persistMessageRow?: boolean
-}) {
-  const shippingAddress = payload.shipping_address ?? null
-  console.log(
-    `📞 Phone lookup for cart ${cartId} — customer.phone:`,
-    customer.phone ?? null,
-    '| shipping_address:',
-    JSON.stringify(shippingAddress, null, 2)
-  )
-
-  // Prefer shipping_address.phone, then customer.phone (see extractCustomerPhone).
-  const customerPhone = extractCustomerPhone(payload, customer)
-  const customerName = resolveRecoveryCustomerName(extractCustomerName(customer, payload))
-  const currency =
-    (typeof payload.currency === 'string' && payload.currency) ||
-    (typeof payload.presentment_currency === 'string' && payload.presentment_currency) ||
-    'USD'
-  const recoveryLink = getTrackedRecoveryUrl(cartId)
-  const checkoutUrl =
-    (typeof payload.abandoned_checkout_url === 'string' && payload.abandoned_checkout_url) ||
-    recoveryLink
-  const bodyVariables = buildAbandonedCartTemplateVariables({
-    customerName,
-    checkoutUrl,
-  })
-  const messageBody = buildRecoveryWhatsAppBody({
-    customerName,
-    cartValue,
-    currency,
-    recoveryLink: checkoutUrl,
-    items,
-  })
-
-  if (!customerPhone) {
-    console.warn(
-      `WhatsApp recovery skipped: missing phone for cart ${cartId}. customer.phone=${String(customer.phone ?? 'undefined')}, shipping_address.phone=${String((shippingAddress as Record<string, unknown> | null)?.phone ?? 'undefined')}. Full payload:`,
-      JSON.stringify(payload, null, 2)
-    )
-    return
-  }
-
-  if (!checkoutUrl) {
-    console.warn(`WhatsApp recovery skipped: missing checkout URL for cart ${cartId}`)
-    return
-  }
-
-  if (!hasWhatsAppCredentials()) {
-    console.error(
-      `WhatsApp credentials missing — cannot send recovery for cart ${cartId}`
-    )
-    return
-  }
-
-  let messageRowId: string | null = null
-
-  if (persistMessageRow) {
-    const { data: messageRow, error: insertError } = await supabaseAdmin
-      .from('messages')
-      .insert({
-        cart_id: cartId,
-        store_id: storeId,
-        phone: customerPhone,
-        template_name: 'abandoned_cart_reminder',
-        body: messageBody,
-        status: 'queued',
-        attempt_count: 0,
-        next_retry_at: null,
-      })
-      .select('id')
-      .single()
-
-    if (insertError || !messageRow?.id) {
-      logSupabaseError(
-        'Failed to insert recovery message row — continuing Meta WhatsApp send anyway',
-        insertError
-      )
-    } else {
-      messageRowId = messageRow.id
-    }
-  } else {
-    console.warn(
-      `Skipping messages row persist for cart ${cartId} (abandoned_carts row missing) — still sending WhatsApp`
-    )
-  }
-
-  console.log('📤 Dispatching Meta WhatsApp template recovery', {
-    cartId,
-    to: customerPhone,
-    templateName: 'abandoned_cart_reminder',
-    bodyVariables,
-    checkoutUrl,
-  })
-
-  const sendResult = await sendWhatsAppMessage(customerPhone, {
-    templateName: 'abandoned_cart_reminder',
-    bodyVariables,
-  })
-
-  console.log('📨 Meta WhatsApp message status:', {
-    cartId,
-    success: sendResult.success,
-    status: sendResult.status ?? (sendResult.success ? 'accepted' : 'failed'),
-    messageId: sendResult.messageId ?? null,
-    to: sendResult.to ?? customerPhone,
-    templateName: sendResult.templateName ?? 'abandoned_cart_reminder',
-    error: sendResult.error ?? null,
-  })
-
-  if (sendResult.success) {
-    if (messageRowId) {
-      await supabaseAdmin
-        .from('messages')
-        .update({
-          status: 'sent',
-          whatsapp_message_id: sendResult.messageId || null,
-          sent_at: new Date().toISOString(),
-          attempt_count: 1,
-          error_message: null,
-        })
-        .eq('id', messageRowId)
-    }
-
-    // Only mark messaged when we have a real abandoned_carts UUID row.
-    if (persistMessageRow) {
-      await supabaseAdmin
-        .from('abandoned_carts')
-        .update({
-          status: 'messaged',
-          message_sent_at: new Date().toISOString(),
-        })
-        .eq('id', cartId)
-        .eq('status', 'pending')
-    }
-
-    console.log(
-      `✅ WhatsApp recovery sent for cart ${cartId} to ${customerPhone} via Meta template abandoned_cart_reminder (${sendResult.messageId}, status=${sendResult.status}) — link: ${checkoutUrl}`
-    )
-    return
-  }
-
-  if (messageRowId) {
-    await supabaseAdmin
-      .from('messages')
-      .update({
-        status: 'pending',
-        error_message: sendResult.error || 'whatsapp_send_failed',
-        attempt_count: 1,
-        next_retry_at: new Date(Date.now() + 5 * 60_000).toISOString(),
-      })
-      .eq('id', messageRowId)
-  }
-
-  console.warn(
-    `❌ WhatsApp recovery dispatch failed for cart ${cartId} (${customerPhone}):`,
-    sendResult.error ?? 'unknown',
-    `| status=${sendResult.status}`
-  )
-}
-
 function logSupabaseError(context: string, error: unknown) {
   if (!error || typeof error !== 'object') {
     console.error(context, error)
@@ -588,6 +404,7 @@ async function upsertAbandonedCartRecord({
     cart_value: safeValue,
     items: safeItems,
     checkout_url: checkoutUrl,
+    scheduled_message_at: nextRecoveryAt(),
     updated_at: new Date().toISOString(),
   }
 
@@ -616,15 +433,12 @@ async function upsertAbandonedCartRecord({
     }
   }
 
-  const scheduledAt = new Date(Date.now() + 60 * 60000).toISOString()
-
   const { data, error } = await supabaseAdmin
     .from('abandoned_carts')
     .upsert(
       {
         ...baseRow,
         status: 'pending',
-        scheduled_message_at: scheduledAt,
       },
       { onConflict: 'store_id,shopify_cart_token' }
     )
@@ -695,11 +509,8 @@ async function handleCartWebhook(storeId: string, payload: any) {
     checkoutUrl,
   })
 
-  const recoveryCartId = cart?.id || token
-  const canSendWhatsApp = Boolean(customerPhone && (checkoutUrl || cart?.id))
-
   if (error && !cart) {
-    console.error('Abandoned cart upsert failed — continuing WhatsApp if contact is valid', {
+    console.error('Abandoned cart upsert failed — recovery will not be scheduled', {
       message: (error as { message?: string })?.message ?? null,
       code: (error as { code?: string })?.code ?? null,
       token,
@@ -708,19 +519,6 @@ async function handleCartWebhook(storeId: string, payload: any) {
 
   if (created && cart?.id) {
     await incrementAnalytics(storeId, 'carts_created')
-  }
-
-  if (canSendWhatsApp && (!cart || cart.status === 'pending')) {
-    await dispatchWhatsAppRecovery({
-      storeId,
-      cartId: recoveryCartId,
-      payload,
-      customer,
-      cartValue,
-      items,
-      cartToken: token,
-      persistMessageRow: Boolean(cart?.id),
-    })
   }
 }
 
@@ -748,15 +546,6 @@ async function handleCheckoutWebhook(storeId: string, payload: any) {
     (typeof payload.abandoned_checkout_url === 'string' && payload.abandoned_checkout_url) ||
     null
 
-  const previousPhone = (
-    await supabaseAdmin
-      .from('abandoned_carts')
-      .select('customer_phone')
-      .eq('store_id', storeId)
-      .eq('shopify_cart_token', token)
-      .maybeSingle()
-  ).data?.customer_phone as string | null | undefined
-
   const { cart, error, created } = await upsertAbandonedCartRecord({
     storeId,
     token,
@@ -782,29 +571,6 @@ async function handleCheckoutWebhook(storeId: string, payload: any) {
 
   if (created && cart?.id) {
     await incrementAnalytics(storeId, 'carts_created')
-  }
-
-  const recoveryCartId = cart?.id || token
-  const phoneJustArrived = Boolean(customerPhone && !previousPhone)
-  const shouldDispatch =
-    Boolean(customerPhone && (checkoutUrl || cart?.id)) &&
-    (!cart || cart.status === 'pending') &&
-    (created || phoneJustArrived || !previousPhone)
-
-  if (shouldDispatch) {
-    console.log(
-      `📲 Dispatching WhatsApp recovery for checkout ${recoveryCartId} (created=${created}, phoneJustArrived=${phoneJustArrived})`
-    )
-    await dispatchWhatsAppRecovery({
-      storeId,
-      cartId: recoveryCartId,
-      payload,
-      customer,
-      cartValue,
-      items,
-      cartToken: token,
-      persistMessageRow: Boolean(cart?.id),
-    })
   }
 }
 
