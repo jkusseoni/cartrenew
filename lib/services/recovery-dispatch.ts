@@ -225,6 +225,8 @@ export async function processFirstAttempts({ limit = 25 } = {}): Promise<Recover
     .from('abandoned_carts')
     .select('id, store_id, customer_phone, customer_name, checkout_url')
     .eq('status', 'pending')
+    .not('customer_phone', 'is', null)
+    .neq('customer_phone', '')
     .gte('created_at', since)
     .order('updated_at', { ascending: true })
     .limit(limit * 4)
@@ -246,7 +248,11 @@ export async function processFirstAttempts({ limit = 25 } = {}): Promise<Recover
 
   const results: RecoveryRunResult[] = []
 
-  for (const cart of pending.filter((row) => !attempted.has(row.id)).slice(0, limit)) {
+  const eligible = pending.filter(
+    (row) => row.customer_phone?.trim() && !attempted.has(row.id)
+  )
+
+  for (const cart of eligible.slice(0, limit)) {
     try {
       if (!cart.customer_phone?.trim()) {
         results.push({ id: cart.id, cartId: cart.id, outcome: 'skipped', reason: 'missing_phone' })
