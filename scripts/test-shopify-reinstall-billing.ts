@@ -2,6 +2,7 @@
  * Regression: install → uninstall (token cleared) → reinstall → plan selection
  * must never fail with "Store is not connected", and expiring offline tokens
  * must be stored, refreshed (with rotation) and recovered when refresh fails.
+ * Also checks that every Shopify secret use resolves the same client secret.
  *
  * Runs the real route handlers in-process. Global fetch is stubbed with an
  * in-memory Supabase `stores` table and a fake Shopify Admin API, so nothing
@@ -10,7 +11,7 @@
  *   npm run test:shopify-reinstall
  */
 
-import { randomUUID } from "crypto";
+import { createHmac, randomUUID } from "crypto";
 import { existsSync } from "fs";
 import path from "path";
 import { SignJWT } from "jose";
@@ -18,6 +19,7 @@ import { SignJWT } from "jose";
 const SHOP = "reinstall-review-store.myshopify.com";
 const CLIENT_ID = "test-client-id";
 const CLIENT_SECRET = "shpss_test_secret";
+const STALE_SECRET = "shpss_stale_client_secret";
 
 Object.assign(process.env, {
   NODE_ENV: "production",
@@ -278,7 +280,7 @@ for (const level of ["log", "info", "warn", "error"] as const) {
 }
 
 const failures: string[] = [];
-const redact = (text: string) => text.replace(/shp(at|rt)_[A-Za-z0-9_]+/g, "shp$1_***");
+const redact = (text: string) => text.replace(/shp(at|rt|ss)_[A-Za-z0-9_]+/g, "shp$1_***");
 function out(line: string) {
   process.stdout.write(`${redact(line)}\n`);
 }
@@ -339,6 +341,9 @@ async function main() {
   const subscribeRoute = await import("../app/api/app/billing/subscribe/route");
   const callbackRoute = await import("../app/api/shopify/billing/callback/route");
   const { getValidShopifyAccessToken } = await import("../lib/shopify/access-token");
+  const { resolveShopifyApiSecret, verifyOAuthHmac, verifyWebhookHmacDetailed } = await import(
+    "../lib/shopify/config"
+  );
 
   const call = async (
     handler: (req: InstanceType<typeof NextRequest>) => Promise<Response>,
@@ -546,6 +551,81 @@ async function main() {
   check(
     "app/api/shopify/billing/subscribe/route.ts is removed",
     !existsSync(path.join(process.cwd(), "app/api/shopify/billing/subscribe/route.ts"))
+  );
+
+  out("11. Single client secret source (SHOPIFY_API_SECRET → SHOPIFY_CLIENT_SECRET)");
+  const mismatchWarnings = () =>
+    appLogs.filter((line) => line.startsWith("[warn]") && line.includes("both set but differ")).length;
+  const setSecrets = (api: string | null, client: string | null) => {
+    if (api === null) delete process.env.SHOPIFY_API_SECRET;
+    else process.env.SHOPIFY_API_SECRET = api;
+    if (client === null) delete process.env.SHOPIFY_CLIENT_SECRET;
+    else process.env.SHOPIFY_CLIENT_SECRET = client;
+  };
+  const webhookBody = JSON.stringify({ id: 1, shop_domain: SHOP });
+  const sign = (secret: string) => createHmac("sha256", secret).update(webhookBody, "utf8").digest("base64");
+
+  check("no mismatch warning while both vars are equal", mismatchWarnings() === 0, mismatchWarnings());
+
+  // Production scenario: SHOPIFY_CLIENT_SECRET holds a stale value.
+  setSecrets(CLIENT_SECRET, STALE_SECRET);
+  check("SHOPIFY_API_SECRET wins when both are set", resolveShopifyApiSecret().source === "SHOPIFY_API_SECRET");
+  res = await exchange();
+  check("token exchange uses SHOPIFY_API_SECRET (stale SHOPIFY_CLIENT_SECRET ignored)", res.status === 200 && res.data.ok === true, res.data);
+  {
+    const refreshesBefore = shopify.refreshCalls;
+    ageAccessToken(-1_000);
+    const result = await getValidShopifyAccessToken(String(storeRow().id));
+    check("token refresh uses SHOPIFY_API_SECRET", result.ok && shopify.refreshCalls === refreshesBefore + 1, result);
+  }
+  res = await dashboard();
+  check("session-token JWT verifies with SHOPIFY_API_SECRET", res.status === 200 && res.data.needsInstall === false, res.data);
+  {
+    const ok = verifyWebhookHmacDetailed(webhookBody, sign(CLIENT_SECRET));
+    check("webhook HMAC verifies with SHOPIFY_API_SECRET", ok.ok && ok.secretSource === "SHOPIFY_API_SECRET", ok);
+    const stale = verifyWebhookHmacDetailed(webhookBody, sign(STALE_SECRET));
+    check("webhook HMAC signed with the stale secret is rejected", !stale.ok && stale.reason === "hmac_mismatch", stale);
+    const query = new URLSearchParams({ shop: SHOP, timestamp: "1700000000" });
+    query.set("hmac", createHmac("sha256", CLIENT_SECRET).update(query.toString()).digest("hex"));
+    check("OAuth HMAC verifies with SHOPIFY_API_SECRET", verifyOAuthHmac(query));
+  }
+  check("mismatch warning logged exactly once", mismatchWarnings() === 1, mismatchWarnings());
+  {
+    const warning = appLogs.find((line) => line.includes("both set but differ")) ?? "";
+    check(
+      "mismatch warning names both vars",
+      warning.includes("SHOPIFY_API_SECRET") && warning.includes("SHOPIFY_CLIENT_SECRET")
+    );
+  }
+
+  setSecrets(null, CLIENT_SECRET);
+  check("falls back to SHOPIFY_CLIENT_SECRET when SHOPIFY_API_SECRET is unset", resolveShopifyApiSecret().source === "SHOPIFY_CLIENT_SECRET");
+  res = await exchange();
+  check("token exchange works with only SHOPIFY_CLIENT_SECRET", res.status === 200 && res.data.ok === true, res.data);
+  res = await dashboard();
+  check("session-token JWT verifies with only SHOPIFY_CLIENT_SECRET", res.status === 200 && res.data.needsInstall === false, res.data);
+
+  setSecrets(`  "${CLIENT_SECRET}"\n`, CLIENT_SECRET);
+  res = await exchange();
+  check("quoted/whitespace SHOPIFY_API_SECRET is cleaned (JWT + exchange)", res.status === 200 && res.data.ok === true, res.data);
+  {
+    const ok = verifyWebhookHmacDetailed(webhookBody, sign(CLIENT_SECRET));
+    check("quoted/whitespace secret verifies webhook HMAC", ok.ok, ok);
+  }
+  check("cleaned values that match do not warn again", mismatchWarnings() === 1, mismatchWarnings());
+
+  setSecrets(null, null);
+  {
+    const none = resolveShopifyApiSecret();
+    check("no secret configured → empty secret, null source", none.secret === "" && none.source === null, none.source);
+    const missing = verifyWebhookHmacDetailed(webhookBody, sign(CLIENT_SECRET));
+    check("webhook HMAC reports missing_secret", !missing.ok && missing.reason === "missing_secret", missing);
+  }
+  setSecrets(CLIENT_SECRET, CLIENT_SECRET);
+
+  check(
+    "no app log line contains a secret value",
+    !appLogs.some((line) => line.includes(CLIENT_SECRET) || line.includes(STALE_SECRET))
   );
 }
 

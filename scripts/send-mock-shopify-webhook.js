@@ -6,7 +6,10 @@ const SHOP_WEBHOOK_URL = process.env.SHOP_WEBHOOK_URL || 'http://localhost:3000/
 const SHOP_DOMAIN = process.env.SHOP_DOMAIN || 'example-store.myshopify.com'
 const TOPIC = process.env.SHOP_TOPIC || 'carts/create'
 const BYPASS = process.env.SHOPIFY_WEBHOOK_BYPASS === 'true'
-const SHOPIFY_APP_API_SECRET = process.env.SHOPIFY_APP_API_SECRET || ''
+// Same order as resolveShopifyApiSecret in lib/shopify/config.ts.
+const SHOPIFY_API_SECRET = (process.env.SHOPIFY_API_SECRET || process.env.SHOPIFY_CLIENT_SECRET || '')
+  .replace(/['"]/g, '')
+  .trim()
 
 const samplePayload = {
   token: 'mock-token-123',
@@ -33,7 +36,7 @@ const samplePayload = {
 const body = JSON.stringify(samplePayload)
 
 function makeHmac(payload) {
-  return crypto.createHmac('sha256', SHOPIFY_APP_API_SECRET).update(payload, 'utf8').digest('base64')
+  return crypto.createHmac('sha256', SHOPIFY_API_SECRET).update(payload, 'utf8').digest('base64')
 }
 
 const headers = {

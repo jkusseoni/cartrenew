@@ -6,7 +6,7 @@ import crypto from "crypto";
 
 import { config } from "dotenv";
 
-import { getShopifyClientSecret, verifyWebhookHmac } from "@/lib/shopify/config";
+import { getShopifyApiSecret, verifyWebhookHmac } from "@/lib/shopify/config";
 
 config({ path: ".env.local", override: true });
 config({ path: ".env", override: true });
@@ -16,9 +16,9 @@ const sampleBody = JSON.stringify({
   shop_domain: "example.myshopify.com",
 });
 
-const secret = getShopifyClientSecret();
+const secret = getShopifyApiSecret();
 if (!secret) {
-  console.error("❌ SHOPIFY_CLIENT_SECRET / SHOPIFY_API_SECRET is missing locally.");
+  console.error("❌ SHOPIFY_API_SECRET / SHOPIFY_CLIENT_SECRET is missing locally.");
   process.exit(1);
 }
 

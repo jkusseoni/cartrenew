@@ -6,8 +6,8 @@
 import crypto from "crypto";
 
 import {
+  getShopifyApiSecret,
   getShopifyClientId,
-  getShopifyClientSecret,
   isValidShopDomain,
 } from "@/lib/shopify/config";
 
@@ -80,7 +80,7 @@ function audienceMatches(aud: string | string[] | undefined, clientId: string): 
 
 /** @deprecated Prefer async verifySessionToken from verifySessionToken.ts */
 export function verifyShopifySessionToken(token: string): { shop: string } | null {
-  const secret = process.env.SHOPIFY_API_SECRET || getShopifyClientSecret();
+  const secret = getShopifyApiSecret();
   const clientId =
     process.env.SHOPIFY_API_KEY ||
     process.env.NEXT_PUBLIC_SHOPIFY_API_KEY ||

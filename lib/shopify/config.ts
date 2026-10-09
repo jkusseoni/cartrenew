@@ -6,8 +6,9 @@ import crypto from "crypto";
  * Reads the canonical env names first, falling back to the legacy names so
  * existing routes keep working regardless of which set is populated:
  *   - Client ID:     NEXT_PUBLIC_SHOPIFY_CLIENT_ID  -> SHOPIFY_API_KEY -> NEXT_PUBLIC_SHOPIFY_APP_API_KEY
- *   - Client Secret: SHOPIFY_CLIENT_SECRET -> SHOPIFY_API_SECRET -> SHOPIFY_APP_API_SECRET
- *                    (webhook HMAC must use the app API secret Shopify signs with)
+ *   - Client Secret: SHOPIFY_API_SECRET -> SHOPIFY_CLIENT_SECRET (resolveShopifyApiSecret)
+ *                    One secret for token exchange, token refresh, session-token
+ *                    JWT verification, OAuth HMAC and webhook HMAC.
  *   - App URL:       SHOPIFY_APP_URL                -> NEXT_PUBLIC_APP_URL
  */
 
@@ -26,36 +27,58 @@ export function getShopifyClientId(): string {
   );
 }
 
+export type ShopifyApiSecretSource = "SHOPIFY_API_SECRET" | "SHOPIFY_CLIENT_SECRET";
+
+let warnedSecretMismatch = false;
+
+/**
+ * Single source of truth for the app's client secret (shpss_…), read at
+ * request time in a fixed order: SHOPIFY_API_SECRET, then SHOPIFY_CLIENT_SECRET.
+ * Never log the returned secret.
+ */
+export function resolveShopifyApiSecret(): {
+  secret: string;
+  source: ShopifyApiSecretSource | null;
+} {
+  const apiSecret = clean(process.env.SHOPIFY_API_SECRET);
+  const clientSecret = clean(process.env.SHOPIFY_CLIENT_SECRET);
+
+  if (apiSecret && clientSecret && apiSecret !== clientSecret && !warnedSecretMismatch) {
+    warnedSecretMismatch = true;
+    console.warn(
+      "[shopify-config] SHOPIFY_API_SECRET and SHOPIFY_CLIENT_SECRET are both set but differ; using SHOPIFY_API_SECRET. Remove or fix SHOPIFY_CLIENT_SECRET."
+    );
+  }
+
+  if (apiSecret) return { secret: apiSecret, source: "SHOPIFY_API_SECRET" };
+  if (clientSecret) return { secret: clientSecret, source: "SHOPIFY_CLIENT_SECRET" };
+  return { secret: "", source: null };
+}
+
+export function getShopifyApiSecret(): string {
+  return resolveShopifyApiSecret().secret;
+}
+
+/** Alias of getShopifyApiSecret. */
 export function getShopifyClientSecret(): string {
-  return clean(
-    process.env.SHOPIFY_CLIENT_SECRET ||
-      process.env.SHOPIFY_API_SECRET ||
-      process.env.SHOPIFY_APP_API_SECRET
-  );
+  return getShopifyApiSecret();
 }
 
 /**
  * Secret Shopify uses to sign webhook HMAC (X-Shopify-Hmac-SHA256).
- * Prefer SHOPIFY_API_SECRET explicitly — do not use SHOPIFY_WEBHOOK_SECRET.
+ * Alias of getShopifyApiSecret — do not use SHOPIFY_WEBHOOK_SECRET.
  */
 export function getShopifyWebhookSecret(): string {
-  return clean(
-    process.env.SHOPIFY_API_SECRET ||
-      process.env.SHOPIFY_CLIENT_SECRET ||
-      process.env.SHOPIFY_APP_API_SECRET
-  );
+  return getShopifyApiSecret();
 }
 
-/** Which env key supplied the webhook HMAC secret (never logs the value). */
-export function getShopifyWebhookSecretSource(): string | null {
-  if (clean(process.env.SHOPIFY_API_SECRET)) return "SHOPIFY_API_SECRET";
-  if (clean(process.env.SHOPIFY_CLIENT_SECRET)) return "SHOPIFY_CLIENT_SECRET";
-  if (clean(process.env.SHOPIFY_APP_API_SECRET)) return "SHOPIFY_APP_API_SECRET";
-  return null;
+/** Which env key supplied the secret (never logs the value). */
+export function getShopifyWebhookSecretSource(): ShopifyApiSecretSource | null {
+  return resolveShopifyApiSecret().source;
 }
 
 /** @deprecated Use getShopifyWebhookSecretSource for webhook HMAC diagnostics. */
-export function getShopifyClientSecretSource(): string | null {
+export function getShopifyClientSecretSource(): ShopifyApiSecretSource | null {
   return getShopifyWebhookSecretSource();
 }
 
@@ -83,7 +106,7 @@ export function isValidShopDomain(shop: string | null | undefined): shop is stri
  */
 export function verifyOAuthHmac(
   query: URLSearchParams,
-  secret: string = getShopifyClientSecret()
+  secret: string = getShopifyApiSecret()
 ): boolean {
   const hmac = query.get("hmac") || "";
   if (!secret || !hmac) return false;
@@ -154,7 +177,7 @@ export function verifyWebhookHmac(
 }
 
 export function hasShopifyClientSecret(): boolean {
-  return getShopifyClientSecret().length > 0;
+  return getShopifyApiSecret().length > 0;
 }
 
 function timingSafeEqual(a: string, b: string, encoding: "hex" | "base64"): boolean {
