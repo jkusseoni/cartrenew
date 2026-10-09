@@ -2,6 +2,7 @@ import * as Sentry from "@sentry/nextjs";
 
 import { supabaseAdmin } from "@/lib/supabase";
 import {
+  getShopifyApiVersion,
   getShopifyClientId,
   getShopifyClientSecret,
 } from "@/lib/shopify/config";
@@ -14,7 +15,7 @@ export type ShopifyInstallResult =
       shop: string;
       storeId: string;
       accessToken: string;
-      /** Row existed but its token had been cleared by app/uninstalled. */
+      /** Row existed but its prior token was absent or rejected by Shopify. */
       reinstalled: boolean;
     }
   | { ok: false; status: number; error: string };
@@ -39,6 +40,53 @@ export async function installShopifyStoreFromSessionToken(
       status: 500,
       error: "Shopify app credentials are not configured",
     };
+  }
+
+  // Preserve existing clerk_user_id (e.g. standalone Clerk login). Only set the
+  // synthetic webhook_* value when inserting a brand-new store row.
+  const { data: existingStore, error: lookupError } = await supabaseAdmin
+    .from("stores")
+    .select("id, shopify_access_token")
+    .eq("shopify_domain", shop)
+    .maybeSingle();
+
+  if (lookupError) {
+    console.error("[token-exchange] Failed to look up store", lookupError);
+    return { ok: false, status: 500, error: "Failed to save store" };
+  }
+
+  let existingTokenValidity:
+    | "valid"
+    | "invalid"
+    | "indeterminate"
+    | "not_present" = existingStore?.shopify_access_token
+      ? "indeterminate"
+      : "not_present";
+  if (existingStore?.shopify_access_token) {
+    try {
+      const validationRes = await fetch(
+        `https://${shop}/admin/api/${getShopifyApiVersion()}/graphql.json`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Shopify-Access-Token": existingStore.shopify_access_token,
+          },
+          body: JSON.stringify({
+            query: "query ValidateOfflineAccessToken { shop { id } }",
+          }),
+        }
+      );
+      // Only 401 proves revocation. Preserve billing on throttling, permission,
+      // Shopify outages, and network errors rather than risking a false reset.
+      existingTokenValidity = validationRes.status === 401
+        ? "invalid"
+        : validationRes.ok
+          ? "valid"
+          : "indeterminate";
+    } catch {
+      existingTokenValidity = "indeterminate";
+    }
   }
 
   const tokenRes = await fetch(`https://${shop}/admin/oauth/access_token`, {
@@ -85,24 +133,13 @@ export async function installShopifyStoreFromSessionToken(
     });
   });
 
-  // Preserve existing clerk_user_id (e.g. standalone Clerk login). Only set the
-  // synthetic webhook_* value when inserting a brand-new store row.
-  const { data: existingStore, error: lookupError } = await supabaseAdmin
-    .from("stores")
-    .select("id, shopify_access_token")
-    .eq("shopify_domain", shop)
-    .maybeSingle();
-
-  if (lookupError) {
-    console.error("[token-exchange] Failed to look up store", lookupError);
-    return { ok: false, status: 500, error: "Failed to save store" };
-  }
-
   let storeId: string | undefined;
   let reinstalled = false;
 
   if (existingStore?.id) {
-    reinstalled = !existingStore.shopify_access_token;
+    reinstalled =
+      !existingStore.shopify_access_token ||
+      existingTokenValidity === "invalid";
     // app/uninstalled cancels the old subscription on Shopify's side, so its
     // plan/subscription id must not carry over into the new install.
     const updates: Record<string, unknown> = reinstalled
