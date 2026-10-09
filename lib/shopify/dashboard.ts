@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase";
+import { hasUsableShopifyToken } from "@/lib/shopify/access-token";
 
 export type ShopifyCartRow = {
   id: string;
@@ -32,17 +33,35 @@ export type ShopifyDashboardData = {
 
 type ShopifyStoreRowWithToken = ShopifyStoreRow & {
   shopify_access_token?: string | null;
+  shopify_access_token_expires_at?: string | null;
+  shopify_refresh_token?: string | null;
+  shopify_refresh_token_expires_at?: string | null;
 };
 
-const STORE_COLUMNS = "id, shopify_domain, billing_plan, billing_status, shopify_access_token";
+const STORE_COLUMNS =
+  "id, shopify_domain, billing_plan, billing_status, shopify_access_token, shopify_access_token_expires_at, shopify_refresh_token, shopify_refresh_token_expires_at";
 
-/** Never let the access token leave the server — callers only get `connected`. */
+/** Never let tokens leave the server — callers only get `connected`. */
 function withoutAccessToken(row: ShopifyStoreRowWithToken): {
   store: ShopifyStoreRow;
   connected: boolean;
 } {
-  const { shopify_access_token, ...store } = row;
-  return { store, connected: Boolean(shopify_access_token) };
+  const {
+    shopify_access_token,
+    shopify_access_token_expires_at,
+    shopify_refresh_token,
+    shopify_refresh_token_expires_at,
+    ...store
+  } = row;
+  const connected = hasUsableShopifyToken({
+    id: store.id,
+    shopify_domain: store.shopify_domain,
+    shopify_access_token: shopify_access_token ?? null,
+    shopify_access_token_expires_at: shopify_access_token_expires_at ?? null,
+    shopify_refresh_token: shopify_refresh_token ?? null,
+    shopify_refresh_token_expires_at: shopify_refresh_token_expires_at ?? null,
+  });
+  return { store, connected };
 }
 
 function describeSupabaseError(error: unknown): string {

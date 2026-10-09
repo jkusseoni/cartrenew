@@ -63,8 +63,8 @@ export async function GET(request: NextRequest) {
     const metrics = dashboard.metrics ?? EMPTY_METRICS;
     const carts = Array.isArray(dashboard.carts) ? dashboard.carts : [];
 
-    // No row (fresh install) or no token (reinstall after app/uninstalled):
-    // the client must run token exchange before billing or data calls.
+    // No row (fresh install) or no usable token (reinstall, legacy non-expiring
+    // token, or dead refresh token): the client must run token exchange first.
     if ((!dashboard.store || !dashboard.connected) && !isDev) {
       return NextResponse.json(
         {

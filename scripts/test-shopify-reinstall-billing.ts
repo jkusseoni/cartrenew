@@ -1,6 +1,7 @@
 /**
  * Regression: install → uninstall (token cleared) → reinstall → plan selection
- * must never fail with "Store is not connected".
+ * must never fail with "Store is not connected", and expiring offline tokens
+ * must be stored, refreshed (with rotation) and recovered when refresh fails.
  *
  * Runs the real route handlers in-process. Global fetch is stubbed with an
  * in-memory Supabase `stores` table and a fake Shopify Admin API, so nothing
@@ -40,9 +41,16 @@ const stores: Row[] = [];
 const shopify = {
   partnerDevelopment: true,
   planLookupFails: false,
-  validToken: null as string | null,
+  /** Simulate a misconfigured client secret on the refresh endpoint. */
+  refreshRejectsClient: false,
+  currentAccess: null as string | null,
+  currentRefresh: null as string | null,
+  expiredAccess: new Set<string>(),
   issued: 0,
-  subscriptions: [] as Array<{ id: string; test: unknown; accessToken: string }>,
+  exchanges: [] as Array<{ expiring: string | null }>,
+  refreshCalls: 0,
+  legacyTokenAdminCalls: 0,
+  subscriptions: [] as Array<{ id: string; test: unknown; accessToken: string | null; status: string }>,
 };
 
 function json(body: unknown, status = 200): Response {
@@ -62,12 +70,30 @@ function project(row: Row, select: string | null): Row {
   );
 }
 
+function matchesCondition(row: Row, key: string, expr: string): boolean {
+  const dot = expr.indexOf(".");
+  const op = expr.slice(0, dot);
+  const value = expr.slice(dot + 1);
+  const current = row[key];
+  if (op === "eq") return String(current ?? "") === value;
+  if (op === "is") return value === "null" ? current == null : String(current) === value;
+  if (op === "lt") return current != null && Date.parse(String(current)) < Date.parse(value);
+  throw new Error(`fake supabase: unsupported filter ${key}=${expr}`);
+}
+
 function matchesFilters(row: Row, params: URLSearchParams): boolean {
   for (const [key, value] of params) {
     if (["select", "on_conflict", "limit", "order"].includes(key)) continue;
-    if (value.startsWith("eq.")) {
-      if (String(row[key] ?? "") !== value.slice(3)) return false;
+    if (key === "or") {
+      const conditions = value.replace(/^\(|\)$/g, "").split(",");
+      const anyMatch = conditions.some((condition) => {
+        const dot = condition.indexOf(".");
+        return matchesCondition(row, condition.slice(0, dot), condition.slice(dot + 1));
+      });
+      if (!anyMatch) return false;
+      continue;
     }
+    if (!matchesCondition(row, key, value)) return false;
   }
   return true;
 }
@@ -115,23 +141,65 @@ function fakeSupabase(url: URL, method: string, headers: Headers, body: string |
   return json({ message: `unsupported ${method}` }, 405);
 }
 
-function fakeShopify(url: URL, method: string, headers: Headers, body: string | null): Response {
+function issueTokens(expiring: boolean) {
+  shopify.issued += 1;
+  shopify.currentAccess = expiring ? `shpat_test_${shopify.issued}` : `shpat_legacy_${shopify.issued}`;
+  shopify.currentRefresh = expiring ? `shprt_test_${shopify.issued}` : null;
+  return expiring
+    ? {
+        access_token: shopify.currentAccess,
+        expires_in: 3600,
+        refresh_token: shopify.currentRefresh,
+        refresh_token_expires_in: 7776000,
+        scope: "read_orders",
+      }
+    : { access_token: shopify.currentAccess, scope: "read_orders" };
+}
+
+async function fakeShopify(url: URL, method: string, headers: Headers, body: string | null): Promise<Response> {
   if (url.pathname === "/admin/oauth/access_token" && method === "POST") {
     const form = new URLSearchParams(body ?? "");
+    if (form.get("client_id") !== CLIENT_ID || form.get("client_secret") !== CLIENT_SECRET) {
+      return json({ error: "invalid_request", error_description: "Missing or invalid client secret" }, 400);
+    }
+
+    if (form.get("grant_type") === "refresh_token") {
+      shopify.refreshCalls += 1;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      if (shopify.refreshRejectsClient) {
+        return json({ error: "invalid_request", error_description: "Missing or invalid client secret" }, 400);
+      }
+      if (!form.get("refresh_token") || form.get("refresh_token") !== shopify.currentRefresh) {
+        return json(
+          { error: "invalid_request", error_description: "This request requires an active refresh_token" },
+          401
+        );
+      }
+      return json(issueTokens(true));
+    }
+
     if (
-      form.get("client_id") !== CLIENT_ID ||
-      form.get("client_secret") !== CLIENT_SECRET ||
       form.get("grant_type") !== "urn:ietf:params:oauth:grant-type:token-exchange" ||
       !form.get("subject_token")
     ) {
       return json({ error: "invalid_request" }, 400);
     }
-    shopify.issued += 1;
-    shopify.validToken = `shpat_test_${shopify.issued}`;
-    return json({ access_token: shopify.validToken, scope: "read_orders" });
+    shopify.exchanges.push({ expiring: form.get("expiring") });
+    return json(issueTokens(form.get("expiring") === "1"));
   }
 
-  if (headers.get("x-shopify-access-token") !== shopify.validToken || !shopify.validToken) {
+  const presented = headers.get("x-shopify-access-token");
+  if (presented?.startsWith("shpat_legacy_")) {
+    shopify.legacyTokenAdminCalls += 1;
+    return json(
+      {
+        errors:
+          "Non-expiring access tokens are no longer accepted for the Admin API. Start using expiring offline tokens",
+      },
+      403
+    );
+  }
+  if (!presented || presented !== shopify.currentAccess || shopify.expiredAccess.has(presented)) {
     return json({ errors: "[API] Invalid API key or access token" }, 401);
   }
 
@@ -152,13 +220,25 @@ function fakeShopify(url: URL, method: string, headers: Headers, body: string | 
     }
     if (query.includes("appSubscriptionCreate")) {
       const id = `gid://shopify/AppSubscription/${shopify.subscriptions.length + 1}`;
-      shopify.subscriptions.push({ id, test: variables?.test, accessToken: shopify.validToken });
+      shopify.subscriptions.push({ id, test: variables?.test, accessToken: presented, status: "PENDING" });
       return json({
         data: {
           appSubscriptionCreate: {
             appSubscription: { id, status: "PENDING" },
             confirmationUrl: `https://${SHOP}/admin/charges/${shopify.subscriptions.length}/confirm`,
             userErrors: [],
+          },
+        },
+      });
+    }
+    if (query.includes("activeSubscriptions")) {
+      const latest = shopify.subscriptions.at(-1);
+      return json({
+        data: {
+          currentAppInstallation: {
+            activeSubscriptions: latest
+              ? [{ id: latest.id, name: "CartRenew Growth", status: "ACTIVE", currentPeriodEnd: null, trialDays: 14 }]
+              : [],
           },
         },
       });
@@ -198,8 +278,9 @@ for (const level of ["log", "info", "warn", "error"] as const) {
 }
 
 const failures: string[] = [];
+const redact = (text: string) => text.replace(/shp(at|rt)_[A-Za-z0-9_]+/g, "shp$1_***");
 function out(line: string) {
-  process.stdout.write(`${line}\n`);
+  process.stdout.write(`${redact(line)}\n`);
 }
 function check(label: string, ok: boolean, detail?: unknown) {
   out(`  ${ok ? "PASS" : "FAIL"}  ${label}${!ok && detail !== undefined ? `  → ${JSON.stringify(detail)}` : ""}`);
@@ -222,34 +303,53 @@ async function sessionToken(): Promise<string> {
     .sign(new TextEncoder().encode(CLIENT_SECRET));
 }
 
-function storeRow(): Row | undefined {
-  return stores.find((row) => row.shopify_domain === SHOP);
+function storeRow(): Row {
+  const row = stores.find((r) => r.shopify_domain === SHOP);
+  if (!row) throw new Error("store row missing");
+  return row;
 }
 
 /** Mirrors handleAppUninstalled in app/api/webhooks/shopify/route.ts. */
 function simulateUninstall() {
-  const row = storeRow();
-  if (row) Object.assign(row, { shopify_access_token: null, billing_status: "cancelled" });
-  shopify.validToken = null;
+  Object.assign(storeRow(), {
+    shopify_access_token: null,
+    shopify_access_token_expires_at: null,
+    shopify_refresh_token: null,
+    shopify_refresh_token_expires_at: null,
+    shopify_token_refresh_locked_until: null,
+    billing_status: "cancelled",
+  });
+  shopify.currentAccess = null;
+  shopify.currentRefresh = null;
 }
+
+/** Push the stored access token to `msFromNow` (negative = already expired at Shopify). */
+function ageAccessToken(msFromNow: number) {
+  const row = storeRow();
+  row.shopify_access_token_expires_at = new Date(Date.now() + msFromNow).toISOString();
+  if (msFromNow <= 0) shopify.expiredAccess.add(String(row.shopify_access_token));
+}
+
+const leaksToken = (text: string) => /shpat_|shprt_/.test(text);
 
 async function main() {
   const { NextRequest } = await import("next/server");
   const dashboardRoute = await import("../app/api/app/dashboard/route");
   const tokenExchangeRoute = await import("../app/api/auth/token-exchange/route");
   const subscribeRoute = await import("../app/api/app/billing/subscribe/route");
+  const callbackRoute = await import("../app/api/shopify/billing/callback/route");
+  const { getValidShopifyAccessToken } = await import("../lib/shopify/access-token");
 
   const call = async (
     handler: (req: InstanceType<typeof NextRequest>) => Promise<Response>,
     pathname: string,
-    init: { method?: string; body?: unknown } = {}
+    init: { method?: string; body?: unknown; auth?: boolean } = {}
   ) => {
+    const headers: Record<string, string> = { "content-type": "application/json" };
+    if (init.auth !== false) headers.authorization = `Bearer ${await sessionToken()}`;
     const req = new NextRequest(`https://app.test${pathname}`, {
       method: init.method ?? "GET",
-      headers: {
-        authorization: `Bearer ${await sessionToken()}`,
-        "content-type": "application/json",
-      },
+      headers,
       body: init.body === undefined ? undefined : JSON.stringify(init.body),
     });
     const res = await handler(req);
@@ -260,7 +360,7 @@ async function main() {
     } catch {
       data = { raw: text };
     }
-    return { status: res.status, data, text };
+    return { status: res.status, data, text, location: res.headers.get("location") };
   };
 
   const dashboard = () => call(dashboardRoute.GET, `/api/app/dashboard?shop=${SHOP}`);
@@ -270,28 +370,126 @@ async function main() {
       method: "POST",
       body: { planId, host: "YWRtaW4uc2hvcGlmeS5jb20vc3RvcmUvdGVzdA", shop: SHOP },
     });
+  const billingCallback = () =>
+    call(callbackRoute.GET, `/api/shopify/billing/callback?shop=${SHOP}&plan=growth&charge_id=1`, { auth: false });
 
-  out("1. Fresh install");
+  out("1. Fresh install stores an expiring offline token");
   let res = await dashboard();
   check("dashboard reports needsInstall before any store row exists", res.data.needsInstall === true, res.data);
   res = await exchange();
   check("token exchange creates the store row", res.status === 200 && res.data.ok === true, res.data);
+  check("token exchange requested expiring=1", shopify.exchanges.at(-1)?.expiring === "1", shopify.exchanges.at(-1));
+  check("token-exchange response never contains a token", !leaksToken(res.text));
   await settle();
-  check("store row has an offline token", Boolean(storeRow()?.shopify_access_token));
+  {
+    const row = storeRow();
+    const expiresIn = Date.parse(String(row.shopify_access_token_expires_at)) - Date.now();
+    const refreshExpiresIn = Date.parse(String(row.shopify_refresh_token_expires_at)) - Date.now();
+    check("access token stored", row.shopify_access_token === shopify.currentAccess);
+    check("access token expiry ~1 hour", expiresIn > 3500_000 && expiresIn <= 3600_000, row.shopify_access_token_expires_at);
+    check("refresh token stored", row.shopify_refresh_token === shopify.currentRefresh);
+    check("refresh token expiry ~90 days", refreshExpiresIn > 89 * 86400_000, row.shopify_refresh_token_expires_at);
+  }
   res = await dashboard();
   check("dashboard is connected after install", res.status === 200 && res.data.needsInstall === false, res.data);
+  check("dashboard response never contains a token", !leaksToken(res.text));
   res = await subscribe("starter");
   check("plan selection returns a confirmation URL", res.status === 200 && typeof res.data.confirmationUrl === "string", res.data);
-  Object.assign(storeRow() ?? {}, { billing_status: "active" });
+  Object.assign(storeRow(), { billing_status: "active" });
 
-  out("2. Uninstall (app/uninstalled clears the token)");
+  out("2. Expiring token is refreshed and both tokens rotate");
+  {
+    const before = { access: storeRow().shopify_access_token, refresh: storeRow().shopify_refresh_token };
+    const refreshesBefore = shopify.refreshCalls;
+    ageAccessToken(60_000);
+    res = await subscribe("growth");
+    check("plan selection inside the 5-minute window succeeds", res.status === 200, res.data);
+    check("exactly one refresh call", shopify.refreshCalls === refreshesBefore + 1);
+    check("access token rotated", storeRow().shopify_access_token !== before.access && storeRow().shopify_access_token === shopify.currentAccess);
+    check("refresh token rotated", storeRow().shopify_refresh_token !== before.refresh && storeRow().shopify_refresh_token === shopify.currentRefresh);
+    check("subscription used the refreshed token", shopify.subscriptions.at(-1)?.accessToken === shopify.currentAccess);
+    check("refresh lock released", storeRow().shopify_token_refresh_locked_until == null, storeRow().shopify_token_refresh_locked_until);
+  }
+  {
+    const refreshesBefore = shopify.refreshCalls;
+    ageAccessToken(-1_000);
+    res = await billingCallback();
+    check("billing callback refreshes an expired token", shopify.refreshCalls === refreshesBefore + 1);
+    check("billing callback synced the subscription", storeRow().billing_status === "active", storeRow().billing_status);
+  }
+  {
+    const refreshesBefore = shopify.refreshCalls;
+    ageAccessToken(-1_000);
+    const results = await Promise.all([1, 2, 3].map(() => getValidShopifyAccessToken(String(storeRow().id))));
+    check("3 concurrent callers all get a token", results.every((r) => r.ok), results.map((r) => (r.ok ? "ok" : r.reason)));
+    check("concurrent callers trigger only one refresh", shopify.refreshCalls === refreshesBefore + 1, shopify.refreshCalls - refreshesBefore);
+    check(
+      "concurrent callers all receive the rotated token",
+      results.every((r) => r.ok && r.accessToken === shopify.currentAccess)
+    );
+  }
+
+  out("3. Misconfigured client secret keeps the refresh token");
+  {
+    const before = storeRow().shopify_refresh_token;
+    shopify.refreshRejectsClient = true;
+    ageAccessToken(-1_000);
+    const result = await getValidShopifyAccessToken(String(storeRow().id));
+    shopify.refreshRejectsClient = false;
+    check("400 from refresh reports unavailable", !result.ok && result.reason === "unavailable", result);
+    check("refresh token kept for a later retry", storeRow().shopify_refresh_token === before);
+    const retry = await getValidShopifyAccessToken(String(storeRow().id));
+    check("retry with the same refresh token succeeds", retry.ok, retry);
+  }
+
+  out("4. Refresh failure (401) → needsInstall → recovered by token exchange");
+  {
+    shopify.currentRefresh = "shprt_revoked";
+    ageAccessToken(-1_000);
+    const result = await getValidShopifyAccessToken(String(storeRow().id));
+    check("refresh rejected → refresh_failed", !result.ok && result.reason === "refresh_failed", result);
+    check(
+      "tokens and expiries cleared",
+      storeRow().shopify_access_token == null &&
+        storeRow().shopify_refresh_token == null &&
+        storeRow().shopify_access_token_expires_at == null &&
+        storeRow().shopify_refresh_token_expires_at == null,
+      storeRow()
+    );
+    res = await dashboard();
+    check("dashboard reports needsInstall", res.data.needsInstall === true, res.data);
+    res = await subscribe("starter");
+    check('plan selection recovers via token exchange (no "Store is not connected")', res.status === 200 && !/not connected/i.test(res.text), res.data);
+    check("store has a fresh expiring token again", storeRow().shopify_access_token === shopify.currentAccess && storeRow().shopify_refresh_token === shopify.currentRefresh);
+  }
+
+  out("5. Legacy non-expiring token (expires_at null)");
+  {
+    Object.assign(storeRow(), {
+      shopify_access_token: "shpat_legacy_old",
+      shopify_access_token_expires_at: null,
+      shopify_refresh_token: null,
+      shopify_refresh_token_expires_at: null,
+    });
+    const legacyCallsBefore = shopify.legacyTokenAdminCalls;
+    res = await dashboard();
+    check("dashboard reports needsInstall", res.data.needsInstall === true, res.data);
+    const result = await getValidShopifyAccessToken(String(storeRow().id));
+    check("helper reports needs_token_exchange (no error thrown)", !result.ok && result.reason === "needs_token_exchange", result);
+    res = await subscribe("growth");
+    check("plan selection succeeds via token exchange", res.status === 200, res.data);
+    check("legacy token never sent to the Admin API", shopify.legacyTokenAdminCalls === legacyCallsBefore);
+    check("legacy token replaced by an expiring one", storeRow().shopify_access_token_expires_at != null && storeRow().shopify_refresh_token != null);
+  }
+
+  out("6. Uninstall clears every token column");
   simulateUninstall();
-  check("token cleared, row kept", storeRow()?.shopify_access_token === null && storeRow()?.billing_status === "cancelled");
+  check("tokens cleared, row kept", storeRow().shopify_access_token === null && storeRow().billing_status === "cancelled");
 
-  out("3. Reinstall, worst case: plan picked before the client runs token exchange");
+  out("7. Reinstall, worst case: plan picked before the client runs token exchange");
   res = await dashboard();
   check("dashboard reports needsInstall when the row has no token", res.data.needsInstall === true, res.data);
-  check("dashboard response never contains an access token", !/shpat_/.test(res.text), res.text);
+  check("dashboard response never contains a token", !leaksToken(res.text));
   const exchangesBefore = shopify.issued;
   res = await subscribe("growth");
   check(
@@ -302,18 +500,18 @@ async function main() {
   check("subscribe ran the shared token exchange itself", shopify.issued === exchangesBefore + 1);
   check(
     "subscription was created with the new token",
-    shopify.subscriptions.at(-1)?.accessToken === shopify.validToken && storeRow()?.shopify_access_token === shopify.validToken
+    shopify.subscriptions.at(-1)?.accessToken === shopify.currentAccess && storeRow().shopify_access_token === shopify.currentAccess
   );
   check(
     "store now tracks the new plan as pending",
-    storeRow()?.billing_plan === "growth" && storeRow()?.billing_status === "pending" &&
-      storeRow()?.shopify_subscription_id === shopify.subscriptions.at(-1)?.id,
+    storeRow().billing_plan === "growth" && storeRow().billing_status === "pending" &&
+      storeRow().shopify_subscription_id === shopify.subscriptions.at(-1)?.id,
     storeRow()
   );
   await settle();
 
-  out("4. Uninstall + reinstall, normal client path (dashboard → token exchange → plan)");
-  Object.assign(storeRow() ?? {}, { billing_status: "active" });
+  out("8. Uninstall + reinstall, normal client path (dashboard → token exchange → plan)");
+  Object.assign(storeRow(), { billing_status: "active" });
   simulateUninstall();
   res = await dashboard();
   check("dashboard reports needsInstall", res.data.needsInstall === true, res.data);
@@ -321,10 +519,11 @@ async function main() {
   check("token exchange succeeds on reinstall", res.status === 200 && res.data.ok === true, res.data);
   check(
     "stale billing from the old install is reset",
-    storeRow()?.billing_plan === null && storeRow()?.shopify_subscription_id === null &&
-      storeRow()?.billing_status === "pending",
+    storeRow().billing_plan === null && storeRow().shopify_subscription_id === null &&
+      storeRow().billing_status === "pending",
     storeRow()
   );
+  check("reinstall stored an expiring token + refresh token", storeRow().shopify_access_token_expires_at != null && storeRow().shopify_refresh_token === shopify.currentRefresh);
   await settle();
   res = await dashboard();
   check("dashboard is connected again", res.data.needsInstall === false, res.data);
@@ -334,7 +533,7 @@ async function main() {
     body: res.data,
   });
 
-  out("5. Test-charge mode in production (SHOPIFY_BILLING_TEST unset)");
+  out("9. Test-charge mode in production (SHOPIFY_BILLING_TEST unset)");
   check("development store gets test: true", shopify.subscriptions.at(-1)?.test === true, shopify.subscriptions.at(-1));
   shopify.partnerDevelopment = false;
   res = await subscribe("starter");
@@ -343,7 +542,7 @@ async function main() {
   res = await subscribe("starter");
   check("plan lookup failure falls back to test: false", res.status === 200 && shopify.subscriptions.at(-1)?.test === false, shopify.subscriptions.at(-1));
 
-  out("6. Legacy unauthenticated route");
+  out("10. Legacy unauthenticated route");
   check(
     "app/api/shopify/billing/subscribe/route.ts is removed",
     !existsSync(path.join(process.cwd(), "app/api/shopify/billing/subscribe/route.ts"))
