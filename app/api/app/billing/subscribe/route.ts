@@ -10,6 +10,7 @@ import {
   isShopifyBillingPlanId,
   type ShopifyBillingPlanId,
 } from "@/lib/shopify/billing";
+import { installShopifyStoreFromSessionToken } from "@/lib/shopify/token-exchange";
 import {
   getBearerToken,
   verifySessionToken,
@@ -80,16 +81,34 @@ export async function POST(req: NextRequest) {
     }
 
     const row = store as StoreAuthRow | null;
-    if (!row?.shopify_access_token) {
-      return NextResponse.json(
-        { error: "Store is not connected. Complete Shopify OAuth first." },
-        { status: 404 }
-      );
+    let storeId = row?.id;
+    let accessToken = row?.shopify_access_token;
+
+    // Fresh install or reinstall (app/uninstalled cleared the token): finish
+    // the managed install with this request's session token instead of failing.
+    if (!storeId || !accessToken) {
+      const installed = await installShopifyStoreFromSessionToken(shop, token);
+      if (!installed.ok) {
+        console.error(
+          "[api/app/billing/subscribe] install before billing failed:",
+          shop,
+          installed.error
+        );
+        return NextResponse.json(
+          {
+            error:
+              "We couldn't finish connecting your store to CartRenew. Reload the app and try again.",
+          },
+          { status: 503 }
+        );
+      }
+      storeId = installed.storeId;
+      accessToken = installed.accessToken;
     }
 
     const { confirmationUrl, subscriptionId } = await createAppSubscription({
       shop,
-      accessToken: row.shopify_access_token,
+      accessToken,
       planId: planId as ShopifyBillingPlanId,
       host,
     });
@@ -101,7 +120,7 @@ export async function POST(req: NextRequest) {
         billing_status: "pending",
         shopify_subscription_id: subscriptionId,
       })
-      .eq("id", row.id);
+      .eq("id", storeId);
 
     return NextResponse.json({
       confirmationUrl,
@@ -109,8 +128,11 @@ export async function POST(req: NextRequest) {
       planId,
       shop,
     });
-  } catch {
-    console.error("[api/app/billing/subscribe] request failed");
+  } catch (error) {
+    console.error(
+      "[api/app/billing/subscribe] request failed:",
+      error instanceof Error ? error.message : error
+    );
     return NextResponse.json({ error: "Billing subscribe failed" }, { status: 502 });
   }
 }

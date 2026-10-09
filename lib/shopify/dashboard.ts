@@ -24,9 +24,26 @@ export type ShopifyDashboardMetrics = {
 
 export type ShopifyDashboardData = {
   store: ShopifyStoreRow | null;
+  /** Store row has an offline access token (false after app/uninstalled). */
+  connected: boolean;
   carts: ShopifyCartRow[];
   metrics: ShopifyDashboardMetrics;
 };
+
+type ShopifyStoreRowWithToken = ShopifyStoreRow & {
+  shopify_access_token?: string | null;
+};
+
+const STORE_COLUMNS = "id, shopify_domain, billing_plan, billing_status, shopify_access_token";
+
+/** Never let the access token leave the server — callers only get `connected`. */
+function withoutAccessToken(row: ShopifyStoreRowWithToken): {
+  store: ShopifyStoreRow;
+  connected: boolean;
+} {
+  const { shopify_access_token, ...store } = row;
+  return { store, connected: Boolean(shopify_access_token) };
+}
 
 function describeSupabaseError(error: unknown): string {
   if (!error) return "";
@@ -40,7 +57,7 @@ function describeSupabaseError(error: unknown): string {
   return String(error);
 }
 
-async function ensureDevStore(shop: string): Promise<ShopifyStoreRow | null> {
+async function ensureDevStore(shop: string): Promise<ShopifyStoreRowWithToken | null> {
   const { data, error } = await supabaseAdmin
     .from("stores")
     .upsert(
@@ -51,7 +68,7 @@ async function ensureDevStore(shop: string): Promise<ShopifyStoreRow | null> {
       },
       { onConflict: "shopify_domain" }
     )
-    .select("id, shopify_domain, billing_plan, billing_status")
+    .select(STORE_COLUMNS)
     .maybeSingle();
 
   if (error) {
@@ -62,7 +79,7 @@ async function ensureDevStore(shop: string): Promise<ShopifyStoreRow | null> {
     return null;
   }
 
-  return (data as ShopifyStoreRow | null) ?? null;
+  return (data as ShopifyStoreRowWithToken | null) ?? null;
 }
 
 export async function loadShopifyStoreDashboard(
@@ -71,6 +88,7 @@ export async function loadShopifyStoreDashboard(
 ): Promise<ShopifyDashboardData> {
   const empty: ShopifyDashboardData = {
     store: null,
+    connected: false,
     carts: [],
     metrics: { trackedCarts: 0, recovered: 0, recoveredValue: 0 },
   };
@@ -78,7 +96,7 @@ export async function loadShopifyStoreDashboard(
   try {
     const { data: storeRow, error: storeError } = await supabaseAdmin
       .from("stores")
-      .select("id, shopify_domain, billing_plan, billing_status")
+      .select(STORE_COLUMNS)
       .eq("shopify_domain", shop)
       .maybeSingle();
 
@@ -90,15 +108,17 @@ export async function loadShopifyStoreDashboard(
       return empty;
     }
 
-    let store = (storeRow as ShopifyStoreRow | null) ?? null;
+    let row = (storeRow as ShopifyStoreRowWithToken | null) ?? null;
 
-    if (!store && options?.autoProvision) {
-      store = await ensureDevStore(shop);
+    if (!row && options?.autoProvision) {
+      row = await ensureDevStore(shop);
     }
 
-    if (!store) {
+    if (!row) {
       return empty;
     }
+
+    const { store, connected } = withoutAccessToken(row);
 
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - 30);
@@ -168,6 +188,7 @@ export async function loadShopifyStoreDashboard(
         ...store,
         shopify_domain: store.shopify_domain || shop,
       },
+      connected,
       carts,
       metrics,
     };

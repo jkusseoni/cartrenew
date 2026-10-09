@@ -357,6 +357,7 @@ export default function EmbeddedAppHomePage() {
                         id: json.merchantId ?? "pending",
                         shopify_domain: json.shop || shopParam || "",
                       },
+                      degraded: true,
                     },
                     shopParam
                   )
@@ -402,6 +403,7 @@ export default function EmbeddedAppHomePage() {
                     shopify_domain: json.shop || shopParam || "",
                   },
                   needsInstall: false,
+                  degraded: true,
                 },
                 shopParam
               )
@@ -489,6 +491,8 @@ export default function EmbeddedAppHomePage() {
     typeof window !== "undefined"
       ? new URLSearchParams(window.location.search).get("host") ?? undefined
       : undefined;
+  // Synthetic fallback dashboards mean the install/token is not confirmed yet.
+  const setupPending = Boolean(data.degraded) || !data.store || store.id === "pending";
 
   return (
     <Shell>
@@ -510,6 +514,8 @@ export default function EmbeddedAppHomePage() {
           host={host}
           currentPlan={store.billing_plan}
           billingStatus={store.billing_status}
+          setupPending={setupPending}
+          onRetrySetup={retrySetup}
         />
       ) : null}
 
