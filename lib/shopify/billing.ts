@@ -116,6 +116,25 @@ const APP_SUBSCRIPTION_CREATE = `
   }
 `;
 
+type ShopPlanPayload = {
+  data?: {
+    shop?: {
+      plan?: { partnerDevelopment?: boolean | null } | null;
+    } | null;
+  };
+  errors?: GraphQlError[];
+};
+
+const SHOP_PLAN_QUERY = `
+  query ShopPlan {
+    shop {
+      plan {
+        partnerDevelopment
+      }
+    }
+  }
+`;
+
 const ACTIVE_SUBSCRIPTIONS_QUERY = `
   query ActiveSubscriptions {
     currentAppInstallation {
@@ -158,6 +177,46 @@ export function isShopifyBillingPlanId(value: string): value is ShopifyBillingPl
   return value in SHOPIFY_BILLING_PLANS;
 }
 
+/** Partner development stores (incl. App Review stores) — they cannot pay real app charges. */
+export async function isPartnerDevelopmentStore(
+  shop: string,
+  accessToken: string
+): Promise<boolean> {
+  const payload = await shopifyAdminGraphql<ShopPlanPayload>(
+    shop,
+    accessToken,
+    SHOP_PLAN_QUERY
+  );
+
+  if (payload.errors?.length) {
+    throw new Error(payload.errors.map((e) => e.message).join("; "));
+  }
+
+  return payload.data?.shop?.plan?.partnerDevelopment === true;
+}
+
+/**
+ * Test charges when SHOPIFY_BILLING_TEST=true, outside production, or on a
+ * development store. If the plan lookup fails, fall back to a real charge so
+ * paying stores are never silently given free test subscriptions.
+ */
+async function resolveBillingTestMode(shop: string, accessToken: string): Promise<boolean> {
+  if (process.env.SHOPIFY_BILLING_TEST === "true" || process.env.NODE_ENV !== "production") {
+    return true;
+  }
+
+  try {
+    return await isPartnerDevelopmentStore(shop, accessToken);
+  } catch (error) {
+    console.warn(
+      "[billing] shop plan lookup failed; creating a non-test charge:",
+      shop,
+      error instanceof Error ? error.message : error
+    );
+    return false;
+  }
+}
+
 /**
  * Create a recurring app subscription and return the Shopify confirmation URL
  * the merchant must approve (opens Shopify's charge approval screen).
@@ -182,10 +241,8 @@ export async function createAppSubscription(options: {
 
   const returnUrl = `${appUrl}/api/shopify/billing/callback?${returnParams.toString()}`;
 
-  // Test charges: enabled in non-production, or when SHOPIFY_BILLING_TEST=true.
   const test =
-    options.test ??
-    (process.env.SHOPIFY_BILLING_TEST === "true" || process.env.NODE_ENV !== "production");
+    options.test ?? (await resolveBillingTestMode(options.shop, options.accessToken));
 
   const payload = await shopifyAdminGraphql<AppSubscriptionCreatePayload>(
     options.shop,

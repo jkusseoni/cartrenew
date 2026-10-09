@@ -61,7 +61,7 @@ const isPublicRoute = createRouteMatcher([
   "/api/orders/webhook(.*)",
   "/api/shopify/callback(.*)",
   "/api/shopify/webhook(.*)",
-  "/api/shopify/billing(.*)",
+  "/api/shopify/billing/callback(.*)",
   "/api/shopify/dashboard(.*)",
   "/api/app(.*)",
   "/api/cron(.*)",

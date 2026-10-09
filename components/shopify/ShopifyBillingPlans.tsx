@@ -13,6 +13,9 @@ type Props = {
   host?: string;
   currentPlan?: string | null;
   billingStatus?: string | null;
+  /** Store install is not confirmed yet — plans stay disabled until it is. */
+  setupPending?: boolean;
+  onRetrySetup?: () => void;
 };
 
 const PLAN_ORDER: ShopifyBillingPlanId[] = ["starter", "growth", "scale"];
@@ -22,6 +25,8 @@ export default function ShopifyBillingPlans({
   host,
   currentPlan,
   billingStatus,
+  setupPending = false,
+  onRetrySetup,
 }: Props) {
   const [loadingPlan, setLoadingPlan] = useState<ShopifyBillingPlanId | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -45,8 +50,9 @@ export default function ShopifyBillingPlans({
         throw new Error(data.error || "Could not create Shopify subscription");
       }
 
-      // Top-level redirect so Shopify Admin can show the charge approval screen.
-      window.top!.location.href = data.confirmationUrl;
+      // App Bridge intercepts open(url, "_top") and moves the whole Admin page
+      // to Shopify's charge approval screen.
+      window.open(data.confirmationUrl, "_top");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Billing request failed");
       setLoadingPlan(null);
@@ -77,6 +83,27 @@ export default function ShopifyBillingPlans({
           </span>
         ) : null}
       </div>
+
+      {setupPending ? (
+        <div className="mb-4 flex flex-col gap-3 rounded-xl border border-amber-900/40 bg-amber-950/20 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-xs font-black text-amber-300">Finishing setup</p>
+            <p className="mt-1 text-xs text-amber-200/80">
+              CartRenew is still connecting to your store. Plans unlock as soon as setup
+              completes.
+            </p>
+          </div>
+          {onRetrySetup ? (
+            <button
+              type="button"
+              onClick={onRetrySetup}
+              className="w-fit rounded-xl bg-amber-400 px-4 py-2 text-xs font-black text-neutral-950 transition hover:bg-amber-300"
+            >
+              Try again
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       {error ? (
         <div className="mb-4 rounded-xl border border-rose-900/40 bg-rose-950/30 px-4 py-3 text-xs text-rose-300">
@@ -114,11 +141,17 @@ export default function ShopifyBillingPlans({
               </p>
               <button
                 type="button"
-                disabled={busy || selected}
+                disabled={busy || selected || setupPending}
                 onClick={() => void startSubscription(planId)}
                 className="mt-4 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-black text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {selected ? "Current Plan" : busy ? "Redirecting…" : "Subscribe via Shopify"}
+                {selected
+                  ? "Current Plan"
+                  : busy
+                    ? "Redirecting…"
+                    : setupPending
+                      ? "Finishing setup…"
+                      : "Subscribe via Shopify"}
               </button>
             </div>
           );
