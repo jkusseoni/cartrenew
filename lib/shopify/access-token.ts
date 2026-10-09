@@ -1,7 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase";
 import {
+  getShopifyApiSecret,
   getShopifyClientId,
-  getShopifyClientSecret,
 } from "@/lib/shopify/config";
 
 /**
@@ -197,7 +197,7 @@ async function refreshLockedStoreToken(row: StoreTokenRow): Promise<ValidShopify
   const shop = row.shopify_domain as string;
   const presentedRefreshToken = row.shopify_refresh_token as string;
   const clientId = getShopifyClientId();
-  const clientSecret = getShopifyClientSecret();
+  const clientSecret = getShopifyApiSecret();
   if (!clientId || !clientSecret) {
     console.error("[shopify-token] Shopify app credentials are not configured");
     return { ok: false, reason: "unavailable" };

@@ -1,6 +1,6 @@
 import { jwtVerify, type JWTPayload } from "jose";
 
-import { getShopifyClientId, isValidShopDomain } from "@/lib/shopify/config";
+import { getShopifyApiSecret, getShopifyClientId, isValidShopDomain } from "@/lib/shopify/config";
 
 export type ShopifySessionTokenPayload = JWTPayload & {
   iss?: string;
@@ -40,17 +40,13 @@ function audienceMatches(aud: string | string[] | undefined, apiKey: string): bo
   return aud === apiKey;
 }
 
-/** Request-time env read — bracket access avoids Next.js build-time inlining from .env. */
-function env(name: string): string | undefined {
-  return process.env[name];
-}
-
 /**
  * Verify a Shopify App Bridge session token (HS256) with jose.
  * Validates aud === getShopifyClientId(), exp/nbf, and dest as *.myshopify.com.
  *
- * HMAC key = UTF-8 bytes of the full SHOPIFY_API_SECRET (including `shpss_` prefix).
- * Secret is read at request time — never cached at module scope, never stripped.
+ * HMAC key = UTF-8 bytes of the full app secret from getShopifyApiSecret()
+ * (including the `shpss_` prefix; surrounding quotes/whitespace removed).
+ * Secret is read at request time — never cached at module scope.
  */
 export async function verifySessionToken(token: string): Promise<VerifiedShopifySession> {
   if (!token || typeof token !== "string") {
@@ -60,17 +56,17 @@ export async function verifySessionToken(token: string): Promise<VerifiedShopify
   // Must match the client ID App Bridge was initialized with (app/layout.tsx),
   // not just SHOPIFY_API_KEY — those can drift across env var naming conventions.
   const apiKey = getShopifyClientId();
-  const apiSecret = env("SHOPIFY_API_SECRET");
+  const apiSecret = getShopifyApiSecret();
 
   if (!apiKey) {
     throw new Error("Shopify client ID is not configured");
   }
   if (!apiSecret) {
-    throw new Error("SHOPIFY_API_SECRET is not configured");
+    throw new Error("Shopify app secret is not configured (SHOPIFY_API_SECRET / SHOPIFY_CLIENT_SECRET)");
   }
 
-  // Full raw secret WITH shpss_ prefix, UTF-8 encoded — do not strip.
-  const key = new TextEncoder().encode(process.env.SHOPIFY_API_SECRET);
+  // Keep the shpss_ prefix — it is part of the HMAC key.
+  const key = new TextEncoder().encode(apiSecret);
 
   let payload: ShopifySessionTokenPayload;
   try {

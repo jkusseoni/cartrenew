@@ -2,8 +2,8 @@ import * as Sentry from "@sentry/nextjs";
 
 import { supabaseAdmin } from "@/lib/supabase";
 import {
+  getShopifyApiSecret,
   getShopifyClientId,
-  getShopifyClientSecret,
 } from "@/lib/shopify/config";
 import {
   parseExpiringTokenResponse,
@@ -36,7 +36,7 @@ export async function installShopifyStoreFromSessionToken(
   sessionToken: string
 ): Promise<ShopifyInstallResult> {
   const clientId = getShopifyClientId();
-  const clientSecret = getShopifyClientSecret();
+  const clientSecret = getShopifyApiSecret();
   if (!clientId || !clientSecret) {
     return {
       ok: false,
