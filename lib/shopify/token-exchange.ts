@@ -5,6 +5,10 @@ import {
   getShopifyClientId,
   getShopifyClientSecret,
 } from "@/lib/shopify/config";
+import {
+  parseExpiringTokenResponse,
+  tokenGrantColumns,
+} from "@/lib/shopify/access-token";
 import { findOrCreateMerchantByShopDomain } from "@/lib/shopify/merchant";
 import { registerShopifyWebhooks } from "@/lib/shopify/webhooks";
 
@@ -20,8 +24,8 @@ export type ShopifyInstallResult =
   | { ok: false; status: number; error: string };
 
 /**
- * Managed install: exchange an App Bridge session token for an offline access
- * token and persist it on the `stores` row.
+ * Managed install: exchange an App Bridge session token for an expiring offline
+ * access token (+ refresh token) and persist both on the `stores` row.
  *
  * `shop` must come from the verified session token's `dest` claim.
  * Used by /api/auth/token-exchange and by /api/app/billing/subscribe when a
@@ -55,6 +59,8 @@ export async function installShopifyStoreFromSessionToken(
       subject_token_type: "urn:ietf:params:oauth:token-type:id_token",
       requested_token_type:
         "urn:shopify:params:oauth:token-type:offline-access-token",
+      // Public apps must use expiring offline tokens for the Admin API.
+      expiring: "1",
     }),
   });
 
@@ -64,13 +70,16 @@ export async function installShopifyStoreFromSessionToken(
     return { ok: false, status: 401, error: "Token exchange failed" };
   }
 
-  const tokenJson = (await tokenRes.json().catch(() => null)) as {
-    access_token?: string;
-  } | null;
-  const accessToken = tokenJson?.access_token;
-  if (!accessToken) {
+  const grant = parseExpiringTokenResponse(await tokenRes.json().catch(() => null));
+  if (!grant) {
+    console.error(
+      "[token-exchange] Shopify response is missing expiring token fields (access_token, expires_in, refresh_token):",
+      shop
+    );
     return { ok: false, status: 502, error: "Missing access token" };
   }
+  const accessToken = grant.accessToken;
+  const tokenColumns = tokenGrantColumns(grant);
 
   // Prisma is optional infra — never block the install response on it.
   void findOrCreateMerchantByShopDomain(shop).catch((merchantError) => {
@@ -107,13 +116,13 @@ export async function installShopifyStoreFromSessionToken(
     // plan/subscription id must not carry over into the new install.
     const updates: Record<string, unknown> = reinstalled
       ? {
-          shopify_access_token: accessToken,
+          ...tokenColumns,
           billing_status: "pending",
           billing_plan: null,
           shopify_subscription_id: null,
           billing_current_period_end: null,
         }
-      : { shopify_access_token: accessToken };
+      : tokenColumns;
 
     const { data: updated, error: updateError } = await supabaseAdmin
       .from("stores")
@@ -133,7 +142,7 @@ export async function installShopifyStoreFromSessionToken(
       .from("stores")
       .insert({
         shopify_domain: shop,
-        shopify_access_token: accessToken,
+        ...tokenColumns,
         clerk_user_id: clerkUserId,
         platform: "shopify",
         billing_status: "pending",

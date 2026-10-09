@@ -14,6 +14,10 @@ export interface Database {
           id: string
           shopify_domain: string | null
           shopify_access_token: string | null
+          shopify_access_token_expires_at: string | null
+          shopify_refresh_token: string | null
+          shopify_refresh_token_expires_at: string | null
+          shopify_token_refresh_locked_until: string | null
           webhook_ids: Json | null
           clerk_user_id: string
           api_key: string | null
@@ -35,6 +39,10 @@ export interface Database {
           id?: string
           shopify_domain?: string | null
           shopify_access_token?: string | null
+          shopify_access_token_expires_at?: string | null
+          shopify_refresh_token?: string | null
+          shopify_refresh_token_expires_at?: string | null
+          shopify_token_refresh_locked_until?: string | null
           webhook_ids?: Json | null
           clerk_user_id: string
           api_key?: string | null
@@ -56,6 +64,10 @@ export interface Database {
           id?: string
           shopify_domain?: string | null
           shopify_access_token?: string | null
+          shopify_access_token_expires_at?: string | null
+          shopify_refresh_token?: string | null
+          shopify_refresh_token_expires_at?: string | null
+          shopify_token_refresh_locked_until?: string | null
           webhook_ids?: Json | null
           clerk_user_id?: string
           api_key?: string | null

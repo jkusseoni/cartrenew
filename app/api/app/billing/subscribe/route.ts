@@ -10,17 +10,14 @@ import {
   isShopifyBillingPlanId,
   type ShopifyBillingPlanId,
 } from "@/lib/shopify/billing";
+import { getValidShopifyAccessToken } from "@/lib/shopify/access-token";
 import { installShopifyStoreFromSessionToken } from "@/lib/shopify/token-exchange";
 import {
   getBearerToken,
   verifySessionToken,
 } from "@/lib/shopify/verifySessionToken";
 
-type StoreAuthRow = {
-  id: string;
-  shopify_domain: string;
-  shopify_access_token: string | null;
-};
+type StoreIdRow = { id: string };
 
 /**
  * POST /api/app/billing/subscribe
@@ -71,7 +68,7 @@ export async function POST(req: NextRequest) {
 
     const { data: store, error } = await supabaseAdmin
       .from("stores")
-      .select("id, shopify_domain, shopify_access_token")
+      .select("id")
       .eq("shopify_domain", shop)
       .maybeSingle();
 
@@ -80,12 +77,24 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Store lookup failed" }, { status: 500 });
     }
 
-    const row = store as StoreAuthRow | null;
+    const row = store as StoreIdRow | null;
     let storeId = row?.id;
-    let accessToken = row?.shopify_access_token;
+    let accessToken: string | undefined;
 
-    // Fresh install or reinstall (app/uninstalled cleared the token): finish
-    // the managed install with this request's session token instead of failing.
+    if (storeId) {
+      const stored = await getValidShopifyAccessToken(storeId);
+      if (stored.ok) {
+        accessToken = stored.accessToken;
+      } else if (stored.reason === "busy" || stored.reason === "unavailable") {
+        return NextResponse.json(
+          { error: "Shopify is not reachable right now. Try again in a moment." },
+          { status: 503 }
+        );
+      }
+    }
+
+    // Fresh install, reinstall, legacy non-expiring token or dead refresh token:
+    // finish the managed install with this request's session token.
     if (!storeId || !accessToken) {
       const installed = await installShopifyStoreFromSessionToken(shop, token);
       if (!installed.ok) {

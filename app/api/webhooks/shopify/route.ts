@@ -992,11 +992,15 @@ async function handleAppUninstalled(storeId: string, shopDomain: string) {
       .update({ status: 'lost', updated_at: new Date().toISOString() })
       .eq('store_id', storeId)
 
-    // Clear token + mark billing cancelled (keep row for audit / reinstall)
+    // Clear tokens + mark billing cancelled (keep row for audit / reinstall)
     await supabaseAdmin
       .from('stores')
       .update({
         shopify_access_token: null,
+        shopify_access_token_expires_at: null,
+        shopify_refresh_token: null,
+        shopify_refresh_token_expires_at: null,
+        shopify_token_refresh_locked_until: null,
         billing_status: 'cancelled',
         updated_at: new Date().toISOString(),
       })

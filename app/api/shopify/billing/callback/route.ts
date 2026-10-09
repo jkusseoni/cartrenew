@@ -4,6 +4,7 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 
 import { supabaseAdmin } from "@/lib/supabase";
+import { getValidShopifyAccessToken } from "@/lib/shopify/access-token";
 import { getShopifyAppUrl, isValidShopDomain } from "@/lib/shopify/config";
 import {
   getActiveAppSubscriptions,
@@ -30,12 +31,17 @@ export async function GET(req: NextRequest) {
   try {
     const { data: store } = await supabaseAdmin
       .from("stores")
-      .select("id, shopify_access_token, billing_plan, shopify_subscription_id")
+      .select("id, billing_plan, shopify_subscription_id")
       .eq("shopify_domain", shop)
       .maybeSingle();
 
-    if (store?.shopify_access_token) {
-      const active = await getActiveAppSubscriptions(shop, store.shopify_access_token);
+    const token = store?.id ? await getValidShopifyAccessToken(store.id) : null;
+    if (store && token && !token.ok) {
+      console.warn("[billing/callback] no usable Shopify token:", shop, token.reason);
+    }
+
+    if (store && token?.ok) {
+      const active = await getActiveAppSubscriptions(shop, token.accessToken);
       const match =
         active.find((sub) => sub.id === store.shopify_subscription_id) ||
         active.find((sub) => sub.status === "ACTIVE") ||
