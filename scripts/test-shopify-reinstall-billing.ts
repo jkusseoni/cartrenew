@@ -146,6 +146,9 @@ function fakeShopify(url: URL, method: string, headers: Headers, body: string | 
       query: string;
       variables?: Row;
     };
+    if (query.includes("ValidateOfflineAccessToken")) {
+      return json({ data: { shop: { id: "gid://shopify/Shop/1" } } });
+    }
     if (query.includes("partnerDevelopment")) {
       if (shopify.planLookupFails) return json({ errors: "Internal error" }, 500);
       return json({ data: { shop: { plan: { partnerDevelopment: shopify.partnerDevelopment } } } });
@@ -282,13 +285,35 @@ async function main() {
   check("dashboard is connected after install", res.status === 200 && res.data.needsInstall === false, res.data);
   res = await subscribe("starter");
   check("plan selection returns a confirmation URL", res.status === 200 && typeof res.data.confirmationUrl === "string", res.data);
-  Object.assign(storeRow() ?? {}, { billing_status: "active" });
+  Object.assign(storeRow() ?? {}, {
+    billing_status: "active",
+    billing_current_period_end: "2026-10-31T00:00:00.000Z",
+  });
 
-  out("2. Uninstall (app/uninstalled clears the token)");
+  out("2. Connected-store token refresh");
+  const activeBilling = {
+    status: storeRow()?.billing_status,
+    plan: storeRow()?.billing_plan,
+    subscriptionId: storeRow()?.shopify_subscription_id,
+    periodEnd: storeRow()?.billing_current_period_end,
+  };
+  res = await exchange();
+  check("token exchange succeeds for a connected store", res.status === 200 && res.data.ok === true, res.data);
+  check(
+    "connected-store token refresh preserves active billing",
+    storeRow()?.billing_status === activeBilling.status &&
+      storeRow()?.billing_plan === activeBilling.plan &&
+      storeRow()?.shopify_subscription_id === activeBilling.subscriptionId &&
+      storeRow()?.billing_current_period_end === activeBilling.periodEnd,
+    storeRow()
+  );
+  await settle();
+
+  out("3. Uninstall (app/uninstalled clears the token)");
   simulateUninstall();
   check("token cleared, row kept", storeRow()?.shopify_access_token === null && storeRow()?.billing_status === "cancelled");
 
-  out("3. Reinstall, worst case: plan picked before the client runs token exchange");
+  out("4. Reinstall, worst case: plan picked before the client runs token exchange");
   res = await dashboard();
   check("dashboard reports needsInstall when the row has no token", res.data.needsInstall === true, res.data);
   check("dashboard response never contains an access token", !/shpat_/.test(res.text), res.text);
@@ -312,7 +337,7 @@ async function main() {
   );
   await settle();
 
-  out("4. Uninstall + reinstall, normal client path (dashboard → token exchange → plan)");
+  out("5. Uninstall + reinstall, normal client path (dashboard → token exchange → plan)");
   Object.assign(storeRow() ?? {}, { billing_status: "active" });
   simulateUninstall();
   res = await dashboard();
@@ -334,7 +359,34 @@ async function main() {
     body: res.data,
   });
 
-  out("5. Test-charge mode in production (SHOPIFY_BILLING_TEST unset)");
+  out("6. Reinstall after Shopify invalidates the token but app/uninstalled is missed");
+  const staleToken = storeRow()?.shopify_access_token;
+  Object.assign(storeRow() ?? {}, {
+    billing_status: "active",
+    billing_plan: "scale",
+    shopify_subscription_id: "gid://shopify/AppSubscription/stale",
+    billing_current_period_end: "2026-11-01T00:00:00.000Z",
+  });
+  shopify.validToken = null;
+  check(
+    "missed webhook leaves the stale token and active billing metadata in the store row",
+    Boolean(staleToken) && storeRow()?.billing_status === "active" && shopify.validToken === null,
+    storeRow()
+  );
+  res = await exchange();
+  check("Shopify issues and stores a different offline token", res.status === 200 && storeRow()?.shopify_access_token !== staleToken, {
+    status: res.status,
+    body: res.data,
+  });
+  check(
+    "stale billing is reset after a missed-webhook reinstall",
+    storeRow()?.billing_plan === null && storeRow()?.shopify_subscription_id === null &&
+      storeRow()?.billing_current_period_end === null && storeRow()?.billing_status === "pending",
+    storeRow()
+  );
+  await settle();
+
+  out("7. Test-charge mode in production (SHOPIFY_BILLING_TEST unset)");
   check("development store gets test: true", shopify.subscriptions.at(-1)?.test === true, shopify.subscriptions.at(-1));
   shopify.partnerDevelopment = false;
   res = await subscribe("starter");
@@ -343,7 +395,7 @@ async function main() {
   res = await subscribe("starter");
   check("plan lookup failure falls back to test: false", res.status === 200 && shopify.subscriptions.at(-1)?.test === false, shopify.subscriptions.at(-1));
 
-  out("6. Legacy unauthenticated route");
+  out("8. Legacy unauthenticated route");
   check(
     "app/api/shopify/billing/subscribe/route.ts is removed",
     !existsSync(path.join(process.cwd(), "app/api/shopify/billing/subscribe/route.ts"))
