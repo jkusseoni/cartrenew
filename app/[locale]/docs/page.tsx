@@ -1,8 +1,14 @@
 import { getTranslations } from "next-intl/server";
 import { Link } from "@/i18n/routing";
+import PingzaHome from "@/components/marketing/PingzaHome";
 import Footer from "@/components/sections/Footer";
+import { brand } from "@/lib/brand";
 
 export default async function DocsPage() {
+  if (!brand.isDefault) {
+    return <PingzaHome />;
+  }
+
   const t = await getTranslations("nav");
 
   return (
