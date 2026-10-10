@@ -17,6 +17,9 @@ const navLinks = [
 
 export default function Navigation() {
   const t = useTranslations("nav");
+  const visibleNavLinks = brand.isDefault
+    ? navLinks
+    : navLinks.filter((link) => link.key !== "woocommerce");
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -48,7 +51,7 @@ export default function Navigation() {
         </Link>
 
         <div className="hidden md:flex items-center gap-8">
-          {navLinks.map((link) => (
+          {visibleNavLinks.map((link) => (
             <Link
               key={link.key}
               href={link.href}
@@ -89,7 +92,7 @@ export default function Navigation() {
       {mobileOpen && (
         <div className="md:hidden bg-[var(--bg-elevated)] border-b border-[var(--bg-border)] px-6 py-4">
           <div className="flex flex-col gap-4">
-            {navLinks.map((link) => (
+            {visibleNavLinks.map((link) => (
               <Link
                 key={link.key}
                 href={link.href}

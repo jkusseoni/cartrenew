@@ -1,7 +1,8 @@
 /**
  * Brand shown in the UI, so one codebase can ship more than one Shopify app.
- * Each deployment sets its own NEXT_PUBLIC_* values; unset values fall back to
- * CartRenew so existing deployments render exactly as before.
+ * Each deployment sets its own NEXT_PUBLIC_* values. Unset name and tagline
+ * fall back to CartRenew. The CartRenew email and site URL are used only when
+ * the name is CartRenew, so a non-default brand never inherits them.
  *
  * NEXT_PUBLIC_* vars are inlined at build time — changing them needs a rebuild,
  * and they must be read with literal `process.env.NEXT_PUBLIC_…` access.
@@ -43,9 +44,15 @@ function hostOf(url: string): string {
 function buildBrand(): BrandConfig {
   const name = clean(process.env.NEXT_PUBLIC_APP_NAME, DEFAULT_BRAND_NAME);
   const tagline = clean(process.env.NEXT_PUBLIC_APP_TAGLINE, DEFAULT_TAGLINE);
-  const supportEmail = clean(process.env.NEXT_PUBLIC_SUPPORT_EMAIL, DEFAULT_SUPPORT_EMAIL);
-  const appUrl = clean(process.env.NEXT_PUBLIC_APP_URL, DEFAULT_APP_URL).replace(/\/+$/, "");
   const isDefault = name === DEFAULT_BRAND_NAME;
+  const supportEmail = clean(
+    process.env.NEXT_PUBLIC_SUPPORT_EMAIL,
+    isDefault ? DEFAULT_SUPPORT_EMAIL : ""
+  );
+  const appUrl = clean(
+    process.env.NEXT_PUBLIC_APP_URL,
+    isDefault ? DEFAULT_APP_URL : ""
+  ).replace(/\/+$/, "");
 
   return {
     name,

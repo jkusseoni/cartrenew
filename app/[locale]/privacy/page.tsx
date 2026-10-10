@@ -32,7 +32,7 @@ export default function PrivacyPolicy() {
             <ul className="list-disc pl-5 space-y-2 text-neutral-400">
               <li><strong className="text-neutral-200">Account Data:</strong> Name, professional email address, and billing information when you subscribe to our services.</li>
               <li><strong className="text-neutral-200">Integration Data:</strong> E-commerce store metrics, abandoned checkout timestamps, and dynamically routed customer transaction links necessary for core cart recovery functions.</li>
-              <li><strong className="text-neutral-200">Shopper Data (collected on behalf of merchants):</strong> Customer name, phone number, email address (if provided), and cart contents and checkout link, received from the merchant&apos;s Shopify or WooCommerce store. The phone number is used for WhatsApp recovery messages only when the shopper has given consent at checkout.</li>
+              <li><strong className="text-neutral-200">Shopper Data (collected on behalf of merchants):</strong> Customer name, phone number, email address (if provided), and cart contents and checkout link, received from the merchant&apos;s {brand.isDefault ? "Shopify or WooCommerce" : "Shopify"} store. The phone number is used for WhatsApp recovery messages only when the shopper has given consent at checkout.</li>
             </ul>
           </section>
 

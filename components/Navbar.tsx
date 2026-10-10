@@ -16,8 +16,13 @@ const navLinks = [
   { key: "docs", href: "/docs" },
 ] as const;
 
+const hiddenForCustomBrand = new Set(["pricing", "comparison", "woocommerce", "docs"]);
+
 export default function Navbar() {
   const t = useTranslations("nav");
+  const visibleNavLinks = brand.isDefault
+    ? navLinks
+    : navLinks.filter((link) => !hiddenForCustomBrand.has(link.key));
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -47,7 +52,7 @@ export default function Navbar() {
         </Link>
 
         <div className="hidden md:flex items-center gap-8">
-          {navLinks.map((link) => (
+          {visibleNavLinks.map((link) => (
             <Link
               key={link.key}
               href={link.href}
@@ -86,7 +91,7 @@ export default function Navbar() {
 
       {mobileOpen && (
         <div className="md:hidden bg-white border-b border-slate-200 px-6 py-6 shadow-xl absolute w-full left-0 top-16 flex flex-col gap-5">
-          {navLinks.map((link) => (
+          {visibleNavLinks.map((link) => (
             <Link
               key={link.key}
               href={link.href}

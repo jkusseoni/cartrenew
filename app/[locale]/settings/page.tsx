@@ -3,6 +3,7 @@
 import React, { use, useState } from 'react';
 import Link from 'next/link';
 import { Link as LocaleLink } from '@/i18n/routing';
+import { brand } from '@/lib/brand';
 
 import {
   isValid,
@@ -92,9 +93,11 @@ export default function SettingsPage({
             <Link href="/settings" className="flex items-center gap-3 px-4 py-3 rounded-xl bg-neutral-900 text-[#00DF89] border border-neutral-800/40 shrink-0 lg:w-full">
               <span>⚙️</span> Core Integration Settings
             </Link>
+            {brand.isDefault ? (
             <LocaleLink href="/woocommerce/connect" className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-neutral-900/40 hover:text-white transition-colors shrink-0 lg:w-full">
               <span>🛒</span> WooCommerce
             </LocaleLink>
+            ) : null}
           </nav>
         </div>
 

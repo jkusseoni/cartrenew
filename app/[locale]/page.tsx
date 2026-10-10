@@ -1,4 +1,5 @@
 import AdvancedFeatures from "@/components/AdvancedFeatures";
+import PingzaHome from "@/components/marketing/PingzaHome";
 import PricingTable from "@/components/Pricingtable";
 import CompetitorComparison from "@/components/sections/CompetitorComparison";
 import DashboardPreview from "@/components/sections/DashboardPreview";
@@ -6,8 +7,13 @@ import Footer from "@/components/sections/Footer";
 import Hero from "@/components/sections/Hero";
 import LaunchTimeline from "@/components/sections/LaunchTimeline";
 import RevenueProjections from "@/components/sections/RevenueProjections";
+import { brand } from "@/lib/brand";
 
 export default function HomePage() {
+  if (!brand.isDefault) {
+    return <PingzaHome />;
+  }
+
   return (
     <main className="relative flex min-h-screen w-full flex-col overflow-x-hidden scroll-smooth bg-slate-50 text-slate-800 selection:bg-pink-200 selection:text-pink-900">
       <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden">

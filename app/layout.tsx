@@ -12,7 +12,9 @@ const jetBrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jet
 
 export const metadata: Metadata = {
   title: brand.title,
-  description: "AI-powered WhatsApp cart recovery for Shopify & WooCommerce",
+  description: brand.isDefault
+    ? "AI-powered WhatsApp cart recovery for Shopify & WooCommerce"
+    : `${brand.name} recovers abandoned carts on WhatsApp and email.`,
 };
 
 /**
