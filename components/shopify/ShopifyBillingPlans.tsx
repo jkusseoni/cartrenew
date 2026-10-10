@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { brand } from "@/lib/brand";
 import { authFetch } from "@/lib/shopify/authFetch";
 import {
   SHOPIFY_BILLING_PLANS,
@@ -89,7 +90,7 @@ export default function ShopifyBillingPlans({
           <div>
             <p className="text-xs font-black text-amber-300">Finishing setup</p>
             <p className="mt-1 text-xs text-amber-200/80">
-              CartRenew is still connecting to your store. Plans unlock as soon as setup
+              {brand.name} is still connecting to your store. Plans unlock as soon as setup
               completes.
             </p>
           </div>
@@ -127,7 +128,7 @@ export default function ShopifyBillingPlans({
               }`}
             >
               <p className="text-xs font-black uppercase tracking-wider text-neutral-400">
-                {plan.name.replace("CartRenew ", "")}
+                {plan.label}
               </p>
               <p className="mt-2 text-3xl font-black text-white">
                 ${plan.amount}

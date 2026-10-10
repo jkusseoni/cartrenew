@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 
 import ShopifyBillingPlans from "@/components/shopify/ShopifyBillingPlans";
+import { brand } from "@/lib/brand";
 import { authFetch } from "@/lib/shopify/authFetch";
 import type {
   ShopifyCartRow,
@@ -140,9 +141,9 @@ function Shell({ children }: { children: React.ReactNode }) {
     <main className="min-h-screen bg-[#0B0F17] text-white flex flex-col">
       <header className="border-b border-neutral-900 px-6 py-4 flex items-center gap-2">
         <span className="text-lg font-black tracking-tight">
-          Cart
+          {brand.logo.primary}
           <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#00DF89] to-[#00D1FF]">
-            Renew
+            {brand.logo.accent}
           </span>
         </span>
         <span className="text-[9px] font-mono font-black uppercase px-1.5 py-0.5 rounded bg-neutral-900 border border-neutral-800 text-neutral-400">
@@ -458,14 +459,14 @@ export default function EmbeddedAppHomePage() {
     return (
       <Notice
         title="Something went wrong"
-        body="CartRenew could not finish setup. Your install is not lost — try again."
+        body={`${brand.name} could not finish setup. Your install is not lost — try again.`}
         action={{ label: "Try again", onClick: retrySetup }}
       />
     );
   }
 
   if (loading || !data) {
-    return <Notice title="Setting up CartRenew" body={statusMessage} />;
+    return <Notice title={`Setting up ${brand.name}`} body={statusMessage} />;
   }
 
   const shopDomain =
@@ -498,8 +499,9 @@ export default function EmbeddedAppHomePage() {
     <Shell>
       <div className="border-b border-neutral-900/60 pb-6 mb-8">
         <h1 className="text-2xl sm:text-3xl font-black tracking-tight">
-          Cart Recovery Console
+          {brand.name}
         </h1>
+        <p className="text-sm font-bold text-neutral-300 mt-1">Cart Recovery Console</p>
         <p className="text-xs sm:text-sm text-neutral-400 mt-1">
           Connected store:{" "}
           <span className="text-[#00DF89] font-mono">

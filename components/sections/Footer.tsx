@@ -4,6 +4,7 @@ import React, { useEffect, useRef } from 'react';
 import { Link } from '@/i18n/routing';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import { brand } from '@/lib/brand';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -38,14 +39,15 @@ export default function Footer() {
         {/* Left Section: Brand & Copyright */}
         <div className="flex flex-col items-center sm:items-start gap-1 text-center sm:text-left">
           <span className="text-slate-900 font-black text-lg tracking-wider">
-            CartRenew
+            {brand.name}
           </span>
           <p className="text-xs sm:text-sm text-slate-400 font-medium" suppressHydrationWarning>
             © {currentYear} All rights reserved.
           </p>
         </div>
 
-        {/* Middle Section: Product Hunt & PeerPush Badges */}
+        {/* Middle Section: Product Hunt & PeerPush Badges (CartRenew listings only) */}
+        {brand.isDefault ? (
         <div className="flex flex-wrap items-center justify-center gap-4 shrink-0">
           <a
             href="https://www.producthunt.com/products/cartrenew-whatsapp-cart-recovery?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-cartrenew-whatsapp-cart-recovery"
@@ -74,6 +76,7 @@ export default function Footer() {
             />
           </a>
         </div>
+        ) : null}
 
         {/* Right Section: Legal & Mailto Active Links */}
         <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs font-bold text-slate-500">
@@ -92,7 +95,7 @@ export default function Footer() {
           <Link href="/support" className="hover:text-slate-900 transition-colors">
             Support
           </Link>
-          <a href="mailto:contact@cartrenew.com" className="text-indigo-600 hover:text-indigo-500 transition-colors font-extrabold">
+          <a href={`mailto:${brand.supportEmail}`} className="text-indigo-600 hover:text-indigo-500 transition-colors font-extrabold">
             Contact Support
           </a>
         </div>

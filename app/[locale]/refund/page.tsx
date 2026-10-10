@@ -1,5 +1,6 @@
 import React from 'react';
 import Link from 'next/link';
+import { brand } from '@/lib/brand';
 
 export default function RefundPolicy() {
   return (
@@ -17,7 +18,7 @@ export default function RefundPolicy() {
         <div className="space-y-6 text-sm sm:text-base leading-relaxed">
           <section className="space-y-2">
             <h2 className="text-lg font-bold text-white tracking-tight">1. Subscription Cancellations</h2>
-            <p>E-commerce merchants can cancel their CartRenew SaaS subscription at any time directly through their automated dashboard billing settings. Upon cancellation, your service profile will remain active until the conclusion of your current paid billing cycle.</p>
+            <p>E-commerce merchants can cancel their {brand.name} SaaS subscription at any time directly through their automated dashboard billing settings. Upon cancellation, your service profile will remain active until the conclusion of your current paid billing cycle.</p>
           </section>
 
           <section className="space-y-2">
@@ -32,7 +33,7 @@ export default function RefundPolicy() {
 
           <section className="space-y-2">
             <h2 className="text-lg font-bold text-white tracking-tight">4. Requesting a Refund</h2>
-            <p>To initiate a dynamic cancellation review or check refund status, please submit a formal technical request from your registered developer account email directly to: <a href="mailto:contact@cartrenew.com" className="text-blue-500 hover:underline font-mono">contact@cartrenew.com</a>.</p>
+            <p>To initiate a dynamic cancellation review or check refund status, please submit a formal technical request from your registered developer account email directly to: <a href={`mailto:${brand.supportEmail}`} className="text-blue-500 hover:underline font-mono">{brand.supportEmail}</a>.</p>
           </section>
         </div>
 

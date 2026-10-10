@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test';
 
+import { brand } from '../lib/brand';
+
 const DEFAULT_LOCALE = 'en';
 
 test.describe('CartRenew Automated Handshake Flow', () => {
@@ -8,7 +10,7 @@ test.describe('CartRenew Automated Handshake Flow', () => {
     await page.goto(`/${DEFAULT_LOCALE}`);
 
     // 2. Hero + navigation copy from the current landing page
-    await expect(page.locator('h1')).toContainText('CartRenew Public');
+    await expect(page).toHaveTitle(brand.title);
     await expect(
       page.getByRole('heading', {
         name: /Recover\s+68% of Abandoned Carts/i,
@@ -20,7 +22,7 @@ test.describe('CartRenew Automated Handshake Flow', () => {
     await page.goto(`/${DEFAULT_LOCALE}/marketing-hub`);
 
     await expect(page.getByRole('heading', { name: 'Automation Templates' })).toBeVisible();
-    await expect(page.getByText('CartRenew', { exact: false }).first()).toBeVisible();
+    await expect(page.getByText(brand.name, { exact: false }).first()).toBeVisible();
     await expect(page.getByText('Immediate Cart Drop (15 Mins)')).toBeVisible();
     await expect(page.getByText('WhatsApp AI Node').first()).toBeVisible();
     await expect(page.getByRole('button', { name: '🟢 Active Node' }).first()).toBeVisible();

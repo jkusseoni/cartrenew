@@ -1,5 +1,7 @@
 "use client";
 
+import { brand } from "@/lib/brand";
+
 /**
  * Embedded app error boundary — never show Next.js default error chrome
  * inside Shopify Admin (App Store review 2.1.1).
@@ -15,7 +17,7 @@ export default function EmbeddedAppError({
       <div className="max-w-md rounded-2xl border border-neutral-800 bg-neutral-950/40 p-8 text-center">
         <h1 className="text-xl font-black">Almost ready</h1>
         <p className="mt-3 text-sm text-neutral-400 leading-relaxed">
-          CartRenew hit a temporary snag loading your store. This is safe to
+          {brand.name} hit a temporary snag loading your store. This is safe to
           retry — your install is not lost.
         </p>
         <button

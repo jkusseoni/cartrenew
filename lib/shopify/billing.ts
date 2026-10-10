@@ -5,6 +5,7 @@
  * Mutation: appSubscriptionCreate
  */
 
+import { brandPlanName, type BrandPlanTier } from "@/lib/brand";
 import { getShopifyApiVersion, getShopifyAppUrl } from "@/lib/shopify/config";
 import { TRIAL_DURATION_DAYS } from "@/lib/billing/trial-config";
 
@@ -12,7 +13,9 @@ export type ShopifyBillingPlanId = "starter" | "growth" | "scale";
 
 export type ShopifyBillingPlan = {
   id: ShopifyBillingPlanId;
+  /** Subscription name sent to Shopify, e.g. "CartRenew Starter". */
   name: string;
+  label: BrandPlanTier;
   amount: number;
   currencyCode: "USD";
   interval: "EVERY_30_DAYS";
@@ -24,7 +27,8 @@ export type ShopifyBillingPlan = {
 export const SHOPIFY_BILLING_PLANS: Record<ShopifyBillingPlanId, ShopifyBillingPlan> = {
   starter: {
     id: "starter",
-    name: "CartRenew Starter",
+    name: brandPlanName("Starter"),
+    label: "Starter",
     amount: 12,
     currencyCode: "USD",
     interval: "EVERY_30_DAYS",
@@ -33,7 +37,8 @@ export const SHOPIFY_BILLING_PLANS: Record<ShopifyBillingPlanId, ShopifyBillingP
   },
   growth: {
     id: "growth",
-    name: "CartRenew Growth",
+    name: brandPlanName("Growth"),
+    label: "Growth",
     amount: 29,
     currencyCode: "USD",
     interval: "EVERY_30_DAYS",
@@ -42,7 +47,8 @@ export const SHOPIFY_BILLING_PLANS: Record<ShopifyBillingPlanId, ShopifyBillingP
   },
   scale: {
     id: "scale",
-    name: "CartRenew Scale",
+    name: brandPlanName("Scale"),
+    label: "Scale",
     amount: 69,
     currencyCode: "USD",
     interval: "EVERY_30_DAYS",

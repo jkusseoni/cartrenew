@@ -6,6 +6,7 @@ import { useTranslations } from "next-intl";
 
 import { Link } from "@/i18n/routing";
 import LanguageSwitcher from "@/components/LanguageSwitcher";
+import { brand } from "@/lib/brand";
 
 const navLinks = [
   { key: "pricing", href: "/pricing" },
@@ -37,10 +38,12 @@ export default function Navbar() {
     >
       <div className="max-w-7xl mx-auto h-full flex items-center justify-between px-6">
         <Link href="/" className="text-xl font-black tracking-tight flex items-center gap-1">
-          <span className="text-slate-900">Cart</span>
-          <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-            Renew
-          </span>
+          <span className="text-slate-900">{brand.logo.primary}</span>
+          {brand.logo.accent ? (
+            <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+              {brand.logo.accent}
+            </span>
+          ) : null}
         </Link>
 
         <div className="hidden md:flex items-center gap-8">

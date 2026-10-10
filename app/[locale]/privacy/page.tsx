@@ -2,6 +2,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { Link as LocaleLink } from '@/i18n/routing';
+import { brand } from '@/lib/brand';
 
 export default function PrivacyPolicy() {
   return (
@@ -22,7 +23,7 @@ export default function PrivacyPolicy() {
         <div className="space-y-6 text-sm sm:text-base leading-relaxed">
           <section className="space-y-2">
             <h2 className="text-lg font-bold text-white tracking-tight">1. Introduction</h2>
-            <p>Welcome to CartRenew (&quot;we,&quot; &quot;our,&quot; or &quot;us&quot;). We operate cartrenew.com, an automated B2B SaaS system that helps e-commerce merchants recover abandoned carts. We respect your privacy and are committed to protecting any personal data processed through our application.</p>
+            <p>Welcome to {brand.name} (&quot;we,&quot; &quot;our,&quot; or &quot;us&quot;). We operate {brand.appHost}, an automated B2B SaaS system that helps e-commerce merchants recover abandoned carts. We respect your privacy and are committed to protecting any personal data processed through our application.</p>
           </section>
 
           <section className="space-y-2">
@@ -47,15 +48,15 @@ export default function PrivacyPolicy() {
 
           <section className="space-y-2">
             <h2 className="text-lg font-bold text-white tracking-tight">4. Consent and Opt-out</h2>
-            <p>Recovery messages are intended only for shoppers who have consented to receive WhatsApp messages at checkout. Merchants are responsible for collecting this consent before enabling CartRenew, as required by our Terms of Service.</p>
-            <p>Shoppers who no longer want to receive reminders can email <a href="mailto:contact@cartrenew.com" className="text-blue-400 hover:underline font-mono">contact@cartrenew.com</a> with the phone number the reminder was sent to, and we will stop further reminders to that number.</p>
+            <p>Recovery messages are intended only for shoppers who have consented to receive WhatsApp messages at checkout. Merchants are responsible for collecting this consent before enabling {brand.name}, as required by our Terms of Service.</p>
+            <p>Shoppers who no longer want to receive reminders can email <a href={`mailto:${brand.supportEmail}`} className="text-blue-400 hover:underline font-mono">{brand.supportEmail}</a> with the phone number the reminder was sent to, and we will stop further reminders to that number.</p>
           </section>
 
           <section className="space-y-2">
             <h2 className="text-lg font-bold text-white tracking-tight">5. Data Sharing</h2>
-            <p>We do not sell personal data. We only share information with the service providers we use to run CartRenew:</p>
+            <p>We do not sell personal data. We only share information with the service providers we use to run {brand.name}:</p>
             <ul className="list-disc pl-5 space-y-2 text-neutral-400">
-              <li><strong className="text-neutral-200">Meta Platforms:</strong> the WhatsApp Business Platform (Cloud API) receives the shopper&apos;s phone number, name and checkout link to deliver reminders, and reports delivery status back to us. We also use the Meta Conversions API to measure our own advertising on cartrenew.com.</li>
+              <li><strong className="text-neutral-200">Meta Platforms:</strong> the WhatsApp Business Platform (Cloud API) receives the shopper&apos;s phone number, name and checkout link to deliver reminders, and reports delivery status back to us. We also use the Meta Conversions API to measure our own advertising on {brand.appHost}.</li>
               <li><strong className="text-neutral-200">Vercel:</strong> application hosting and website analytics.</li>
               <li><strong className="text-neutral-200">Supabase:</strong> database hosting.</li>
               <li><strong className="text-neutral-200">Clerk:</strong> merchant account sign-in.</li>
@@ -75,12 +76,12 @@ export default function PrivacyPolicy() {
 
           <section className="space-y-2">
             <h2 className="text-lg font-bold text-white tracking-tight">8. No Affiliation</h2>
-            <p>CartRenew is not affiliated with or endorsed by WhatsApp or Meta.</p>
+            <p>{brand.name} is not affiliated with or endorsed by WhatsApp or Meta.</p>
           </section>
 
           <section className="space-y-2">
             <h2 className="text-lg font-bold text-white tracking-tight">9. Contact Us</h2>
-            <p>If you have any questions regarding this Privacy Policy, please reach out to our administration team directly at: <a href="mailto:contact@cartrenew.com" className="text-blue-400 hover:underline font-mono">contact@cartrenew.com</a>.</p>
+            <p>If you have any questions regarding this Privacy Policy, please reach out to our administration team directly at: <a href={`mailto:${brand.supportEmail}`} className="text-blue-400 hover:underline font-mono">{brand.supportEmail}</a>.</p>
           </section>
         </div>
 

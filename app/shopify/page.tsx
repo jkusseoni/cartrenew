@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 
+import { brand } from "@/lib/brand";
 import { AppBridgeHead } from "@/components/shopify/AppBridgeHead";
 import { ShopifyEmbedGuard } from "@/components/shopify/ShopifyEmbedGuard";
 import ShopifyBillingPlans from "@/components/shopify/ShopifyBillingPlans";
@@ -55,7 +56,7 @@ function Shell({
       <AppBridgeHead apiKey={apiKey} host={host} embedded={embedded} />
       <header className="border-b border-neutral-900 px-6 py-4 flex items-center gap-2">
         <span className="text-lg font-black tracking-tight">
-          Cart<span className="text-transparent bg-clip-text bg-gradient-to-r from-[#00DF89] to-[#00D1FF]">Renew</span>
+          {brand.logo.primary}<span className="text-transparent bg-clip-text bg-gradient-to-r from-[#00DF89] to-[#00D1FF]">{brand.logo.accent}</span>
         </span>
         <span className="text-[9px] font-mono font-black uppercase px-1.5 py-0.5 rounded bg-neutral-900 border border-neutral-800 text-neutral-400">
           Shopify
@@ -111,7 +112,8 @@ function Console({
   return (
     <Shell host={host} embedded={embedded}>
       <div className="border-b border-neutral-900/60 pb-6 mb-8">
-        <h1 className="text-2xl sm:text-3xl font-black tracking-tight">Cart Recovery Console</h1>
+        <h1 className="text-2xl sm:text-3xl font-black tracking-tight">{brand.name}</h1>
+        <p className="text-sm font-bold text-neutral-300 mt-1">Cart Recovery Console</p>
         <p className="text-xs sm:text-sm text-neutral-400 mt-1">
           Connected store: <span className="text-[#00DF89] font-mono">{store.shopify_domain}</span>
         </p>
@@ -210,7 +212,7 @@ export default async function ShopifyEntryPage({
     return (
       <Notice
         title="Open from Shopify"
-        body="Launch CartRenew from your Shopify Admin (Apps → CartRenew), or append ?shop=your-store.myshopify.com for local dev."
+        body={`Launch ${brand.name} from your Shopify Admin (Apps → ${brand.name}), or append ?shop=your-store.myshopify.com for local dev.`}
         host={host}
         embedded={embedded}
       />
@@ -291,7 +293,7 @@ export default async function ShopifyEntryPage({
     return (
       <Notice
         title="Finish setup in Shopify Admin"
-        body="Open CartRenew from Apps → CartRenew. Managed install completes inside the embedded app — no redirect login."
+        body={`Open ${brand.name} from Apps → ${brand.name}. Managed install completes inside the embedded app — no redirect login.`}
         host={host}
         embedded={embedded}
       />

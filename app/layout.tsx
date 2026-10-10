@@ -4,13 +4,14 @@ import { DM_Sans, JetBrains_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import AppProviders from "./providers";
+import { brand } from "@/lib/brand";
 import { getShopifyClientId } from "@/lib/shopify/config";
 
 const dmSans = DM_Sans({ subsets: ["latin"], variable: "--font-dm-sans" });
 const jetBrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains" });
 
 export const metadata: Metadata = {
-  title: "CartRenew — WhatsApp Cart Recovery",
+  title: brand.title,
   description: "AI-powered WhatsApp cart recovery for Shopify & WooCommerce",
 };
 
