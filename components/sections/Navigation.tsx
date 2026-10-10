@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { Menu, X } from "lucide-react";
 
 import { Link } from "@/i18n/routing";
+import { brand } from "@/lib/brand";
 
 const navLinks = [
   { key: "pricing", href: "/pricing" },
@@ -42,8 +43,8 @@ export default function Navigation() {
     >
       <div className="max-w-[1200px] mx-auto h-full flex items-center justify-between px-6">
         <Link href="/" className="flex items-center gap-0 text-xl font-bold tracking-tight">
-          <span className="text-white">Cart</span>
-          <span className="gradient-text">Renew</span>
+          <span className="text-white">{brand.logo.primary}</span>
+          {brand.logo.accent ? <span className="gradient-text">{brand.logo.accent}</span> : null}
         </Link>
 
         <div className="hidden md:flex items-center gap-8">

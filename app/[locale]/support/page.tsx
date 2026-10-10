@@ -1,11 +1,12 @@
 import { Link } from "@/i18n/routing";
+import { brand } from "@/lib/brand";
 
 export default function SupportPage() {
   return (
     <main className="mx-auto min-h-screen w-full max-w-3xl px-6 py-16 text-slate-800">
       <p className="text-xs font-black uppercase tracking-widest text-blue-600">Support</p>
       <h1 className="mt-3 text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">
-        CartRenew Support
+        {brand.name} Support
       </h1>
       <p className="mt-4 text-sm font-medium leading-relaxed text-slate-500">
         We help Shopify merchants set up WhatsApp cart recovery, billing, and store integrations.
@@ -16,16 +17,16 @@ export default function SupportPage() {
         <div>
           <h2 className="text-sm font-black text-slate-900">Email</h2>
           <a
-            href="mailto:contact@cartrenew.com"
+            href={`mailto:${brand.supportEmail}`}
             className="mt-1 inline-block text-sm font-semibold text-blue-600 hover:text-blue-700"
           >
-            contact@cartrenew.com
+            {brand.supportEmail}
           </a>
         </div>
         <div>
           <h2 className="text-sm font-black text-slate-900">Common topics</h2>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-600">
-            <li>Installing CartRenew on a Shopify store</li>
+            <li>Installing {brand.name} on a Shopify store</li>
             <li>Approving or changing a Shopify Billing subscription</li>
             <li>WhatsApp / Meta Business API connection</li>
             <li>Webhook delivery and abandoned cart recovery</li>

@@ -1,5 +1,6 @@
 import React from 'react';
 import Link from 'next/link';
+import { brand } from '@/lib/brand';
 
 export default function DataDeletion() {
   return (
@@ -17,17 +18,17 @@ export default function DataDeletion() {
         <div className="space-y-6 text-sm sm:text-base leading-relaxed">
           <section className="space-y-2">
             <h2 className="text-lg font-bold text-white tracking-tight">1. Your Right to Deletion</h2>
-            <p>You can ask CartRenew to delete the personal data we hold about you at any time. No account or login is required to make a request.</p>
+            <p>You can ask {brand.name} to delete the personal data we hold about you at any time. No account or login is required to make a request.</p>
           </section>
 
           <section className="space-y-2">
             <h2 className="text-lg font-bold text-white tracking-tight">2. Store Owners</h2>
-            <p>If you are a merchant using CartRenew, email <a href="mailto:contact@cartrenew.com" className="text-blue-400 hover:underline font-mono">contact@cartrenew.com</a> from the address linked to your account, and include your store domain. We will delete your account data, store connection details and the abandoned cart records collected for your store.</p>
+            <p>If you are a merchant using {brand.name}, email <a href={`mailto:${brand.supportEmail}`} className="text-blue-400 hover:underline font-mono">{brand.supportEmail}</a> from the address linked to your account, and include your store domain. We will delete your account data, store connection details and the abandoned cart records collected for your store.</p>
           </section>
 
           <section className="space-y-2">
             <h2 className="text-lg font-bold text-white tracking-tight">3. Customers of a Store</h2>
-            <p>If you received a cart reminder from a store that uses CartRenew, email <a href="mailto:contact@cartrenew.com" className="text-blue-400 hover:underline font-mono">contact@cartrenew.com</a> with the phone number or email address the reminder was sent to and, if you know it, the store&apos;s name. We will delete your cart and message records and stop any further reminders to you.</p>
+            <p>If you received a cart reminder from a store that uses {brand.name}, email <a href={`mailto:${brand.supportEmail}`} className="text-blue-400 hover:underline font-mono">{brand.supportEmail}</a> with the phone number or email address the reminder was sent to and, if you know it, the store&apos;s name. We will delete your cart and message records and stop any further reminders to you.</p>
           </section>
 
           <section className="space-y-2">
@@ -37,7 +38,7 @@ export default function DataDeletion() {
 
           <section className="space-y-2">
             <h2 className="text-lg font-bold text-white tracking-tight">5. Contact Us</h2>
-            <p>For any question about your data, see our <Link href="/en/privacy" className="text-blue-400 hover:underline">Privacy Policy</Link> or write to <a href="mailto:contact@cartrenew.com" className="text-blue-400 hover:underline font-mono">contact@cartrenew.com</a>.</p>
+            <p>For any question about your data, see our <Link href="/en/privacy" className="text-blue-400 hover:underline">Privacy Policy</Link> or write to <a href={`mailto:${brand.supportEmail}`} className="text-blue-400 hover:underline font-mono">{brand.supportEmail}</a>.</p>
           </section>
         </div>
 

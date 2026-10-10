@@ -1,5 +1,6 @@
 import React from 'react';
 import Link from 'next/link';
+import { brand } from '@/lib/brand';
 
 export default function TermsOfService() {
   return (
@@ -17,12 +18,12 @@ export default function TermsOfService() {
         <div className="space-y-6 text-sm sm:text-base leading-relaxed">
           <section className="space-y-2">
             <h2 className="text-lg font-bold text-white tracking-tight">1. Agreement to Terms</h2>
-            <p>By accessing or using CartRenew (cartrenew.com), you agree to be bound by these Terms of Service. If you are entering into this agreement on behalf of a business entity, you represent that you have the authority to bind such entity to these terms.</p>
+            <p>By accessing or using {brand.name} ({brand.appHost}), you agree to be bound by these Terms of Service. If you are entering into this agreement on behalf of a business entity, you represent that you have the authority to bind such entity to these terms.</p>
           </section>
 
           <section className="space-y-2">
             <h2 className="text-lg font-bold text-white tracking-tight">2. Service Description and Deployment</h2>
-            <p>CartRenew provides automated cloud-based B2B recovery systems utilizing Next.js workflows. Services are deployed over production clusters to help merchants manage abandoned checkout sequences. You are responsible for ensuring your store setup complies with local consumer communication laws.</p>
+            <p>{brand.name} provides automated cloud-based B2B recovery systems utilizing Next.js workflows. Services are deployed over production clusters to help merchants manage abandoned checkout sequences. You are responsible for ensuring your store setup complies with local consumer communication laws.</p>
             <p>Merchants may only message customers who have given consent to receive WhatsApp messages, and must comply with WhatsApp&apos;s Business and Commerce policies.</p>
           </section>
 
@@ -33,7 +34,7 @@ export default function TermsOfService() {
 
           <section className="space-y-2">
             <h2 className="text-lg font-bold text-white tracking-tight">4. Limitation of Liability</h2>
-            <p>To the maximum extent permitted by applicable law, CartRenew shall not be liable for any indirect, incidental, or consequential damages, including loss of profits, data, or e-commerce merchant revenues resulting from system downtimes or automated workflow adjustments.</p>
+            <p>To the maximum extent permitted by applicable law, {brand.name} shall not be liable for any indirect, incidental, or consequential damages, including loss of profits, data, or e-commerce merchant revenues resulting from system downtimes or automated workflow adjustments.</p>
           </section>
 
           <section className="space-y-2">
@@ -43,7 +44,7 @@ export default function TermsOfService() {
 
           <section className="space-y-2">
             <h2 className="text-lg font-bold text-white tracking-tight">6. No Affiliation</h2>
-            <p>CartRenew is not affiliated with or endorsed by WhatsApp or Meta.</p>
+            <p>{brand.name} is not affiliated with or endorsed by WhatsApp or Meta.</p>
           </section>
         </div>
 

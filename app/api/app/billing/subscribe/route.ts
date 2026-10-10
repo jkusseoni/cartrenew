@@ -3,6 +3,7 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 
+import { brand } from "@/lib/brand";
 import { supabaseAdmin } from "@/lib/supabase";
 import { findOrCreateMerchantByShopDomain } from "@/lib/shopify/merchant";
 import {
@@ -105,8 +106,7 @@ export async function POST(req: NextRequest) {
         );
         return NextResponse.json(
           {
-            error:
-              "We couldn't finish connecting your store to CartRenew. Reload the app and try again.",
+            error: `We couldn't finish connecting your store to ${brand.name}. Reload the app and try again.`,
           },
           { status: 503 }
         );

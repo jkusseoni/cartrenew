@@ -11,6 +11,7 @@
  *   npm run test:shopify-reinstall
  */
 
+import { spawnSync } from "child_process";
 import { createHmac, randomUUID } from "crypto";
 import { existsSync } from "fs";
 import path from "path";
@@ -33,6 +34,13 @@ Object.assign(process.env, {
   DATABASE_URL: "postgresql://test:test@127.0.0.1:1/none",
 });
 delete process.env.SHOPIFY_BILLING_TEST;
+const BRAND_ENV_KEYS = [
+  "NEXT_PUBLIC_APP_NAME",
+  "NEXT_PUBLIC_APP_TAGLINE",
+  "NEXT_PUBLIC_SUPPORT_EMAIL",
+  "NEXT_PUBLIC_APP_URL",
+] as const;
+for (const key of BRAND_ENV_KEYS) delete process.env[key];
 
 // ─── Fake infrastructure ────────────────────────────────────────────────────
 
@@ -52,7 +60,7 @@ const shopify = {
   exchanges: [] as Array<{ expiring: string | null }>,
   refreshCalls: 0,
   legacyTokenAdminCalls: 0,
-  subscriptions: [] as Array<{ id: string; test: unknown; accessToken: string | null; status: string }>,
+  subscriptions: [] as Array<{ id: string; name: unknown; test: unknown; accessToken: string | null; status: string }>,
 };
 
 function json(body: unknown, status = 200): Response {
@@ -222,7 +230,13 @@ async function fakeShopify(url: URL, method: string, headers: Headers, body: str
     }
     if (query.includes("appSubscriptionCreate")) {
       const id = `gid://shopify/AppSubscription/${shopify.subscriptions.length + 1}`;
-      shopify.subscriptions.push({ id, test: variables?.test, accessToken: presented, status: "PENDING" });
+      shopify.subscriptions.push({
+        id,
+        name: variables?.name,
+        test: variables?.test,
+        accessToken: presented,
+        status: "PENDING",
+      });
       return json({
         data: {
           appSubscriptionCreate: {
@@ -344,6 +358,8 @@ async function main() {
   const { resolveShopifyApiSecret, verifyOAuthHmac, verifyWebhookHmacDetailed } = await import(
     "../lib/shopify/config"
   );
+  const { brand } = await import("../lib/brand");
+  const { SHOPIFY_BILLING_PLANS, inferPlanIdFromSubscriptionName } = await import("../lib/shopify/billing");
 
   const call = async (
     handler: (req: InstanceType<typeof NextRequest>) => Promise<Response>,
@@ -627,6 +643,117 @@ async function main() {
     "no app log line contains a secret value",
     !appLogs.some((line) => line.includes(CLIENT_SECRET) || line.includes(STALE_SECRET))
   );
+
+  out("12. Brand config (lib/brand.ts) and billing plan names");
+  check(
+    "defaults keep the CartRenew brand",
+    brand.name === "CartRenew" &&
+      brand.title === "CartRenew — WhatsApp Cart Recovery" &&
+      brand.supportEmail === "contact@cartrenew.com" &&
+      brand.appUrl === "https://www.cartrenew.com" &&
+      brand.appHost === "cartrenew.com" &&
+      brand.logo.primary === "Cart" &&
+      brand.logo.accent === "Renew" &&
+      brand.isDefault,
+    brand
+  );
+  check(
+    "default plan names are unchanged",
+    SHOPIFY_BILLING_PLANS.starter.name === "CartRenew Starter" &&
+      SHOPIFY_BILLING_PLANS.growth.name === "CartRenew Growth" &&
+      SHOPIFY_BILLING_PLANS.scale.name === "CartRenew Scale",
+    Object.values(SHOPIFY_BILLING_PLANS).map((p) => p.name)
+  );
+  check(
+    "plan labels are Starter/Growth/Scale",
+    SHOPIFY_BILLING_PLANS.starter.label === "Starter" &&
+      SHOPIFY_BILLING_PLANS.growth.label === "Growth" &&
+      SHOPIFY_BILLING_PLANS.scale.label === "Scale"
+  );
+  check(
+    "appSubscriptionCreate received the plan name",
+    shopify.subscriptions.length > 0 &&
+      shopify.subscriptions.every((s) =>
+        Object.values(SHOPIFY_BILLING_PLANS).some((p) => p.name === s.name)
+      ),
+    shopify.subscriptions.map((s) => s.name)
+  );
+  check(
+    "plan is inferred from old and branded subscription names",
+    inferPlanIdFromSubscriptionName("CartRenew Growth") === "growth" &&
+      inferPlanIdFromSubscriptionName("Pingza Scale") === "scale" &&
+      inferPlanIdFromSubscriptionName("Pingza Starter") === "starter"
+  );
+
+  const brandInChild = (env: Partial<Record<(typeof BRAND_ENV_KEYS)[number], string>>) => {
+    const code = [
+      'const { brand } = await import("./lib/brand.ts");',
+      'const billing = await import("./lib/shopify/billing.ts");',
+      "const plans = Object.values(billing.SHOPIFY_BILLING_PLANS);",
+      "console.log(JSON.stringify({ brand, names: plans.map((p) => p.name),",
+      "  inferred: plans.map((p) => billing.inferPlanIdFromSubscriptionName(p.name)) }));",
+    ].join("\n");
+    const childEnv: NodeJS.ProcessEnv = { ...process.env };
+    for (const key of BRAND_ENV_KEYS) delete childEnv[key];
+    Object.assign(childEnv, env);
+    const result = spawnSync(
+      process.execPath,
+      ["--import", "tsx", "--input-type=module", "-e", code],
+      { cwd: process.cwd(), env: childEnv, encoding: "utf8" }
+    );
+    if (result.status !== 0) throw new Error(`brand child process failed: ${result.stderr}`);
+    return JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "{}") as {
+      brand: typeof brand;
+      names: string[];
+      inferred: string[];
+    };
+  };
+
+  {
+    const custom = brandInChild({
+      NEXT_PUBLIC_APP_NAME: '  "Pingza" ',
+      NEXT_PUBLIC_APP_TAGLINE: "Abandoned Cart Recovery",
+      NEXT_PUBLIC_SUPPORT_EMAIL: "help@pingza.test",
+      NEXT_PUBLIC_APP_URL: "https://www.pingza.test/",
+    });
+    check("NEXT_PUBLIC_APP_NAME is cleaned and used", custom.brand.name === "Pingza" && !custom.brand.isDefault, custom.brand);
+    check("title combines name and tagline", custom.brand.title === "Pingza — Abandoned Cart Recovery", custom.brand.title);
+    check(
+      "support email, app URL and host come from env",
+      custom.brand.supportEmail === "help@pingza.test" &&
+        custom.brand.appUrl === "https://www.pingza.test" &&
+        custom.brand.appHost === "pingza.test",
+      custom.brand
+    );
+    check("custom brand logo is the full name", custom.brand.logo.primary === "Pingza" && custom.brand.logo.accent === "", custom.brand.logo);
+    check(
+      "plan names follow the brand",
+      JSON.stringify(custom.names) === JSON.stringify(["Pingza Starter", "Pingza Growth", "Pingza Scale"]),
+      custom.names
+    );
+    check(
+      "branded plan names map back to plan ids",
+      JSON.stringify(custom.inferred) === JSON.stringify(["starter", "growth", "scale"]),
+      custom.inferred
+    );
+  }
+  {
+    const blank = brandInChild({
+      NEXT_PUBLIC_APP_NAME: "   ",
+      NEXT_PUBLIC_APP_TAGLINE: '""',
+      NEXT_PUBLIC_SUPPORT_EMAIL: "",
+      NEXT_PUBLIC_APP_URL: " ",
+    });
+    check(
+      "blank or quoted-empty env values fall back to CartRenew defaults",
+      blank.brand.name === "CartRenew" &&
+        blank.brand.title === "CartRenew — WhatsApp Cart Recovery" &&
+        blank.brand.supportEmail === "contact@cartrenew.com" &&
+        blank.brand.appUrl === "https://www.cartrenew.com" &&
+        blank.brand.isDefault,
+      blank.brand
+    );
+  }
 }
 
 main()
