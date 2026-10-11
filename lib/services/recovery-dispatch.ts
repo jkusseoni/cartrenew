@@ -15,6 +15,7 @@
 import { supabaseAdmin } from '@/lib/supabase'
 import { maskPhone } from '@/lib/phone'
 import { getTrackedRecoveryUrl } from '@/lib/recovery-link'
+import { redactSecrets } from '@/lib/services/redact-secrets'
 import {
   decideAfterAttempt,
   MAX_SEND_ATTEMPTS,
@@ -97,7 +98,7 @@ export async function recordCartSendFailure(
 
     const { error } = await supabaseAdmin
       .from('abandoned_carts')
-      .update({ last_send_error: reason.slice(0, 500), last_send_failed_at: failedAt })
+      .update({ last_send_error: redactSecrets(reason).slice(0, 500), last_send_failed_at: failedAt })
       .in('id', batch)
     if (error) {
       console.error(
@@ -124,7 +125,8 @@ export async function recordAttemptOutcome({
   whatsappMessageId?: string | null
   error?: string | null
 }): Promise<SendOutcomeDecision> {
-  const decision = decideAfterAttempt(accepted, error, attemptsMade)
+  const safeError = error ? redactSecrets(error) : error
+  const decision = decideAfterAttempt(accepted, safeError, attemptsMade)
   const at = nowIso()
 
   const messageUpdate =
@@ -140,7 +142,7 @@ export async function recordAttemptOutcome({
       : decision.kind === 'retry'
         ? {
             status: 'pending',
-            error_message: error || 'send_failed',
+            error_message: safeError || 'send_failed',
             attempt_count: attemptsMade,
             next_retry_at: decision.nextRetryAt,
           }
@@ -166,7 +168,7 @@ export async function recordAttemptOutcome({
     }
     await markCartMessaged(cartId, at)
   } else {
-    await recordCartSendFailure(cartId, error || 'send_failed', { final: decision.kind === 'failed' })
+    await recordCartSendFailure(cartId, safeError || 'send_failed', { final: decision.kind === 'failed' })
   }
 
   return decision
@@ -316,15 +318,16 @@ export async function processFirstAttempts({ limit = 25 } = {}): Promise<Recover
         id: messageRow.id,
         cartId: cart.id,
         outcome: outcomeFromDecision(decision),
-        reason: send.success ? null : send.error,
+        reason: send.success ? null : redactSecrets(send.error || ''),
       })
     } catch (err) {
-      console.error(`First-attempt recovery failed for cart ${cart.id}:`, err)
+      const message = redactSecrets(err instanceof Error ? err.message : String(err))
+      console.error(`First-attempt recovery failed for cart ${cart.id}:`, message)
       results.push({
         id: cart.id,
         cartId: cart.id,
         outcome: 'skipped',
-        reason: err instanceof Error ? err.message : String(err),
+        reason: message,
       })
     }
   }
@@ -340,9 +343,10 @@ type PendingMessageRow = {
 }
 
 async function failMessage(messageId: string, reason: string, fromStatus: 'pending' | 'queued') {
+  const safeReason = redactSecrets(reason)
   const { error } = await supabaseAdmin
     .from('messages')
-    .update({ status: 'failed', error_message: reason, next_retry_at: null })
+    .update({ status: 'failed', error_message: safeReason, next_retry_at: null })
     .eq('id', messageId)
     .eq('status', fromStatus)
   if (error) console.error(`Failed to mark message ${messageId} failed:`, error.message)
@@ -443,10 +447,11 @@ export async function processDueRetries({ limit = 25 } = {}): Promise<{
         id: message.id,
         cartId: cart.id,
         outcome: outcomeFromDecision(decision),
-        reason: send.success ? null : send.error,
+        reason: send.success ? null : redactSecrets(send.error || ''),
       })
     } catch (err) {
-      console.error(`Retry failed for message ${message.id}:`, err)
+      const safeMessage = redactSecrets(err instanceof Error ? err.message : String(err))
+      console.error(`Retry failed for message ${message.id}:`, safeMessage)
       if (claimedForSend) {
         // Nothing was sent yet — hand the row back to the next run.
         await supabaseAdmin
@@ -459,7 +464,7 @@ export async function processDueRetries({ limit = 25 } = {}): Promise<{
         id: message.id,
         cartId: message.cart_id,
         outcome: 'skipped',
-        reason: err instanceof Error ? err.message : String(err),
+        reason: safeMessage,
       })
     }
   }

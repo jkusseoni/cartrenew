@@ -4,6 +4,7 @@ export const maxDuration = 60;
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
+import { redactSecrets } from "@/lib/services/redact-secrets";
 
 const MAX_CARTS_PER_RUN = 25;
 const MAX_RETRIES_PER_RUN = 25;
@@ -75,12 +76,13 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ ...summary, retries: retries.results, results: firstAttempts });
   } catch (error) {
-    console.error("Cart recovery cron route error:", error);
+    const message = redactSecrets(getErrorMessage(error));
+    console.error("Cart recovery cron route error:", message);
 
     return NextResponse.json(
       {
         success: false,
-        error: getErrorMessage(error),
+        error: message,
         durationMs: Date.now() - startedAt,
       },
       { status: 500 }

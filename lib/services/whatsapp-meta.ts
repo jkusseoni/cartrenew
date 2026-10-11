@@ -12,9 +12,17 @@
  */
 
 import { e164ToWhatsAppRecipient, maskPhone, toE164 } from '@/lib/phone'
+import { redactSecrets } from '@/lib/services/redact-secrets'
 
 function cleanEnv(value?: string | null): string {
     return (value ?? '').replace(/['"]/g, '').trim()
+  }
+
+  /** Header-safe token: drop quotes, spaces, and newlines. Null when still unusable. */
+  function accessTokenForHeader(value?: string | null): string | null {
+    const token = (value ?? '').replace(/['"]/g, '').replace(/\s/g, '')
+    if (!token || !/^[\x21-\x7E]+$/.test(token)) return null
+    return token
   }
   
   const PLACEHOLDER_PATTERNS = [
@@ -161,13 +169,6 @@ function cleanEnv(value?: string | null): string {
     return [resolveRecoveryCustomerName(customerName), checkoutUrl]
   }
   
-  function serializeFetchError(err: unknown): Record<string, unknown> {
-    if (err instanceof Error) {
-      return { name: err.name, message: err.message, stack: err.stack }
-    }
-    return { message: String(err) }
-  }
-  
   /**
    * Send a WhatsApp template message via the Meta Cloud API directly.
    * Drop-in replacement for sendTwilioWhatsAppMessage — same call shape,
@@ -202,7 +203,10 @@ function cleanEnv(value?: string | null): string {
     }
   
     const to = recipient.to
-    const token = cleanEnv(process.env.WHATSAPP_ACCESS_TOKEN)
+    const token = accessTokenForHeader(process.env.WHATSAPP_ACCESS_TOKEN)
+    if (!token) {
+      return { success: false, error: 'WHATSAPP_ACCESS_TOKEN invalid format' }
+    }
     const phoneNumberId = cleanEnv(process.env.WHATSAPP_PHONE_NUMBER_ID)
     const apiVersion = cleanEnv(process.env.WHATSAPP_API_VERSION) || 'v22.0'
     const url = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`
@@ -242,10 +246,19 @@ function cleanEnv(value?: string | null): string {
       const data = await response.json()
   
       if (!response.ok) {
-        console.error('❌ Meta WhatsApp API error response:', JSON.stringify(data, null, 2))
+        const metaError = data?.error
+        const metaMessage = redactSecrets(
+          typeof metaError?.message === 'string' ? metaError.message : ''
+        )
+        console.error('❌ Meta WhatsApp API error response:', {
+          httpStatus: response.status,
+          type: metaError?.type ?? null,
+          code: metaError?.code ?? null,
+          message: metaMessage,
+        })
         return {
           success: false,
-          error: data?.error?.message || `HTTP ${response.status}`,
+          error: metaMessage || `HTTP ${response.status}`,
           to,
           templateName: options.templateName,
         }
@@ -262,11 +275,14 @@ function cleanEnv(value?: string | null): string {
         templateName: options.templateName,
       }
     } catch (err: unknown) {
-      const details = serializeFetchError(err)
-      console.error('❌ Meta WhatsApp API request failed:', details)
+      const message = redactSecrets(err instanceof Error ? err.message : String(err))
+      console.error('❌ Meta WhatsApp API request failed:', {
+        name: err instanceof Error ? err.name : 'Error',
+        message,
+      })
       return {
         success: false,
-        error: err instanceof Error ? err.message : String(err),
+        error: message,
         to,
         templateName: options.templateName,
         status: 'failed',
