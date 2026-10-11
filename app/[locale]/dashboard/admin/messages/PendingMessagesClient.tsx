@@ -6,7 +6,7 @@ type PendingMessage = {
   id: string
   cart_id: string
   store_id: string
-  phone: string
+  phone: string | null
   template_name: string
   status: string
   attempt_count: number
@@ -95,7 +95,7 @@ export default function PendingMessagesClient() {
                     <div className="font-medium">{message.store?.shopify_domain || message.store_id}</div>
                     <div className="text-xs text-slate-500">{message.store?.id || message.store_id}</div>
                   </td>
-                  <td className="px-4 py-3 text-sm text-slate-700">{message.phone}</td>
+                  <td className="px-4 py-3 text-sm text-slate-700">{message.phone || "—"}</td>
                   <td className="px-4 py-3 text-sm text-slate-700">{message.status}</td>
                   <td className="px-4 py-3 text-sm text-slate-700">{message.attempt_count}</td>
                   <td className="px-4 py-3 text-sm text-slate-700">

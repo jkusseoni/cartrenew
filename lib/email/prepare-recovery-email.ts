@@ -39,7 +39,76 @@ function formatFrom(fromEmail: string, fromName: string | null): string {
   return `${name} <${fromEmail}>`
 }
 
+export type RecoveryEmailSnapshot = {
+  isDefaultBrand: boolean
+  enabled: boolean
+  platform: string | null
+  phone: string | null
+  buyerAcceptsMarketing: boolean
+  email: string | null
+  suppressed: boolean
+  allowlistRaw: string | null
+  fromEmail: string
+  fromName: string | null
+  replyTo: string | null
+  unsubscribeSecret: string
+  appUrl: string | null
+  checkoutUrl: string | null
+  postalAddress: string | null
+  storeName: string
+  items: unknown
+}
+
+/** Gate, render, and address the message. No database access. */
+export function composeRecoveryEmail(snapshot: RecoveryEmailSnapshot): PreparedRecoveryEmail {
+  const phone = snapshot.phone ?? ""
+  const whatsappSendable = Boolean(phone.trim()) && resolveWhatsAppRecipient(phone).ok
+  const decision = decideRecoveryEmail({
+    isDefaultBrand: snapshot.isDefaultBrand,
+    enabled: snapshot.enabled,
+    platform: snapshot.platform,
+    whatsappSendable,
+    buyerAcceptsMarketing: snapshot.buyerAcceptsMarketing,
+    email: snapshot.email,
+    suppressed: snapshot.suppressed,
+    allowlist: parseEmailAllowlist(snapshot.allowlistRaw),
+    senderConfigured: Boolean(clean(snapshot.fromEmail)),
+    unsubscribeConfigured: Boolean(clean(snapshot.unsubscribeSecret)),
+    appUrl: snapshot.appUrl,
+    checkoutUrl: snapshot.checkoutUrl,
+    postalAddress: snapshot.postalAddress,
+  })
+  if (!decision.ok) return decision
+
+  const fromEmail = clean(snapshot.fromEmail)
+  const secret = clean(snapshot.unsubscribeSecret)
+  const postal = clean(snapshot.postalAddress ?? "")
+  const token = signUnsubscribeToken(decision.email, secret)
+  const appUrl = (snapshot.appUrl ?? "").replace(/\/$/, "")
+  const unsubscribeUrl = `${appUrl}/unsubscribe/${token}`
+  const rendered = renderRecoveryEmail({
+    storeName: snapshot.storeName,
+    items: itemTitles(snapshot.items),
+    checkoutUrl: String(snapshot.checkoutUrl),
+    unsubscribeUrl,
+    postalAddress: postal,
+  })
+
+  return {
+    ok: true,
+    email: decision.email,
+    from: formatFrom(fromEmail, snapshot.fromName),
+    replyTo: snapshot.replyTo,
+    subject: RECOVERY_EMAIL_SUBJECT,
+    html: rendered.html,
+    text: rendered.text,
+    unsubscribeUrl,
+  }
+}
+
 export async function prepareRecoveryEmail(cartId: string): Promise<PreparedRecoveryEmail> {
+  if (brand.isDefault) return { ok: false, reason: "default_brand" }
+
   const enabled = isEmailRecoveryEnabled(process.env.EMAIL_RECOVERY_ENABLED)
   const allowlist = parseEmailAllowlist(process.env.EMAIL_RECOVERY_ALLOWLIST)
   if (enabled && allowlist.mode === "unset" && !brand.isDefault) {
@@ -61,7 +130,6 @@ export async function prepareRecoveryEmail(cartId: string): Promise<PreparedReco
   if (!cart || cart.status !== "pending") return { ok: false, reason: "cart_not_pending" }
 
   const phone = typeof cart.customer_phone === "string" ? cart.customer_phone : ""
-  const whatsappSendable = Boolean(phone.trim()) && resolveWhatsAppRecipient(phone).ok
   const email = typeof cart.customer_email === "string" ? cart.customer_email : null
   const normalized = (email ?? "").trim().toLowerCase()
 
@@ -79,53 +147,31 @@ export async function prepareRecoveryEmail(cartId: string): Promise<PreparedReco
     suppressed = (rows?.length ?? 0) > 0
   }
 
-  const decision = decideRecoveryEmail({
-    isDefaultBrand: brand.isDefault,
-    enabled,
-    platform: typeof cart.platform === "string" ? cart.platform : null,
-    whatsappSendable,
-    buyerAcceptsMarketing: cart.email_marketing_consent === true,
-    email,
-    suppressed,
-    allowlist,
-    senderConfigured: Boolean(clean(process.env.RESEND_FROM_EMAIL)),
-    unsubscribeConfigured: Boolean(clean(process.env.EMAIL_UNSUBSCRIBE_SECRET)),
-    appUrl: brand.appUrl || null,
-    checkoutUrl: typeof cart.checkout_url === "string" ? cart.checkout_url : null,
-    postalAddress: clean(process.env.EMAIL_POSTAL_ADDRESS) || null,
-  })
-  if (!decision.ok) return decision
-
   const { data: store } = await supabaseAdmin
     .from("stores")
     .select("email_from_name, reply_to_email, store_name")
     .eq("id", cart.store_id)
     .maybeSingle()
 
-  const fromEmail = clean(process.env.RESEND_FROM_EMAIL)
-  const secret = clean(process.env.EMAIL_UNSUBSCRIBE_SECRET)
-  const postal = clean(process.env.EMAIL_POSTAL_ADDRESS)
-  const token = signUnsubscribeToken(decision.email, secret)
-  const unsubscribeUrl = `${brand.appUrl}/unsubscribe/${token}`
-  const checkoutUrl = String(cart.checkout_url)
-  const rendered = renderRecoveryEmail({
-    storeName: (store?.store_name as string | null) || brand.name,
-    items: itemTitles(cart.items),
-    checkoutUrl,
-    unsubscribeUrl,
-    postalAddress: postal,
-  })
-
-  return {
-    ok: true,
-    email: decision.email,
-    from: formatFrom(fromEmail, (store?.email_from_name as string | null) ?? null),
+  return composeRecoveryEmail({
+    isDefaultBrand: brand.isDefault,
+    enabled,
+    platform: typeof cart.platform === "string" ? cart.platform : null,
+    phone,
+    buyerAcceptsMarketing: cart.email_marketing_consent === true,
+    email,
+    suppressed,
+    allowlistRaw: process.env.EMAIL_RECOVERY_ALLOWLIST ?? null,
+    fromEmail: process.env.RESEND_FROM_EMAIL ?? "",
+    fromName: (store?.email_from_name as string | null) ?? null,
     replyTo: (store?.reply_to_email as string | null) ?? null,
-    subject: RECOVERY_EMAIL_SUBJECT,
-    html: rendered.html,
-    text: rendered.text,
-    unsubscribeUrl,
-  }
+    unsubscribeSecret: process.env.EMAIL_UNSUBSCRIBE_SECRET ?? "",
+    appUrl: brand.appUrl || null,
+    checkoutUrl: typeof cart.checkout_url === "string" ? cart.checkout_url : null,
+    postalAddress: clean(process.env.EMAIL_POSTAL_ADDRESS) || null,
+    storeName: (store?.store_name as string | null) || brand.name,
+    items: cart.items,
+  })
 }
 
 export async function deliverPreparedEmail(

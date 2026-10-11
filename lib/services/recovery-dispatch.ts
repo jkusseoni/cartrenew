@@ -17,6 +17,7 @@ import { maskPhone } from '@/lib/phone'
 import { getTrackedRecoveryUrl } from '@/lib/recovery-link'
 import { redactSecrets } from '@/lib/services/redact-secrets'
 import { brand } from '@/lib/brand'
+import { cronFirstChannel } from '@/lib/email/cron-candidate'
 import { deliverPreparedEmail, prepareRecoveryEmail } from '@/lib/email/prepare-recovery-email'
 import {
   decideAfterAttempt,
@@ -183,7 +184,16 @@ type CartRow = {
   customer_phone: string | null
   customer_name: string | null
   checkout_url: string | null
-  platform: string | null
+}
+
+async function loadCartPlatform(cartId: string): Promise<string | null> {
+  const { data, error } = await supabaseAdmin
+    .from('abandoned_carts')
+    .select('platform')
+    .eq('id', cartId)
+    .maybeSingle()
+  if (error) return null
+  return typeof data?.platform === 'string' ? data.platform : null
 }
 
 export type RecoveryRunResult = {
@@ -326,7 +336,7 @@ export async function processFirstAttempts({ limit = 25 } = {}): Promise<Recover
   const since = new Date(Date.now() - RECOVERY_SEND_MAX_AGE_MS).toISOString()
   const { data: carts, error } = await supabaseAdmin
     .from('abandoned_carts')
-    .select('id, store_id, customer_phone, customer_name, checkout_url, platform')
+    .select('id, store_id, customer_phone, customer_name, checkout_url')
     .eq('status', 'pending')
     .gte('created_at', since)
     .or(dueRecoveryScheduleFilter())
@@ -354,13 +364,18 @@ export async function processFirstAttempts({ limit = 25 } = {}): Promise<Recover
     try {
       const phoneText = cart.customer_phone?.trim() ?? ''
       const whatsappSendable = Boolean(phoneText) && resolveWhatsAppRecipient(phoneText).ok
-      const platform = (cart.platform ?? '').toLowerCase()
-      if (!brand.isDefault && platform !== 'woocommerce' && !whatsappSendable) {
+      const platform =
+        !brand.isDefault && !whatsappSendable ? await loadCartPlatform(cart.id) : null
+      const channel = cronFirstChannel({
+        isDefaultBrand: brand.isDefault,
+        platform,
+        phone: cart.customer_phone,
+      })
+      if (channel === 'email') {
         results.push(await attemptEmailFirst(cart))
         continue
       }
-
-      if (!cart.customer_phone?.trim()) {
+      if (channel === 'skip_missing_phone') {
         results.push({ id: cart.id, cartId: cart.id, outcome: 'skipped', reason: 'missing_phone' })
         continue
       }
@@ -376,7 +391,7 @@ export async function processFirstAttempts({ limit = 25 } = {}): Promise<Recover
         continue
       }
 
-      const recipient = resolveWhatsAppRecipient(cart.customer_phone)
+      const recipient = resolveWhatsAppRecipient(phoneText)
       if (!recipient.ok) {
         console.warn('WhatsApp recovery not sent — phone not sendable', {
           cartId: cart.id,
@@ -538,6 +553,12 @@ export async function processDueRetries({ limit = 25 } = {}): Promise<{
       }
 
       if (!message.phone) {
+        if (brand.isDefault) {
+          await failMessage(message.id, 'missing_phone', 'queued')
+          claimedForSend = false
+          results.push({ id: message.id, cartId: message.cart_id, outcome: 'skipped', reason: 'missing_phone' })
+          continue
+        }
         const emailResult = await attemptEmailRetry(message, attemptsSoFar)
         claimedForSend = false
         results.push(emailResult)

@@ -14,6 +14,7 @@ import {
   verifyResendWebhook,
 } from "../lib/email/resend"
 import { recoveryEmailHeaders } from "../lib/email/template"
+import { suppressionInsert } from "../lib/email/suppression"
 import {
   readUnsubscribeToken,
   signUnsubscribeToken,
@@ -70,21 +71,34 @@ test("allowlist empty sends nothing, star allows all, and domains match", () => 
   })
 })
 
-test("unsubscribe token rejects tampering and expiry", () => {
+test("unsubscribe token rejects tampering and does not expire", () => {
   const secret = "unsubscribe-test-secret"
-  const token = signUnsubscribeToken("Buyer@Example.com", secret, NOW)
-  assert.deepEqual(readUnsubscribeToken(token, secret, NOW + 1000), {
+  const token = signUnsubscribeToken("Buyer@Example.com", secret)
+  assert.deepEqual(readUnsubscribeToken(token, secret), {
     ok: true,
     email: "buyer@example.com",
   })
 
   const tampered = `${token.slice(0, -1)}${token.endsWith("a") ? "b" : "a"}`
-  assert.equal(readUnsubscribeToken(tampered, secret, NOW).ok, false)
+  assert.equal(readUnsubscribeToken(tampered, secret).ok, false)
 
-  assert.deepEqual(readUnsubscribeToken(token, secret, NOW + 31 * 24 * 60 * 60 * 1000), {
-    ok: false,
-    reason: "expired",
+  const expiredBody = Buffer.from(
+    JSON.stringify({ e: "buyer@example.com", exp: NOW - 31 * 24 * 60 * 60 * 1000 })
+  ).toString("base64url")
+  const expiredSig = crypto.createHmac("sha256", secret).update(expiredBody).digest("base64url")
+  assert.deepEqual(readUnsubscribeToken(`${expiredBody}.${expiredSig}`, secret), {
+    ok: true,
+    email: "buyer@example.com",
   })
+})
+
+test("suppression insert lowercases the address and does nothing on conflict", () => {
+  const write = suppressionInsert("Buyer@Example.com", "unsubscribed")
+  if (!write) throw new Error("expected a suppression write")
+  assert.equal(write.row.email, "buyer@example.com")
+  assert.equal(write.row.reason, "unsubscribed")
+  assert.deepEqual(write.options, { onConflict: "email", ignoreDuplicates: true })
+  assert.equal(suppressionInsert("not-an-email", "bounced"), null)
 })
 
 test("recovery email sets one-click unsubscribe headers", async () => {

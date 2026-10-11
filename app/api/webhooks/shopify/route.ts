@@ -4,6 +4,7 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from 'next/server'
 import { nextRecoveryAt } from '@/lib/recovery-retry-policy'
 import { readBuyerAcceptsMarketing } from '@/lib/email/buyer-consent'
+import { brand } from '@/lib/brand'
 import { supabaseAdmin } from '@/lib/supabase'
 import {
   getShopifyWebhookSecret,
@@ -513,7 +514,7 @@ async function handleCartWebhook(storeId: string, payload: any) {
     cartValue,
     items,
     checkoutUrl,
-    emailMarketingConsent: readBuyerAcceptsMarketing(payload),
+    emailMarketingConsent: brand.isDefault ? undefined : readBuyerAcceptsMarketing(payload),
   })
 
   if (error && !cart) {
@@ -562,7 +563,7 @@ async function handleCheckoutWebhook(storeId: string, payload: any) {
     cartValue,
     items,
     checkoutUrl,
-    emailMarketingConsent: readBuyerAcceptsMarketing(payload),
+    emailMarketingConsent: brand.isDefault ? undefined : readBuyerAcceptsMarketing(payload),
   })
 
   if (error) {

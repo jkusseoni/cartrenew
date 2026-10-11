@@ -1,9 +1,6 @@
 import crypto from "crypto"
 
-/** Links in a recovery email stay valid for 30 days. */
-export const UNSUBSCRIBE_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000
-
-type TokenPayload = { e: string; exp: number }
+type TokenPayload = { e: string }
 
 function encode(value: string): string {
   return Buffer.from(value, "utf8").toString("base64url")
@@ -17,15 +14,9 @@ function decode(value: string): string | null {
   }
 }
 
-export function signUnsubscribeToken(
-  email: string,
-  secret: string,
-  now = Date.now()
-): string {
-  const payload: TokenPayload = {
-    e: email.trim().toLowerCase(),
-    exp: now + UNSUBSCRIBE_TOKEN_TTL_MS,
-  }
+/** Signed email address. The link does not expire. */
+export function signUnsubscribeToken(email: string, secret: string): string {
+  const payload: TokenPayload = { e: email.trim().toLowerCase() }
   const body = encode(JSON.stringify(payload))
   const sig = crypto.createHmac("sha256", secret).update(body).digest("base64url")
   return `${body}.${sig}`
@@ -33,9 +24,8 @@ export function signUnsubscribeToken(
 
 export function readUnsubscribeToken(
   token: string,
-  secret: string,
-  now = Date.now()
-): { ok: true; email: string } | { ok: false; reason: "invalid" | "expired" } {
+  secret: string
+): { ok: true; email: string } | { ok: false; reason: "invalid" } {
   if (!token || !secret) return { ok: false, reason: "invalid" }
   const dot = token.lastIndexOf(".")
   if (dot <= 0) return { ok: false, reason: "invalid" }
@@ -57,9 +47,6 @@ export function readUnsubscribeToken(
   }
   if (typeof payload.e !== "string" || !payload.e.includes("@")) {
     return { ok: false, reason: "invalid" }
-  }
-  if (typeof payload.exp !== "number" || payload.exp <= now) {
-    return { ok: false, reason: "expired" }
   }
   return { ok: true, email: payload.e }
 }
