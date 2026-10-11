@@ -16,6 +16,9 @@ import { supabaseAdmin } from '@/lib/supabase'
 import { maskPhone } from '@/lib/phone'
 import { getTrackedRecoveryUrl } from '@/lib/recovery-link'
 import { redactSecrets } from '@/lib/services/redact-secrets'
+import { brand } from '@/lib/brand'
+import { cronFirstChannel } from '@/lib/email/cron-candidate'
+import { deliverPreparedEmail, prepareRecoveryEmail } from '@/lib/email/prepare-recovery-email'
 import {
   decideAfterAttempt,
   dueRecoveryScheduleFilter,
@@ -183,6 +186,16 @@ type CartRow = {
   checkout_url: string | null
 }
 
+async function loadCartPlatform(cartId: string): Promise<string | null> {
+  const { data, error } = await supabaseAdmin
+    .from('abandoned_carts')
+    .select('platform')
+    .eq('id', cartId)
+    .maybeSingle()
+  if (error) return null
+  return typeof data?.platform === 'string' ? data.platform : null
+}
+
 export type RecoveryRunResult = {
   id: string
   cartId: string
@@ -206,6 +219,103 @@ async function claimCartForFirstAttempt(cartId: string): Promise<boolean> {
 
   if (error) throw new Error(`claim failed for cart ${cartId}: ${error.message}`)
   return (data?.length ?? 0) > 0
+}
+
+async function attemptEmailFirst(cart: CartRow): Promise<RecoveryRunResult> {
+  if (!(await claimCartForFirstAttempt(cart.id))) {
+    return { id: cart.id, cartId: cart.id, outcome: 'skipped', reason: 'already_claimed' }
+  }
+  if (await cartHasMessageRow(cart.id)) {
+    return { id: cart.id, cartId: cart.id, outcome: 'skipped', reason: 'already_attempted' }
+  }
+
+  const prepared = await prepareRecoveryEmail(cart.id)
+  if (!prepared.ok) {
+    return { id: cart.id, cartId: cart.id, outcome: 'skipped', reason: prepared.reason }
+  }
+
+  const { data: messageRow, error: insertError } = await supabaseAdmin
+    .from('messages')
+    .insert({
+      cart_id: cart.id,
+      store_id: cart.store_id,
+      phone: null,
+      email: prepared.email,
+      channel: 'email',
+      template_name: 'abandoned_cart_email',
+      status: 'queued',
+      attempt_count: 0,
+      next_retry_at: null,
+    })
+    .select('id')
+    .single()
+
+  if (insertError || !messageRow?.id) {
+    console.error(
+      `Failed to insert email message for cart ${cart.id}:`,
+      redactSecrets(insertError?.message ?? '')
+    )
+    return { id: cart.id, cartId: cart.id, outcome: 'skipped', reason: 'message_insert_failed' }
+  }
+
+  const send = await deliverPreparedEmail(prepared)
+  const decision = await recordAttemptOutcome({
+    messageId: messageRow.id,
+    cartId: cart.id,
+    attemptsMade: 1,
+    accepted: send.ok,
+    whatsappMessageId: send.ok ? send.id : null,
+    error: send.ok ? null : send.error,
+  })
+  return {
+    id: messageRow.id,
+    cartId: cart.id,
+    outcome: outcomeFromDecision(decision),
+    reason: send.ok ? null : send.error ?? null,
+  }
+}
+
+async function attemptEmailRetry(
+  message: PendingMessageRow,
+  attemptsSoFar: number
+): Promise<RecoveryRunResult> {
+  const { data: extra, error: extraError } = await supabaseAdmin
+    .from('messages')
+    .select('channel, email')
+    .eq('id', message.id)
+    .maybeSingle()
+  if (extraError || extra?.channel !== 'email') {
+    await failMessage(message.id, 'email_channel_unavailable', 'queued')
+    return {
+      id: message.id,
+      cartId: message.cart_id,
+      outcome: 'skipped',
+      reason: extraError ? redactSecrets(extraError.message) : 'email_channel_unavailable',
+    }
+  }
+
+  const prepared = await prepareRecoveryEmail(message.cart_id)
+  if (!prepared.ok) {
+    await failMessage(message.id, prepared.reason, 'queued')
+    await recordCartSendFailure(message.cart_id, prepared.reason, { final: true })
+    return { id: message.id, cartId: message.cart_id, outcome: 'failed', reason: prepared.reason }
+  }
+
+  const send = await deliverPreparedEmail(prepared)
+  const decision = await recordAttemptOutcome({
+    messageId: message.id,
+    cartId: message.cart_id,
+    attemptsMade: attemptsSoFar + 1,
+    accepted: send.ok,
+    whatsappMessageId: send.ok ? send.id : null,
+    error: send.ok ? null : send.error,
+  })
+  return {
+    id: message.id,
+    cartId: message.cart_id,
+    outcome: outcomeFromDecision(decision),
+    reason: send.ok ? null : send.error ?? null,
+  }
 }
 
 async function cartHasMessageRow(cartId: string): Promise<boolean> {
@@ -252,7 +362,20 @@ export async function processFirstAttempts({ limit = 25 } = {}): Promise<Recover
 
   for (const cart of pending.filter((row) => !attempted.has(row.id)).slice(0, limit)) {
     try {
-      if (!cart.customer_phone?.trim()) {
+      const phoneText = cart.customer_phone?.trim() ?? ''
+      const whatsappSendable = Boolean(phoneText) && resolveWhatsAppRecipient(phoneText).ok
+      const platform =
+        !brand.isDefault && !whatsappSendable ? await loadCartPlatform(cart.id) : null
+      const channel = cronFirstChannel({
+        isDefaultBrand: brand.isDefault,
+        platform,
+        phone: cart.customer_phone,
+      })
+      if (channel === 'email') {
+        results.push(await attemptEmailFirst(cart))
+        continue
+      }
+      if (channel === 'skip_missing_phone') {
         results.push({ id: cart.id, cartId: cart.id, outcome: 'skipped', reason: 'missing_phone' })
         continue
       }
@@ -268,7 +391,7 @@ export async function processFirstAttempts({ limit = 25 } = {}): Promise<Recover
         continue
       }
 
-      const recipient = resolveWhatsAppRecipient(cart.customer_phone)
+      const recipient = resolveWhatsAppRecipient(phoneText)
       if (!recipient.ok) {
         console.warn('WhatsApp recovery not sent — phone not sendable', {
           cartId: cart.id,
@@ -340,7 +463,7 @@ export async function processFirstAttempts({ limit = 25 } = {}): Promise<Recover
 type PendingMessageRow = {
   id: string
   cart_id: string
-  phone: string
+  phone: string | null
   attempt_count: number | null
 }
 
@@ -426,6 +549,19 @@ export async function processDueRetries({ limit = 25 } = {}): Promise<{
         const reason = `cart_${cart?.status ?? 'missing'}`
         await failMessage(message.id, reason, 'queued')
         results.push({ id: message.id, cartId: message.cart_id, outcome: 'skipped', reason })
+        continue
+      }
+
+      if (!message.phone) {
+        if (brand.isDefault) {
+          await failMessage(message.id, 'missing_phone', 'queued')
+          claimedForSend = false
+          results.push({ id: message.id, cartId: message.cart_id, outcome: 'skipped', reason: 'missing_phone' })
+          continue
+        }
+        const emailResult = await attemptEmailRetry(message, attemptsSoFar)
+        claimedForSend = false
+        results.push(emailResult)
         continue
       }
 

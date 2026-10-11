@@ -28,6 +28,10 @@ const NO_ERRORS: SettingsErrors = {
   shiprocketPassword: null,
 };
 
+function FieldErrorText({ error }: { error: FieldError }) {
+  return error ? <p className="text-[11px] font-bold text-red-400 mt-1">{error}</p> : null;
+}
+
 export default function SettingsPage({
   params,
 }: {
@@ -62,10 +66,6 @@ export default function SettingsPage({
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 3000);
   };
-
-  // Small helper to render an inline error message beneath a field.
-  const FieldErrorText = ({ error }: { error: FieldError }) =>
-    error ? <p className="text-[11px] font-bold text-red-400 mt-1">{error}</p> : null;
 
   return (
     <div className="min-h-screen bg-[#0B0F17] text-white flex flex-col lg:flex-row">
@@ -122,6 +122,17 @@ export default function SettingsPage({
             <p className="text-xs sm:text-sm text-neutral-400 mt-1">Configure production API connections and synchronize webhooks securely.</p>
           </div>
         </div>
+
+        {!brand.isDefault ? (
+          <div className="rounded-2xl border border-amber-900/60 bg-amber-950/30 p-4 text-sm text-amber-100">
+            <p className="font-black">Turn off Shopify&apos;s own abandoned checkout email</p>
+            <p className="mt-1 text-amber-100/80">
+              {brand.name} can email a checkout that has no phone number. In Shopify admin
+              open Settings, Notifications, Customer notifications, and disable Abandoned
+              checkout so the shopper does not get a second email.
+            </p>
+          </div>
+        ) : null}
 
         <form onSubmit={handleSaveConfigs} className="space-y-6">
           

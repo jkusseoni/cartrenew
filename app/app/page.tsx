@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 
 import ShopifyBillingPlans from "@/components/shopify/ShopifyBillingPlans";
+import EmailRecoveryNotice from "@/components/shopify/EmailRecoveryNotice";
 import { brand } from "@/lib/brand";
 import { authFetch } from "@/lib/shopify/authFetch";
 import type {
@@ -509,6 +510,8 @@ export default function EmbeddedAppHomePage() {
           </span>
         </p>
       </div>
+
+      <EmailRecoveryNotice />
 
       {shopDomain ? (
         <ShopifyBillingPlans

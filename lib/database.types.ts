@@ -159,7 +159,9 @@ export interface Database {
           id: string
           cart_id: string
           store_id: string
-          phone: string
+          phone: string | null
+          email: string | null
+          channel: string
           template_name: string
           body: string | null
           status: 'sent' | 'delivered' | 'read' | 'failed' | 'queued' | 'pending'
@@ -174,7 +176,9 @@ export interface Database {
           id?: string
           cart_id: string
           store_id: string
-          phone: string
+          phone?: string | null
+          email?: string | null
+          channel?: string
           template_name: string
           body?: string | null
           status?: 'sent' | 'delivered' | 'read' | 'failed' | 'queued' | 'pending'
@@ -189,7 +193,9 @@ export interface Database {
           id?: string
           cart_id?: string
           store_id?: string
-          phone?: string
+          phone?: string | null
+          email?: string | null
+          channel?: string
           template_name?: string
           body?: string | null
           status?: 'sent' | 'delivered' | 'read' | 'failed' | 'queued' | 'pending'
