@@ -7,6 +7,8 @@ const baseURL = isCI
 
 export default defineConfig({
   testDir: './tests',
+  // Node's test runner owns *.test.ts. Playwright only runs *.spec.ts.
+  testIgnore: ['**/*.test.ts'],
   fullyParallel: true,
   forbidOnly: isCI,
   retries: isCI ? 2 : 0,
