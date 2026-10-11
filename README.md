@@ -34,3 +34,11 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Pingza recovery email
+
+Pingza can send one abandoned-cart email when a checkout has an email address, marketing consent, and no sendable WhatsApp phone. CartRenew does not send this email.
+
+Before turning `EMAIL_RECOVERY_ENABLED` on, disable Shopify's native abandoned checkout notification. In Shopify admin open Settings, then Notifications, then Customer notifications, and turn off Abandoned checkout. Leaving it on sends a second email for the same cart.
+
+Apply `pingza-email-migration.sql` on the Pingza database before deploying the email code. Do not run that file against CartRenew.

@@ -68,6 +68,7 @@ const isPublicRoute = createRouteMatcher([
   "/app(.*)",
   "/shopify(.*)",
   "/r/(.*)",
+  "/unsubscribe(.*)",
 ]);
 
 // Embedded Shopify App Home (+ legacy /shopify): bypass next-intl + Clerk.
@@ -81,6 +82,9 @@ const isShopifyApi = (pathname: string) => pathname.startsWith("/api/app");
 
 const isRecoveryRedirect = (pathname: string) =>
   pathname === "/r" || pathname.startsWith("/r/");
+
+const isUnsubscribe = (pathname: string) =>
+  pathname === "/unsubscribe" || pathname.startsWith("/unsubscribe/");
 
 const SHOPIFY_SHOP_RE = /^[a-zA-Z0-9][a-zA-Z0-9-]*\.myshopify\.com$/;
 
@@ -276,7 +280,7 @@ function handleShopifyRequest(request: NextRequest): NextResponse | null {
 
 /** Customer recovery links must bypass locale prefixing and auth. */
 function handleRecoveryRedirectRequest(request: NextRequest): NextResponse | null {
-  if (isRecoveryRedirect(request.nextUrl.pathname)) {
+  if (isRecoveryRedirect(request.nextUrl.pathname) || isUnsubscribe(request.nextUrl.pathname)) {
     return NextResponse.next();
   }
 

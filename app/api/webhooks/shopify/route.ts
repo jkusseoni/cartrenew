@@ -3,6 +3,7 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from 'next/server'
 import { nextRecoveryAt } from '@/lib/recovery-retry-policy'
+import { readBuyerAcceptsMarketing } from '@/lib/email/buyer-consent'
 import { supabaseAdmin } from '@/lib/supabase'
 import {
   getShopifyWebhookSecret,
@@ -375,6 +376,7 @@ async function upsertAbandonedCartRecord({
   cartValue,
   items,
   checkoutUrl,
+  emailMarketingConsent,
 }: {
   storeId: string
   token: string
@@ -384,6 +386,7 @@ async function upsertAbandonedCartRecord({
   cartValue: number
   items: unknown[]
   checkoutUrl: string | null
+  emailMarketingConsent?: boolean
 }): Promise<{ cart: AbandonedCartRow | null; error: unknown | null; created: boolean }> {
   const safeItems = Array.isArray(items) ? items : []
   const safeValue = Number.isFinite(cartValue) ? cartValue : 0
@@ -406,6 +409,9 @@ async function upsertAbandonedCartRecord({
     checkout_url: checkoutUrl,
     scheduled_message_at: nextRecoveryAt(),
     updated_at: new Date().toISOString(),
+    ...(typeof emailMarketingConsent === 'boolean'
+      ? { email_marketing_consent: emailMarketingConsent }
+      : {}),
   }
 
   if (existing?.id) {
@@ -507,6 +513,7 @@ async function handleCartWebhook(storeId: string, payload: any) {
     cartValue,
     items,
     checkoutUrl,
+    emailMarketingConsent: readBuyerAcceptsMarketing(payload),
   })
 
   if (error && !cart) {
@@ -555,6 +562,7 @@ async function handleCheckoutWebhook(storeId: string, payload: any) {
     cartValue,
     items,
     checkoutUrl,
+    emailMarketingConsent: readBuyerAcceptsMarketing(payload),
   })
 
   if (error) {
