@@ -3,6 +3,7 @@ import test from 'node:test'
 
 import {
   dueRecoveryScheduleFilter,
+  isRecoveryScheduleDue,
   nextRecoveryAt,
   RECOVERY_INACTIVITY_MS,
 } from '../../lib/recovery-retry-policy'
@@ -23,4 +24,14 @@ test('selects due schedules while keeping legacy unscheduled carts eligible', ()
     dueRecoveryScheduleFilter(now),
     'scheduled_message_at.is.null,scheduled_message_at.lte.2026-10-07T12:00:00.000Z'
   )
+})
+
+test('treats a null or past schedule as due and a future schedule as not due', () => {
+  const now = Date.parse('2026-10-07T12:00:00.000Z')
+
+  assert.equal(isRecoveryScheduleDue(null, now), true)
+  assert.equal(isRecoveryScheduleDue(undefined, now), true)
+  assert.equal(isRecoveryScheduleDue('2026-10-07T11:59:59.000Z', now), true)
+  assert.equal(isRecoveryScheduleDue(new Date(now).toISOString(), now), true)
+  assert.equal(isRecoveryScheduleDue('2026-10-07T12:00:01.000Z', now), false)
 })

@@ -34,6 +34,16 @@ export function nextRecoveryAt(now = Date.now()): string {
   return new Date(now + RECOVERY_INACTIVITY_MS).toISOString()
 }
 
+/** Row form of the first-attempt schedule rule. Null means not yet scheduled. */
+export function isRecoveryScheduleDue(
+  scheduledMessageAt: string | null | undefined,
+  now = Date.now()
+): boolean {
+  if (scheduledMessageAt == null) return true
+  const at = Date.parse(scheduledMessageAt)
+  return Number.isFinite(at) && at <= now
+}
+
 /**
  * PostgREST filter for first attempts. Null schedules are legacy rows that
  * predate scheduling and should remain eligible.
