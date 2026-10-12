@@ -16,6 +16,7 @@ export function redactSecrets(text: string): string {
     process.env.RESEND_API_KEY,
     process.env.RESEND_WEBHOOK_SECRET,
     process.env.EMAIL_UNSUBSCRIBE_SECRET,
+    process.env.SUPPRESSION_HASH_SECRET,
   ]
   for (const value of values) {
     const raw = envSecret(value)

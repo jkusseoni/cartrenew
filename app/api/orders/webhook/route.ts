@@ -1,8 +1,10 @@
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+import { brand } from "@/lib/brand";
 import { prisma } from "@/lib/prisma";
 import { maskPhone } from "@/lib/phone";
+import { legacyCommerceRouteEnabled } from "@/lib/privacy/legacy-commerce";
 import { NextResponse } from "next/server";
 
 type OrderWebhookBody = {
@@ -33,6 +35,10 @@ type ParsedOrderPayload = {
 };
 
 export async function POST(request: Request) {
+  if (!legacyCommerceRouteEnabled(brand.isDefault)) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   try {
     const body = (await request.json()) as OrderWebhookBody;
     const orderPayload = parseOrderWebhookBody(body);

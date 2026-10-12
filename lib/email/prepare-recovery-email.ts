@@ -17,6 +17,7 @@ import { sendResendEmail, type ResendFetch } from "@/lib/email/resend"
 import { supabaseAdmin } from "@/lib/supabase"
 import { resolveWhatsAppRecipient } from "@/lib/services/whatsapp-meta"
 import { readOptionalStoreName } from "@/lib/email/store-name-lookup"
+import { suppressionLookupKeys } from "@/lib/privacy/suppression-hash"
 import { redactSecrets } from "@/lib/services/redact-secrets"
 
 export type PreparedRecoveryEmail =
@@ -202,11 +203,12 @@ export async function prepareRecoveryEmail(cartId: string): Promise<PreparedReco
   const normalized = (email ?? "").trim().toLowerCase()
 
   let suppressed = false
-  if (normalized) {
+  const suppressionKeys = suppressionLookupKeys(normalized, process.env.SUPPRESSION_HASH_SECRET)
+  if (suppressionKeys.length > 0) {
     const { data: rows, error: suppressionError } = await supabaseAdmin
       .from("email_suppressions")
       .select("email")
-      .eq("email", normalized)
+      .in("email", suppressionKeys)
       .limit(1)
     if (suppressionError) {
       console.error("Email suppression lookup failed:", redactSecrets(suppressionError.message))
