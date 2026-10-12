@@ -1,4 +1,5 @@
 import https from 'https'
+import { maskPhone } from '@/lib/phone'
 import twilio from 'twilio'
 import RequestClient from 'twilio/lib/base/RequestClient'
 
@@ -383,13 +384,12 @@ export async function sendTwilioWhatsAppMessage(
     typeof bodyOrOptions === 'string' ? { body: bodyOrOptions } : bodyOrOptions
 
   if (!isValidWhatsAppPhone(toPhone)) {
-    console.error('❌ Invalid WhatsApp destination phone (Twilio would return 21211):', {
-      raw: toPhone,
-      normalized: normalizePhoneDigits(toPhone),
+    console.error('Invalid WhatsApp destination phone (Twilio would return 21211):', {
+      phone: maskPhone(toPhone),
     })
     return {
       success: false,
-      error: `Invalid phone number: ${toPhone}`,
+      error: `Invalid phone number: ${maskPhone(toPhone)}`,
       to: toPhone,
       apiHost: diagnostics.apiHost,
     }
@@ -447,7 +447,20 @@ export async function sendTwilioWhatsAppMessage(
     sandboxFrom: from.includes('14155238886'),
   }
 
-  console.log('🌐 Twilio Messages API request payload:', JSON.stringify(requestPayload, null, 2))
+  const requestPayloadForLog = {
+    endpoint: requestPayload.endpoint,
+    apiHost: requestPayload.apiHost,
+    timeoutMs: requestPayload.timeoutMs,
+    from: maskPhone(from),
+    to: maskPhone(to),
+    contentSid: requestPayload.contentSid,
+    hasContentVariables: Boolean(contentVariables),
+    sandboxTemplateMode: requestPayload.sandboxTemplateMode,
+    hasBody: requestPayload.hasBody,
+    sandboxFrom: requestPayload.sandboxFrom,
+  }
+
+  console.log('Twilio Messages API request', JSON.stringify(requestPayloadForLog, null, 2))
 
   try {
     const message = await client.messages.create(createParams)
@@ -461,8 +474,8 @@ export async function sendTwilioWhatsAppMessage(
         {
           message_sid: messageSid,
           status: message.status,
-          to: message.to,
-          from: message.from,
+          to: maskPhone(message.to),
+          from: maskPhone(message.from),
           errorCode: message.errorCode ?? null,
           errorMessage: message.errorMessage ?? null,
           contentSid: contentSid || null,
@@ -487,7 +500,7 @@ export async function sendTwilioWhatsAppMessage(
   } catch (err: unknown) {
     const details = serializeNetworkError(err)
     console.error('❌ Twilio Messages API connection/send failed — full error:', details)
-    console.error('❌ Twilio failed request payload was:', JSON.stringify(requestPayload, null, 2))
+    console.error('Twilio failed request payload was:', JSON.stringify(requestPayloadForLog, null, 2))
     if (err instanceof Error && err.stack) {
       console.error('❌ Twilio error stack:\n', err.stack)
     }

@@ -5,6 +5,7 @@ import React, { useMemo, useState } from "react";
 import { Check } from "lucide-react";
 
 import { type Currency, useMarketSettings } from "@/context/MarketSettingsContext";
+import { growthChannelsLabel } from "@/lib/brand";
 
 type Market = "india" | "global";
 type BillingCycle = "monthly" | "lifetime";
@@ -68,7 +69,7 @@ export default function PricingTable() {
             cta: "Select Growth",
             accent: popularAccent,
             highlight: "MOST_POPULAR" as const,
-            features: ["3 Stores", "1,000 Cart Recoveries / month", "WhatsApp + Email + SMS", "AI Personalized Messages", "0% Conversation Markup", "COD Verification"],
+            features: ["3 Stores", "1,000 Cart Recoveries / month", growthChannelsLabel, "AI Personalized Messages", "0% Conversation Markup", "COD Verification"],
           },
           {
             id: "in-scale",
@@ -102,7 +103,7 @@ export default function PricingTable() {
             cta: "Select Growth",
             accent: popularAccent,
             highlight: "MOST_POPULAR" as const,
-            features: ["3 Stores", "1,000 Cart Recoveries / month", "WhatsApp + Email + SMS", "AI Personalized Messages", "0% Conversation Markup"],
+            features: ["3 Stores", "1,000 Cart Recoveries / month", growthChannelsLabel, "AI Personalized Messages", "0% Conversation Markup"],
           },
           {
             id: "gl-scale",

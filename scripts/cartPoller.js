@@ -50,7 +50,8 @@ const checkAbandonedCartsNow = async () => {
         continue;
       }
 
-      console.log("TARGET: " + targetPhone + " | AMOUNT: Rs. " + cart.totalAmount);
+      const maskedPhone = String(targetPhone).replace(/\d(?=\d{4})/g, "*");
+      console.log("TARGET: " + maskedPhone + " | AMOUNT: Rs. " + cart.totalAmount);
 
       try {
         await axios.post("http://localhost:3000/api/whatsapp/send", {
@@ -60,7 +61,7 @@ const checkAbandonedCartsNow = async () => {
           abandonedCartUrl: cart.cartUrl,
         });
 
-        console.log("WhatsApp successfully triggered to " + targetPhone);
+        console.log("WhatsApp successfully triggered to " + maskedPhone);
 
         await prisma.cart.update({
           where: { id: cart.id },

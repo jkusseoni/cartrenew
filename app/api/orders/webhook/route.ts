@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 import { prisma } from "@/lib/prisma";
+import { maskPhone } from "@/lib/phone";
 import { NextResponse } from "next/server";
 
 type OrderWebhookBody = {
@@ -212,11 +213,12 @@ async function triggerCodWhatsAppLog(
   verificationOtp: string
 ) {
   try {
-    console.log("==================================================");
-    console.log("COD VERIFICATION WHATSAPP LOG TRIGGERED");
-    console.log(`TARGET PHONE : ${phoneNumber}`);
-    console.log(`ORDER ID     : ${shopifyOrderId}`);
-    console.log(`MESSAGE BODY : Hi ${customerName}, your COD verification OTP is ${verificationOtp}.`);
+    console.log("COD verification WhatsApp log triggered", {
+      phone: maskPhone(phoneNumber),
+      orderId: shopifyOrderId,
+      hasName: Boolean(customerName.trim()),
+      hasOtp: Boolean(verificationOtp),
+    });
     console.log("==================================================");
   } catch (error) {
     console.warn("COD WhatsApp log failed:", error);

@@ -99,7 +99,7 @@ export interface Database {
           cart_value: number
           items: Json
           checkout_url: string | null
-          status: 'pending' | 'messaged' | 'recovered' | 'lost' | 'opted_out'
+          status: 'pending' | 'messaged' | 'recovered' | 'lost' | 'opted_out' | 'skipped'
           message_sent_at: string | null
           message_delivered_at: string | null
           message_read_at: string | null
@@ -121,7 +121,7 @@ export interface Database {
           cart_value?: number
           items?: Json
           checkout_url?: string | null
-          status?: 'pending' | 'messaged' | 'recovered' | 'lost' | 'opted_out'
+          status?: 'pending' | 'messaged' | 'recovered' | 'lost' | 'opted_out' | 'skipped'
           message_sent_at?: string | null
           message_delivered_at?: string | null
           message_read_at?: string | null
@@ -143,7 +143,7 @@ export interface Database {
           cart_value?: number
           items?: Json
           checkout_url?: string | null
-          status?: 'pending' | 'messaged' | 'recovered' | 'lost' | 'opted_out'
+          status?: 'pending' | 'messaged' | 'recovered' | 'lost' | 'opted_out' | 'skipped'
           message_sent_at?: string | null
           message_delivered_at?: string | null
           message_read_at?: string | null

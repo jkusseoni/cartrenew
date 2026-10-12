@@ -18,6 +18,7 @@ import { getTrackedRecoveryUrl } from '@/lib/recovery-link'
 import { redactSecrets } from '@/lib/services/redact-secrets'
 import { brand } from '@/lib/brand'
 import { cronFirstChannel } from '@/lib/email/cron-candidate'
+import { permanentEmailSkipError } from '@/lib/email/email-skip'
 import { deliverPreparedEmail, prepareRecoveryEmail } from '@/lib/email/prepare-recovery-email'
 import {
   decideAfterAttempt,
@@ -65,6 +66,22 @@ export function sendRecoveryTemplate({
     languageCode: 'en',
     bodyVariables: buildAbandonedCartTemplateVariables({ customerName, checkoutUrl }),
   })
+}
+
+async function markCartEmailSkipped(cartId: string, reason: string) {
+  const { error } = await supabaseAdmin
+    .from('abandoned_carts')
+    .update({
+      status: 'skipped',
+      last_send_error: reason,
+      last_send_failed_at: nowIso(),
+    })
+    .eq('id', cartId)
+    .eq('status', 'pending')
+
+  if (error) {
+    console.error(`Failed to mark cart ${cartId} skipped:`, redactSecrets(error.message))
+  }
 }
 
 export async function markCartMessaged(cartId: string, sentAt: string) {
@@ -231,6 +248,8 @@ async function attemptEmailFirst(cart: CartRow): Promise<RecoveryRunResult> {
 
   const prepared = await prepareRecoveryEmail(cart.id)
   if (!prepared.ok) {
+    const skipError = !brand.isDefault ? permanentEmailSkipError(prepared.reason) : null
+    if (skipError) await markCartEmailSkipped(cart.id, skipError)
     return { id: cart.id, cartId: cart.id, outcome: 'skipped', reason: prepared.reason }
   }
 

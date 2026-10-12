@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from 'react';
+import { growthChannelsLabel } from '@/lib/brand';
 import { Check, Globe, MapPin, Zap, Crown } from "lucide-react";
 
 type Market = "india" | "global";
@@ -49,7 +50,7 @@ const monthlyTiers: Tier[] = [
     highlighted: true,
     razorpayUrl: "https://rzp.io/rzp/nhwzQWQd",
     stripeUrl: "https://buy.stripe.com/test_monthly_growth",
-    features: ["3 Stores", "1,000 Cart Recoveries / month", "WhatsApp + Email + SMS", "AI Personalized Messages", "0% Conversation Markup", "COD Verification"]
+    features: ["3 Stores", "1,000 Cart Recoveries / month", growthChannelsLabel, "AI Personalized Messages", "0% Conversation Markup", "COD Verification"]
   },
   {
     id: "m-scale",

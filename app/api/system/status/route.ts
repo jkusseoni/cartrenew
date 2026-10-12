@@ -3,6 +3,7 @@ export const runtime = 'nodejs'
 
 import { NextResponse } from 'next/server'
 
+import { brand } from '@/lib/brand'
 import { hasTwilioWhatsAppCredentials } from '@/lib/services/twilio-whatsapp'
 import { supabaseAdmin } from '@/lib/supabase'
 
@@ -37,7 +38,11 @@ export async function GET() {
     whatsApp: {
       ok: true,
       bypass: whatsAppBypass,
-      label: whatsAppBypass ? 'Bypass Mode' : 'Active Mode',
+      label: whatsAppBypass
+        ? brand.isDefault
+          ? 'Bypass Mode'
+          : 'Twilio not connected'
+        : 'Active Mode',
     },
     checkedAt: new Date().toISOString(),
   })

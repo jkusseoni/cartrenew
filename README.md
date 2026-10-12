@@ -39,6 +39,6 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 
 Pingza can send one abandoned-cart email when a checkout has an email address, marketing consent, and no sendable WhatsApp phone. CartRenew does not send this email.
 
-Before turning `EMAIL_RECOVERY_ENABLED` on, disable Shopify's native abandoned checkout notification. In Shopify admin open Settings, then Notifications, then Customer notifications, and turn off Abandoned checkout. Leaving it on sends a second email for the same cart.
+Before turning `EMAIL_RECOVERY_ENABLED` on, disable Shopify's native abandoned checkout notification. In Shopify admin open Settings → Checkout → Abandoned checkout emails and turn it off. If Shopify Messaging's abandoned-checkout automation is active, turn that off too. Leaving either on sends a second email for the same cart.
 
 Apply `pingza-email-migration.sql` on the Pingza database before deploying the email code. Do not run that file against CartRenew.

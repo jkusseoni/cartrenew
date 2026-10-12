@@ -31,7 +31,8 @@ node_cron_1.default.schedule("*/15 * * * *", async () => {
         for (const cart of unattendedCarts) {
             console.log("\n-----------------------------------------------");
             console.log(`AUTONOMOUS PIPELINE DETECTED`);
-            console.log(`TARGET PHONE : ${cart.phoneNumber}`);
+            const maskedPhone = String(cart.phoneNumber || "").replace(/\d(?=\d{4})/g, "*");
+            console.log(`TARGET PHONE : ${maskedPhone}`);
             console.log(`AMOUNT : ₹${cart.totalAmount}`);
             console.log("-----------------------------------------------\n");
             // 3. Send WhatsApp recovery via API
@@ -42,7 +43,7 @@ node_cron_1.default.schedule("*/15 * * * *", async () => {
                     cartTotalAmount: cart.totalAmount,
                     abandonCartUrl: cart.cartUrl,
                 });
-                console.log(`[${new Date().toLocaleTimeString()}] WhatsApp sent to ${cart.phoneNumber}`);
+                console.log(`[${new Date().toLocaleTimeString()}] WhatsApp sent to ${maskedPhone}`);
             }
             catch (apiError) {
                 console.error(`[${new Date().toLocaleTimeString()}] WhatsApp API Error:`, apiError instanceof Error ? apiError.message : apiError);

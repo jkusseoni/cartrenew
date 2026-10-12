@@ -1,3 +1,6 @@
+import { maskPhone } from '@/lib/phone'
+import { maskEmailForLog } from '@/lib/log-safe'
+
 interface CartSession {
   id: string;
   customerName: string;
@@ -42,12 +45,12 @@ async function triggerWhatsAppGateway(): Promise<boolean> {
 
 async function triggerEmailGateway(session: CartSession): Promise<boolean> {
   // SendGrid / Resend email setup endpoint integration logic
-  console.log(`📧 Fallback Email dispatched to: ${session.customerEmail}`);
+  console.log('Fallback Email dispatched', { email: maskEmailForLog(session.customerEmail) });
   return true;
 }
 
 async function triggerSMSGateway(session: CartSession): Promise<boolean> {
   // Twilio / Local SMS gateway redundancy execution
-  console.log(`📱 Fallback SMS alert sent to: ${session.customerPhone}`);
+  console.log('Fallback SMS alert sent', { phone: maskPhone(session.customerPhone) });
   return true;
 }

@@ -68,6 +68,14 @@ function buildBrand(): BrandConfig {
 
 export const brand: BrandConfig = buildBrand();
 
+/**
+ * Growth plan channel line. CartRenew keeps the existing SMS wording.
+ * Non-default brands only claim channels the recovery cron actually sends.
+ */
+export const growthChannelsLabel = brand.isDefault
+  ? "WhatsApp + Email + SMS"
+  : "WhatsApp + Email";
+
 export function brandPlanName(tier: BrandPlanTier): string {
   return `${brand.name} ${tier}`;
 }
