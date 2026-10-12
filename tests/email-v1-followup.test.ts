@@ -3,6 +3,11 @@ import test from "node:test"
 
 import { permanentEmailSkipError } from "../lib/email/email-skip"
 import {
+  isMissingStoreNameColumn,
+  readOptionalStoreName,
+  resetStoreNameColumnProbeForTests,
+} from "../lib/email/store-name-lookup"
+import {
   recoveryEmailSubject,
   recoveryFromName,
   recoveryStoreDisplayName,
@@ -96,6 +101,65 @@ test("recovery email names the store and escapes HTML", () => {
   assert.equal(injected.html.includes("\n<script>"), false)
   assert.match(injected.html, /Acme &lt;script&gt;/)
   assert.match(rendered.text, /Sent on behalf of Acme <script> via Pingza/)
+})
+
+test("a missing store_name column does not log an error and the domain is used", async () => {
+  resetStoreNameColumnProbeForTests()
+  const errors: unknown[][] = []
+  const debug: unknown[][] = []
+  let lookups = 0
+  const lookup = async () => {
+    lookups += 1
+    return {
+      data: null,
+      error: { code: "42703", message: "column stores.store_name does not exist" },
+    }
+  }
+  const log = {
+    error: (...args: unknown[]) => {
+      errors.push(args)
+    },
+    debug: (...args: unknown[]) => {
+      debug.push(args)
+    },
+  }
+  const first = await readOptionalStoreName(lookup, log)
+  const second = await readOptionalStoreName(lookup, log)
+  assert.equal(first, null)
+  assert.equal(second, null)
+  assert.equal(isMissingStoreNameColumn({ code: "PGRST204", message: "Could not find the 'store_name' column of 'stores' in the schema cache" }), true)
+  assert.equal(errors.length, 0)
+  assert.equal(debug.length, 1)
+  assert.equal(lookups, 1)
+  assert.equal(
+    recoveryStoreDisplayName(first, "cartrenew-empty-test.myshopify.com"),
+    "cartrenew-empty-test"
+  )
+})
+
+test("a real store name database error is still logged", async () => {
+  resetStoreNameColumnProbeForTests()
+  const errors: unknown[][] = []
+  const name = await readOptionalStoreName(
+    async () => ({
+      data: null,
+      error: { code: "42501", message: "permission denied for table stores" },
+    }),
+    {
+      error: (...args: unknown[]) => {
+        errors.push(args)
+      },
+      debug: () => {},
+    }
+  )
+  assert.equal(name, null)
+  assert.equal(errors.length, 1)
+  assert.match(String(errors[0]?.[0]), /store name lookup failed/)
+  assert.match(String(errors[0]?.[1]), /permission denied/)
+  assert.equal(
+    recoveryStoreDisplayName(name, "cartrenew-empty-test.myshopify.com"),
+    "cartrenew-empty-test"
+  )
 })
 
 test("permanent email skips are distinct from temporary config misses", () => {
