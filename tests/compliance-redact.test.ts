@@ -13,6 +13,7 @@ import {
   type StoreScopedTable,
 } from "../lib/privacy/compliance"
 import { PrivacyConfigError, PrivacyDbError } from "../lib/privacy/compliance-errors"
+import { CART_PAGE_SIZE, listStoreCarts } from "../lib/privacy/compliance-db"
 import { isSuppressionHmac, suppressionHmac, suppressionLookupKeys } from "../lib/privacy/suppression-hash"
 
 const SECRET = "suppression-test-secret"
@@ -207,6 +208,63 @@ test("customers/redact matches email or phone and hashes the suppression", async
     assert.equal(logged.includes("key=secret-key"), false)
     assert.equal(logged.includes("191167"), false)
   }
+})
+
+test("customers/redact finds a cart past the first page of 1000", async () => {
+  const matchIndex = CART_PAGE_SIZE
+  const carts = Array.from({ length: CART_PAGE_SIZE + 1 }, (_, index) =>
+    cart({
+      id: `cart-${index}`,
+      token: `tok-${index}`,
+      customerEmail: index === matchIndex ? EMAIL : `other-${index}@example.com`,
+      customerPhone: null,
+    })
+  )
+  const { db, state } = memory({ carts, messages: [], suppressions: [] })
+  const pages: Array<{ storeId: string; from: number; to: number }> = []
+  db.listCarts = (storeId) =>
+    listStoreCarts(storeId, async (scopedStoreId, from, to) => {
+      pages.push({ storeId: scopedStoreId, from, to })
+      const page = state.carts
+        .filter((row) => row.storeId === scopedStoreId)
+        .slice(from, to + 1)
+      return {
+        data: page.map((row) => ({
+          id: row.id,
+          customer_email: row.customerEmail,
+          customer_phone: row.customerPhone,
+          customer_name: row.customerName,
+          checkout_url: row.checkoutUrl,
+          status: row.status,
+          created_at: row.createdAt,
+        })),
+        error: null,
+      }
+    })
+
+  const result = await runCompliance({
+    topic: "customers/redact",
+    shopDomain: SHOP,
+    body: { customer: { email: EMAIL, phone: PHONE } },
+    requestId: "req-1",
+    skipSuppressions: false,
+    hashSecret: SECRET,
+    db,
+    log: () => {},
+    deliverExport: async () => {},
+    replacementToken: () => "redacted:fixed",
+  })
+
+  assert.equal(result.carts, 1)
+  assert.deepEqual(pages, [
+    { storeId: "store-1", from: 0, to: CART_PAGE_SIZE - 1 },
+    { storeId: "store-1", from: CART_PAGE_SIZE, to: CART_PAGE_SIZE * 2 - 1 },
+  ])
+  assert.equal(state.carts[matchIndex]?.customerEmail, null)
+  assert.equal(state.carts[matchIndex]?.checkoutUrl, null)
+  assert.equal(state.carts[matchIndex]?.token, "redacted:fixed")
+  assert.equal(state.carts[0]?.customerEmail, "other-0@example.com")
+  assert.equal(state.carts[999]?.customerEmail, "other-999@example.com")
 })
 
 test("customers/redact is idempotent and leaves a non-matching suppression", async () => {

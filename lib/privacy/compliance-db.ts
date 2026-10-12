@@ -11,6 +11,33 @@ import { anonymizedCartUpdate, anonymizedMessageUpdate } from "@/lib/privacy/com
 
 const MISSING_COLUMN = new Set(["42703", "PGRST204"])
 
+/** PostgREST returns at most this many rows unless the caller pages. */
+export const CART_PAGE_SIZE = 1000
+
+const CART_COLUMNS =
+  "id, customer_email, customer_phone, customer_name, checkout_url, status, created_at"
+
+export async function listStoreCarts(
+  storeId: string,
+  fetchPage: (
+    storeId: string,
+    from: number,
+    to: number
+  ) => Promise<{ data: unknown; error: unknown }>
+): Promise<PrivacyCart[]> {
+  const carts: PrivacyCart[] = []
+  let from = 0
+  for (;;) {
+    const to = from + CART_PAGE_SIZE - 1
+    const { data, error } = await fetchPage(storeId, from, to)
+    throwIf(error)
+    const raw = rowsOf(data)
+    carts.push(...raw.map(cartFrom).filter((cart) => cart.id))
+    if (raw.length < CART_PAGE_SIZE) return carts
+    from += CART_PAGE_SIZE
+  }
+}
+
 function errorCode(error: unknown): string | null {
   if (!error || typeof error !== "object") return null
   if (!("code" in error)) return "db_error"
@@ -80,16 +107,15 @@ export function createSupabasePrivacyDb(client: typeof supabaseAdmin = supabaseA
     },
 
     async listCarts(storeId) {
-      const { data, error } = await client
-        .from("abandoned_carts")
-        .select(
-          "id, customer_email, customer_phone, customer_name, checkout_url, status, created_at"
-        )
-        .eq("store_id", storeId)
-      throwIf(error)
-      return rowsOf(data)
-        .map(cartFrom)
-        .filter((cart) => cart.id)
+      return listStoreCarts(storeId, async (scopedStoreId, from, to) => {
+        const result = await client
+          .from("abandoned_carts")
+          .select(CART_COLUMNS)
+          .eq("store_id", scopedStoreId)
+          .order("id", { ascending: true })
+          .range(from, to)
+        return { data: result.data, error: result.error }
+      })
     },
 
     async anonymizeCart(storeId, cartId, replacementToken) {
