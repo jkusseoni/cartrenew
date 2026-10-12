@@ -16,6 +16,7 @@ import {
 import { sendResendEmail, type ResendFetch } from "@/lib/email/resend"
 import { supabaseAdmin } from "@/lib/supabase"
 import { resolveWhatsAppRecipient } from "@/lib/services/whatsapp-meta"
+import { readOptionalStoreName } from "@/lib/email/store-name-lookup"
 import { redactSecrets } from "@/lib/services/redact-secrets"
 
 export type PreparedRecoveryEmail =
@@ -142,14 +143,19 @@ async function loadRecoveryStore(storeId: string): Promise<RecoveryStoreRow> {
     return empty
   }
 
-  const { data: named, error: nameError } = await supabaseAdmin
-    .from("stores")
-    .select("store_name")
-    .eq("id", storeId)
-    .maybeSingle()
-  if (nameError) {
-    console.error("Email recovery store name lookup failed:", redactSecrets(nameError.message))
-  }
+  const storeName = await readOptionalStoreName(async () => {
+    const { data, error } = await supabaseAdmin
+      .from("stores")
+      .select("store_name")
+      .eq("id", storeId)
+      .maybeSingle()
+    return {
+      data,
+      error: error
+        ? { code: error.code, message: error.message }
+        : null,
+    }
+  })
 
   const { data: sender, error: senderError } = await supabaseAdmin
     .from("stores")
@@ -161,7 +167,7 @@ async function loadRecoveryStore(storeId: string): Promise<RecoveryStoreRow> {
   }
 
   return {
-    storeName: textOrNull(named?.store_name),
+    storeName,
     shopifyDomain: textOrNull(core?.shopify_domain),
     emailFromName: textOrNull(sender?.email_from_name),
     replyTo: textOrNull(sender?.reply_to_email),
