@@ -57,11 +57,18 @@ test("browser unsubscribe posts render HTML and one-click stays JSON", () => {
 })
 
 test("recovery email names the store and escapes HTML", () => {
-  assert.equal(
-    recoveryStoreDisplayName(null, "acme-shop.myshopify.com"),
-    "acme-shop"
-  )
   assert.equal(recoveryStoreDisplayName("Acme", "ignored.myshopify.com"), "Acme")
+  assert.equal(
+    recoveryStoreDisplayName(null, "cartrenew-empty-test.myshopify.com"),
+    "cartrenew-empty-test"
+  )
+  assert.equal(recoveryStoreDisplayName(null, "cartrenew-empty-test"), "cartrenew-empty-test")
+  assert.equal(recoveryStoreDisplayName(null, null), "the store")
+  assert.equal(recoveryStoreDisplayName("", ""), "the store")
+  assert.equal(
+    recoveryEmailSubject("Acme\r\nBcc: evil@example.com"),
+    "You left something in your cart at Acme Bcc: evil@example.com"
+  )
   assert.equal(recoveryEmailSubject("Acme"), "You left something in your cart at Acme")
   assert.equal(recoveryFromName(null, "Acme"), "Acme")
   assert.equal(recoveryFromName("Acme Care", "Acme"), "Acme Care")
@@ -77,6 +84,17 @@ test("recovery email names the store and escapes HTML", () => {
   assert.match(rendered.html, /You left something in your cart at Acme &lt;script&gt;/)
   assert.match(rendered.html, /Sent on behalf of Acme &lt;script&gt; via Pingza/)
   assert.equal(rendered.html.includes("<script>"), false)
+  const injected = renderRecoveryEmail({
+    storeName: "Acme\r\n<script>",
+    brandName: "Pingza",
+    items: [],
+    checkoutUrl: "https://shop.example/checkout",
+    unsubscribeUrl: "https://app.example/unsubscribe/token",
+    postalAddress: "1 Market Street",
+  })
+  assert.equal(injected.html.includes("\r"), false)
+  assert.equal(injected.html.includes("\n<script>"), false)
+  assert.match(injected.html, /Acme &lt;script&gt;/)
   assert.match(rendered.text, /Sent on behalf of Acme <script> via Pingza/)
 })
 

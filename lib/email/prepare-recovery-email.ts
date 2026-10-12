@@ -109,6 +109,65 @@ export function composeRecoveryEmail(snapshot: RecoveryEmailSnapshot): PreparedR
   }
 }
 
+type RecoveryStoreRow = {
+  storeName: string | null
+  shopifyDomain: string | null
+  emailFromName: string | null
+  replyTo: string | null
+}
+
+function textOrNull(value: unknown): string | null {
+  return typeof value === "string" ? value : null
+}
+
+/**
+ * shopify_domain is on every store row. store_name is not on the Pingza schema
+ * (it arrived with the WooCommerce migration), so it is read on its own. A
+ * missing column must not blank the domain and fall through to "the store".
+ */
+async function loadRecoveryStore(storeId: string): Promise<RecoveryStoreRow> {
+  const empty: RecoveryStoreRow = {
+    storeName: null,
+    shopifyDomain: null,
+    emailFromName: null,
+    replyTo: null,
+  }
+  const { data: core, error: coreError } = await supabaseAdmin
+    .from("stores")
+    .select("shopify_domain")
+    .eq("id", storeId)
+    .maybeSingle()
+  if (coreError) {
+    console.error("Email recovery store lookup failed:", redactSecrets(coreError.message))
+    return empty
+  }
+
+  const { data: named, error: nameError } = await supabaseAdmin
+    .from("stores")
+    .select("store_name")
+    .eq("id", storeId)
+    .maybeSingle()
+  if (nameError) {
+    console.error("Email recovery store name lookup failed:", redactSecrets(nameError.message))
+  }
+
+  const { data: sender, error: senderError } = await supabaseAdmin
+    .from("stores")
+    .select("email_from_name, reply_to_email")
+    .eq("id", storeId)
+    .maybeSingle()
+  if (senderError) {
+    console.error("Email recovery sender lookup failed:", redactSecrets(senderError.message))
+  }
+
+  return {
+    storeName: textOrNull(named?.store_name),
+    shopifyDomain: textOrNull(core?.shopify_domain),
+    emailFromName: textOrNull(sender?.email_from_name),
+    replyTo: textOrNull(sender?.reply_to_email),
+  }
+}
+
 export async function prepareRecoveryEmail(cartId: string): Promise<PreparedRecoveryEmail> {
   if (brand.isDefault) return { ok: false, reason: "default_brand" }
 
@@ -150,16 +209,8 @@ export async function prepareRecoveryEmail(cartId: string): Promise<PreparedReco
     suppressed = (rows?.length ?? 0) > 0
   }
 
-  const { data: store } = await supabaseAdmin
-    .from("stores")
-    .select("email_from_name, reply_to_email, store_name, shopify_domain")
-    .eq("id", cart.store_id)
-    .maybeSingle()
-
-  const storeName = recoveryStoreDisplayName(
-    store?.store_name as string | null,
-    store?.shopify_domain as string | null
-  )
+  const store = await loadRecoveryStore(cart.store_id)
+  const storeName = recoveryStoreDisplayName(store.storeName, store.shopifyDomain)
 
   return composeRecoveryEmail({
     isDefaultBrand: brand.isDefault,
@@ -171,8 +222,8 @@ export async function prepareRecoveryEmail(cartId: string): Promise<PreparedReco
     suppressed,
     allowlistRaw: process.env.EMAIL_RECOVERY_ALLOWLIST ?? null,
     fromEmail: process.env.RESEND_FROM_EMAIL ?? "",
-    fromName: recoveryFromName(store?.email_from_name as string | null, storeName),
-    replyTo: (store?.reply_to_email as string | null) ?? null,
+    fromName: recoveryFromName(store.emailFromName, storeName),
+    replyTo: store.replyTo,
     unsubscribeSecret: process.env.EMAIL_UNSUBSCRIBE_SECRET ?? "",
     appUrl: brand.appUrl || null,
     checkoutUrl: typeof cart.checkout_url === "string" ? cart.checkout_url : null,
