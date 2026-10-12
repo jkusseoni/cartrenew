@@ -3,7 +3,7 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from 'next/server'
 import { nextRecoveryAt } from '@/lib/recovery-retry-policy'
-import { readBuyerAcceptsMarketing } from '@/lib/email/buyer-consent'
+import { readBuyerAcceptsMarketing, readCheckoutMarketingConsent } from '@/lib/email/buyer-consent'
 import { summarizeCheckoutConsent } from '@/lib/email/checkout-consent-log'
 import { brand } from '@/lib/brand'
 import { supabaseAdmin } from '@/lib/supabase'
@@ -133,12 +133,15 @@ export async function POST(req: NextRequest) {
         topic,
         apiVersion: req.headers.get('x-shopify-api-version'),
       })
-      const readConsent = readBuyerAcceptsMarketing(
-        payload && typeof payload === 'object' ? payload : {}
+      const readConsent = readCheckoutMarketingConsent(
+        payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {}
       )
       console.log('checkout consent fields', {
         ...consentLog,
-        buyerAcceptsMarketingRead: readConsent === undefined ? null : readConsent,
+        buyerAcceptsMarketing: readConsent.buyerAcceptsMarketing,
+        customerAcceptsMarketing: readConsent.customerAcceptsMarketing,
+        consentSource: readConsent.source,
+        buyerAcceptsMarketingRead: readConsent.value === undefined ? null : readConsent.value,
       })
     }
 

@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import crypto from "node:crypto"
 import test from "node:test"
 
-import { readBuyerAcceptsMarketing } from "../lib/email/buyer-consent"
+import { readBuyerAcceptsMarketing, readCheckoutMarketingConsent } from "../lib/email/buyer-consent"
 import {
   decideRecoveryEmail,
   parseEmailAllowlist,
@@ -175,9 +175,80 @@ test("resend events suppress only a hard bounce or a complaint", () => {
   assert.equal(classifyResendEvent({ type: "email.opened", data: { email_id: "email_9" } }).kind, "opened")
 })
 
-test("checkout consent is the 2026-07 buyer_accepts_marketing boolean", () => {
+test("checkout consent uses buyer_accepts_marketing or customer.accepts_marketing", () => {
+  assert.equal(
+    readBuyerAcceptsMarketing({
+      buyer_accepts_marketing: false,
+      customer: { accepts_marketing: true },
+    }),
+    true
+  )
+  assert.equal(readCheckoutMarketingConsent({
+    buyer_accepts_marketing: false,
+    customer: { accepts_marketing: true },
+  }).source, "customer.accepts_marketing")
+
   assert.equal(readBuyerAcceptsMarketing({ buyer_accepts_marketing: true }), true)
-  assert.equal(readBuyerAcceptsMarketing({ buyer_accepts_marketing: false }), false)
-  assert.equal(readBuyerAcceptsMarketing({ buyer_accepts_marketing: "true" }), undefined)
+  assert.equal(
+    readCheckoutMarketingConsent({ buyer_accepts_marketing: true }).source,
+    "buyer_accepts_marketing"
+  )
+
+  assert.equal(
+    readBuyerAcceptsMarketing({
+      buyer_accepts_marketing: false,
+      customer: { accepts_marketing: false },
+    }),
+    false
+  )
   assert.equal(readBuyerAcceptsMarketing({}), undefined)
+  assert.equal(readCheckoutMarketingConsent({}).source, null)
+
+  assert.equal(
+    readBuyerAcceptsMarketing({
+      buyer_accepts_marketing: "true",
+      customer: { accepts_marketing: "true" },
+    }),
+    undefined
+  )
+  assert.equal(
+    readBuyerAcceptsMarketing({
+      buyer_accepts_marketing: false,
+      customer: { accepts_marketing: "true" },
+    }),
+    false
+  )
+
+  assert.equal(
+    readBuyerAcceptsMarketing({
+      buyer_accepts_marketing: true,
+      customer: { email: "shopper@example.com" },
+    }),
+    true
+  )
+  assert.equal(
+    readBuyerAcceptsMarketing({
+      buyer_accepts_marketing: false,
+      customer: {},
+    }),
+    false
+  )
+  assert.equal(readBuyerAcceptsMarketing({ customer: { first_name: "Ada" } }), undefined)
+
+  assert.equal(
+    readBuyerAcceptsMarketing({
+      buyer_accepts_marketing: false,
+      customer: {},
+      payload: { customer: { accepts_marketing: true } },
+    }),
+    true
+  )
+  assert.equal(
+    readBuyerAcceptsMarketing({
+      buyer_accepts_marketing: false,
+      customer: { accepts_marketing: false },
+      payload: { customer: { accepts_marketing: true } },
+    }),
+    false
+  )
 })
