@@ -13,6 +13,7 @@ import {
   sendRecoveryTemplate,
 } from '@/lib/services/recovery-dispatch'
 import { getTrackedRecoveryUrl } from '@/lib/recovery-link'
+import { checkoutUrlForLog } from '@/lib/log-safe'
 
 export type RecoveryMessageContext = {
   customer_name: string
@@ -184,11 +185,11 @@ export async function triggerWhatsAppRecoveryForCart({
       return { queued: false, sent: false, error: insertError?.message || 'insert_failed' }
     }
 
-    console.log('📤 triggerWhatsAppRecoveryForCart Meta template payload', {
+    console.log('triggerWhatsAppRecoveryForCart Meta template', {
       cartId,
       to: maskPhone(phoneE164),
       templateName: whatsappTemplateName,
-      bodyVariables: [safeName, trackedCheckoutUrl],
+      checkoutPath: checkoutUrlForLog(trackedCheckoutUrl),
     })
 
     const dispatch = hasWhatsAppCredentials()

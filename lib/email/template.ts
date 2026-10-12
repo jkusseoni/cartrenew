@@ -1,4 +1,27 @@
-export const RECOVERY_EMAIL_SUBJECT = "You left something in your cart"
+export function recoveryStoreDisplayName(
+  storeName: string | null | undefined,
+  shopDomain: string | null | undefined
+): string {
+  const named = (storeName ?? "").trim()
+  if (named) return named
+  const domain = (shopDomain ?? "").trim()
+  if (!domain) return "the store"
+  return domain.replace(/\.myshopify\.com$/i, "") || "the store"
+}
+
+export function recoveryEmailSubject(storeName: string): string {
+  const name = storeName.replace(/[\r\n]+/g, " ").trim() || "the store"
+  return `You left something in your cart at ${name}`
+}
+
+export function recoveryFromName(
+  emailFromName: string | null | undefined,
+  storeName: string
+): string {
+  const custom = (emailFromName ?? "").replace(/[\r\n]+/g, " ").trim()
+  if (custom) return custom
+  return storeName.replace(/[\r\n]+/g, " ").trim() || "the store"
+}
 
 export type RecoveryEmailItem = { title: string; quantity: number }
 
@@ -29,12 +52,16 @@ export function itemTitles(items: unknown): RecoveryEmailItem[] {
 
 export function renderRecoveryEmail(input: {
   storeName: string
+  brandName: string
   items: RecoveryEmailItem[]
   checkoutUrl: string
   unsubscribeUrl: string
   postalAddress: string
 }): { html: string; text: string } {
   const store = escapeHtml(input.storeName || "the store")
+  const brandName = escapeHtml(input.brandName || "Pingza")
+  const heading = `You left something in your cart at ${store}`
+  const footer = `Sent on behalf of ${store} via ${brandName}`
   const postal = escapeHtml(input.postalAddress.trim())
   const itemHtml = input.items.length
     ? `<ul>${input.items
@@ -52,13 +79,13 @@ export function renderRecoveryEmail(input: {
     <tr><td align="center" style="padding:24px 12px;">
       <table role="presentation" width="100%" style="max-width:560px;background:#fff;border-radius:12px;padding:24px;">
         <tr><td>
-          <p style="margin:0 0 8px;font-size:14px;color:#555;">${store}</p>
-          <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;">You left something in your cart</h1>
+          <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;">${heading}</h1>
           ${itemHtml}
           <p style="margin:24px 0;">
             <a href="${escapeHtml(input.checkoutUrl)}" style="display:inline-block;background:#111;color:#fff;text-decoration:none;padding:12px 18px;border-radius:8px;">Complete your order</a>
           </p>
           <p style="margin:24px 0 0;font-size:12px;line-height:1.5;color:#666;">
+            ${footer}<br>
             ${postal}<br>
             <a href="${escapeHtml(input.unsubscribeUrl)}">Unsubscribe</a>
           </p>
@@ -69,14 +96,15 @@ export function renderRecoveryEmail(input: {
 </body>
 </html>`
 
-  const text = `${input.storeName || "the store"}
-
-You left something in your cart
+  const plainStore = input.storeName.replace(/[\r\n]+/g, " ").trim() || "the store"
+  const plainBrand = input.brandName.replace(/[\r\n]+/g, " ").trim() || "Pingza"
+  const text = `You left something in your cart at ${plainStore}
 
 ${itemText}
 
 Complete your order: ${input.checkoutUrl}
 
+Sent on behalf of ${plainStore} via ${plainBrand}
 ${input.postalAddress.trim()}
 Unsubscribe: ${input.unsubscribeUrl}`
 

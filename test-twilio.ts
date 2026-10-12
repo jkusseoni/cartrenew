@@ -8,6 +8,8 @@
  * recovery message to the whitelisted sandbox number.
  */
 import { config } from 'dotenv'
+import { maskPhone } from './lib/phone'
+import { checkoutUrlForLog } from './lib/log-safe'
 
 config({ path: '.env' })
 config({ path: '.env.local', override: true })
@@ -18,7 +20,6 @@ const MOCK_CART_ID = '00000000-0000-4000-8000-testtwilio01'
 async function main() {
   const {
     buildRecoveryWhatsAppBody,
-    formatWhatsAppAddress,
     getTwilioWhatsAppFrom,
     hasTwilioWhatsAppCredentials,
     sendTwilioWhatsAppMessage,
@@ -41,12 +42,10 @@ async function main() {
   })
 
   console.log('📤 Sending Twilio WhatsApp recovery test…')
-  console.log('   From:', getTwilioWhatsAppFrom())
-  console.log('   To:  ', formatWhatsAppAddress(TEST_TO))
-  console.log('   Link:', recoveryLink)
-  console.log('---')
-  console.log(body)
-  console.log('---')
+  console.log('   From:', maskPhone(getTwilioWhatsAppFrom()))
+  console.log('   To:  ', maskPhone(TEST_TO))
+  console.log('   Link:', checkoutUrlForLog(recoveryLink))
+  console.log('   Body chars:', body.length)
 
   const result = await sendTwilioWhatsAppMessage(TEST_TO, body)
 

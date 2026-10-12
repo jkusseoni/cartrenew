@@ -60,7 +60,12 @@ export default function PrivacyPolicy() {
               <li><strong className="text-neutral-200">Vercel:</strong> application hosting and website analytics.</li>
               <li><strong className="text-neutral-200">Supabase:</strong> database hosting.</li>
               <li><strong className="text-neutral-200">Clerk:</strong> merchant account sign-in.</li>
-              <li><strong className="text-neutral-200">PayPal and Shopify Billing:</strong> subscription payments.</li>
+              <li>
+                <strong className="text-neutral-200">
+                  {brand.isDefault ? "PayPal and Shopify Billing:" : "Shopify Billing:"}
+                </strong>{" "}
+                subscription payments.
+              </li>
             </ul>
           </section>
 

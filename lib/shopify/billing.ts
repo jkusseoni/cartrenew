@@ -5,7 +5,7 @@
  * Mutation: appSubscriptionCreate
  */
 
-import { brandPlanName, type BrandPlanTier } from "@/lib/brand";
+import { brandPlanName, growthChannelsLabel, type BrandPlanTier } from "@/lib/brand";
 import { getShopifyApiVersion, getShopifyAppUrl } from "@/lib/shopify/config";
 import { TRIAL_DURATION_DAYS } from "@/lib/billing/trial-config";
 
@@ -43,7 +43,7 @@ export const SHOPIFY_BILLING_PLANS: Record<ShopifyBillingPlanId, ShopifyBillingP
     currencyCode: "USD",
     interval: "EVERY_30_DAYS",
     trialDays: TRIAL_DURATION_DAYS,
-    description: "3 stores · 1,000 recoveries / month · WhatsApp + Email + SMS",
+    description: `3 stores · 1,000 recoveries / month · ${growthChannelsLabel}`,
   },
   scale: {
     id: "scale",

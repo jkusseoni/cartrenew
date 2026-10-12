@@ -14,6 +14,6 @@ The first email uses the same 60-minute inactivity schedule as WhatsApp. A phone
 
 ## Shopify native emails
 
-Disable Shopify's own abandoned checkout notification before enabling this. In Shopify admin open Settings, then Notifications, then Customer notifications, and turn off Abandoned checkout. Otherwise the shopper can receive two emails for one cart.
+Disable Shopify's own abandoned checkout notification before enabling this. In Shopify admin open Settings → Checkout → Abandoned checkout emails and turn it off. If Shopify Messaging's abandoned-checkout automation is active, turn that off too. Otherwise the shopper can receive two emails for one cart.
 
 Apply `pingza-email-migration.sql` on the Pingza database first. Do not run it on CartRenew.

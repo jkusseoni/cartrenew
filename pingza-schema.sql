@@ -178,7 +178,7 @@ create table public.abandoned_carts (
   items                 jsonb not null default '[]'::jsonb,
   checkout_url          text,
   status                text not null default 'pending'
-                          check (status in ('pending', 'messaged', 'recovered', 'lost', 'opted_out')),
+                          check (status in ('pending', 'messaged', 'recovered', 'lost', 'opted_out', 'skipped')),
   scheduled_message_at  timestamptz,
   message_sent_at       timestamptz,
   message_delivered_at  timestamptz,

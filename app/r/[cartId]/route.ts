@@ -8,6 +8,7 @@ import {
   isValidRecoveryCartSlug,
 } from '@/lib/recovery-link'
 import { supabaseAdmin } from '@/lib/supabase'
+import { checkoutUrlForLog, tokenSuffix } from '@/lib/log-safe'
 
 const CART_SELECT =
   'id, store_id, checkout_url, status, shopify_cart_token, customer_email'
@@ -108,11 +109,9 @@ export async function GET(
     cartId: cart.id,
     storeId: cart.store_id,
     status: cart.status,
-    shopifyCartToken: cart.shopify_cart_token,
-    customerEmail: cart.customer_email,
-    checkoutUrl,
-    referrer: request.headers.get('referer'),
-    userAgent: request.headers.get('user-agent'),
+    shopifyCartTokenSuffix: tokenSuffix(cart.shopify_cart_token),
+    hasEmail: Boolean(cart.customer_email),
+    checkoutPath: checkoutUrlForLog(checkoutUrl),
   })
 
   return NextResponse.redirect(checkoutUrl, 302)

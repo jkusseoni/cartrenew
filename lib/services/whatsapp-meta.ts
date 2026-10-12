@@ -231,7 +231,11 @@ function cleanEnv(value?: string | null): string {
       },
     }
   
-    console.log('🌐 Meta WhatsApp API request payload:', JSON.stringify(payload, null, 2))
+    console.log('Meta WhatsApp API request', {
+      to: maskPhone(to),
+      templateName: options.templateName,
+      componentCount: components?.length ?? 0,
+    })
   
     try {
       const response = await fetch(url, {
@@ -265,7 +269,10 @@ function cleanEnv(value?: string | null): string {
       }
   
       const messageId = data?.messages?.[0]?.id ?? null
-      console.log('✅ Meta WhatsApp API response:', JSON.stringify(data, null, 2))
+      console.log('Meta WhatsApp API response', {
+        messageId,
+        contactCount: Array.isArray(data?.contacts) ? data.contacts.length : 0,
+      })
   
       return {
         success: true,

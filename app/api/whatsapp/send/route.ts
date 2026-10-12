@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { maskPhone } from '@/lib/phone'
+import { checkoutUrlForLog } from '@/lib/log-safe'
 import {
   buildAbandonedCartTemplateVariables,
   resolveRecoveryCustomerName,
@@ -54,12 +56,12 @@ export async function POST(request: Request) {
       checkoutUrl,
     })
 
-    console.log('📤 /api/whatsapp/send abandoned-cart Meta template payload', {
-      to: phone,
-      customerName,
-      checkoutUrl,
+    console.log('/api/whatsapp/send abandoned-cart Meta template', {
+      to: maskPhone(phone),
+      hasName: Boolean(customerName?.trim()),
+      checkoutPath: checkoutUrlForLog(checkoutUrl),
       templateName: 'abandoned_cart_reminder',
-      bodyVariables,
+      variableCount: bodyVariables.length,
     })
 
     const sendResult = await sendWhatsAppMessage(phone, {
@@ -68,7 +70,10 @@ export async function POST(request: Request) {
     })
 
     if (!sendResult.success) {
-      console.error('❌ Meta WhatsApp abandoned-cart send failed:', sendResult)
+      console.error('Meta WhatsApp abandoned-cart send failed:', {
+        error: sendResult.error,
+        to: maskPhone(sendResult.to),
+      })
       return NextResponse.json(
         {
           success: false,
@@ -78,8 +83,8 @@ export async function POST(request: Request) {
       )
     }
 
-    console.log('✅ Abandoned-cart Meta WhatsApp dispatched', {
-      to: sendResult.to ?? phone,
+    console.log('Abandoned-cart Meta WhatsApp dispatched', {
+      to: maskPhone(sendResult.to ?? phone),
       messageId: sendResult.messageId,
       status: sendResult.status,
       templateName: sendResult.templateName ?? 'abandoned_cart_reminder',

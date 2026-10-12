@@ -6,6 +6,7 @@ import { nextRecoveryAt } from '@/lib/recovery-retry-policy'
 import { readBuyerAcceptsMarketing, readCheckoutMarketingConsent } from '@/lib/email/buyer-consent'
 import { summarizeCheckoutConsent } from '@/lib/email/checkout-consent-log'
 import { brand } from '@/lib/brand'
+import { shopifyCheckoutLog, tokenSuffix } from '@/lib/log-safe'
 import { supabaseAdmin } from '@/lib/supabase'
 import {
   getShopifyWebhookSecret,
@@ -64,14 +65,6 @@ export async function POST(req: NextRequest) {
     
     const body = await req.text()
 
-    console.log('📦 Shopify webhook raw body (checkouts/update JSON):', {
-      topic,
-      shop: shopDomain,
-      bodyLength: body.length,
-      bodyPreview: body.slice(0, 2000),
-      fullBody: body,
-    })
-    
     // Verify webhook HMAC with SHOPIFY_API_SECRET (X-Shopify-Hmac-SHA256).
     if (!shouldSkipVerification(req)) {
       const secretSource = getShopifyWebhookSecretSource()
@@ -145,20 +138,28 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    console.log('🔥 LIVE WEBHOOK RECEIVED (parsed Abandoned Checkout payload):', {
-      topic,
-      shop: shopDomain,
-      checkoutToken: payload?.token ?? null,
-      checkoutId: payload?.id ?? null,
-      email: payload?.email ?? null,
-      phone: payload?.phone ?? null,
-      abandonedCheckoutUrl: payload?.abandoned_checkout_url ?? null,
-      lineItemCount: Array.isArray(payload?.line_items) ? payload.line_items.length : 0,
-      customer: payload?.customer ?? null,
-      shipping_address: payload?.shipping_address ?? null,
-      billing_address: payload?.billing_address ?? null,
-      payload,
-    })
+    const checkoutRecord =
+      payload && typeof payload === 'object' && !Array.isArray(payload)
+        ? (payload as Record<string, unknown>)
+        : {}
+    const checkoutCustomer =
+      checkoutRecord.customer &&
+      typeof checkoutRecord.customer === 'object' &&
+      !Array.isArray(checkoutRecord.customer)
+        ? (checkoutRecord.customer as Record<string, unknown>)
+        : {}
+    console.log(
+      'Shopify webhook received',
+      shopifyCheckoutLog({
+        topic,
+        shop: shopDomain,
+        checkoutToken:
+          checkoutRecord.token ?? checkoutRecord.checkout_token ?? checkoutRecord.cart_token ?? null,
+        lineItemCount: Array.isArray(checkoutRecord.line_items) ? checkoutRecord.line_items.length : 0,
+        hasEmail: Boolean(extractCustomerEmail(checkoutRecord, checkoutCustomer)),
+        hasPhone: Boolean(extractCustomerPhone(checkoutRecord, checkoutCustomer)),
+      })
+    )
 
     if (!shopDomain) {
       return NextResponse.json({ error: 'Missing X-Shopify-Shop-Domain header' }, { status: 400 })
@@ -588,12 +589,12 @@ async function handleCheckoutWebhook(storeId: string, payload: any) {
   if (error) {
     logSupabaseError('Failed to insert abandoned checkout', error)
   } else {
-    console.log('✅ Abandoned checkout upserted', {
+    console.log('Abandoned checkout upserted', {
       cartId: cart?.id ?? null,
-      token,
       created,
       status: cart?.status ?? null,
-      phone: customerPhone ?? cart?.customer_phone ?? null,
+      hasPhone: Boolean(customerPhone ?? cart?.customer_phone),
+      checkoutTokenSuffix: tokenSuffix(token),
     })
   }
 
@@ -696,9 +697,9 @@ async function handleOrderCreated(storeId: string, payload: any) {
   if (!cart) {
     console.log('No matching pending abandoned cart for order recovery', {
       storeId,
-      cartToken,
-      phone,
-      email,
+      hasPhone: Boolean(phone),
+      hasEmail: Boolean(email),
+      checkoutTokenSuffix: tokenSuffix(cartToken),
     })
     return
   }

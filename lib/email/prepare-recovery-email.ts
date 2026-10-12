@@ -8,7 +8,9 @@ import {
 import { signUnsubscribeToken } from "@/lib/email/unsubscribe-token"
 import {
   itemTitles,
-  RECOVERY_EMAIL_SUBJECT,
+  recoveryEmailSubject,
+  recoveryFromName,
+  recoveryStoreDisplayName,
   renderRecoveryEmail,
 } from "@/lib/email/template"
 import { sendResendEmail, type ResendFetch } from "@/lib/email/resend"
@@ -88,6 +90,7 @@ export function composeRecoveryEmail(snapshot: RecoveryEmailSnapshot): PreparedR
   const unsubscribeUrl = `${appUrl}/unsubscribe/${token}`
   const rendered = renderRecoveryEmail({
     storeName: snapshot.storeName,
+    brandName: brand.name,
     items: itemTitles(snapshot.items),
     checkoutUrl: String(snapshot.checkoutUrl),
     unsubscribeUrl,
@@ -97,9 +100,9 @@ export function composeRecoveryEmail(snapshot: RecoveryEmailSnapshot): PreparedR
   return {
     ok: true,
     email: decision.email,
-    from: formatFrom(fromEmail, snapshot.fromName),
+    from: formatFrom(fromEmail, snapshot.fromName || snapshot.storeName),
     replyTo: snapshot.replyTo,
-    subject: RECOVERY_EMAIL_SUBJECT,
+    subject: recoveryEmailSubject(snapshot.storeName),
     html: rendered.html,
     text: rendered.text,
     unsubscribeUrl,
@@ -149,9 +152,14 @@ export async function prepareRecoveryEmail(cartId: string): Promise<PreparedReco
 
   const { data: store } = await supabaseAdmin
     .from("stores")
-    .select("email_from_name, reply_to_email, store_name")
+    .select("email_from_name, reply_to_email, store_name, shopify_domain")
     .eq("id", cart.store_id)
     .maybeSingle()
+
+  const storeName = recoveryStoreDisplayName(
+    store?.store_name as string | null,
+    store?.shopify_domain as string | null
+  )
 
   return composeRecoveryEmail({
     isDefaultBrand: brand.isDefault,
@@ -163,13 +171,13 @@ export async function prepareRecoveryEmail(cartId: string): Promise<PreparedReco
     suppressed,
     allowlistRaw: process.env.EMAIL_RECOVERY_ALLOWLIST ?? null,
     fromEmail: process.env.RESEND_FROM_EMAIL ?? "",
-    fromName: (store?.email_from_name as string | null) ?? null,
+    fromName: recoveryFromName(store?.email_from_name as string | null, storeName),
     replyTo: (store?.reply_to_email as string | null) ?? null,
     unsubscribeSecret: process.env.EMAIL_UNSUBSCRIBE_SECRET ?? "",
     appUrl: brand.appUrl || null,
     checkoutUrl: typeof cart.checkout_url === "string" ? cart.checkout_url : null,
     postalAddress: clean(process.env.EMAIL_POSTAL_ADDRESS) || null,
-    storeName: (store?.store_name as string | null) || brand.name,
+    storeName,
     items: cart.items,
   })
 }

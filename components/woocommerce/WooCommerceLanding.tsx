@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 
 import { Link } from "@/i18n/routing";
+import { growthChannelsLabel } from "@/lib/brand";
 
 const STEPS = [
   {
@@ -82,7 +83,7 @@ const PLANS = [
     features: [
       "3 Stores",
       "1,000 Cart Recoveries / month",
-      "WhatsApp + Email + SMS",
+      growthChannelsLabel,
       "AI Personalized Messages",
       "0% Conversation Markup",
     ],
