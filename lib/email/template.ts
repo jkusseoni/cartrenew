@@ -1,16 +1,24 @@
+function singleLine(value: string): string {
+  return value.replace(/[\r\n]+/g, " ").trim()
+}
+
+/** Host label only: drop a scheme, path, and the .myshopify.com suffix. */
+function shopDomainLabel(shopDomain: string): string {
+  const host = singleLine(shopDomain).replace(/^https?:\/\//i, "").split("/")[0] ?? ""
+  return host.replace(/\.myshopify\.com$/i, "").trim()
+}
+
 export function recoveryStoreDisplayName(
   storeName: string | null | undefined,
   shopDomain: string | null | undefined
 ): string {
-  const named = (storeName ?? "").trim()
+  const named = singleLine(storeName ?? "")
   if (named) return named
-  const domain = (shopDomain ?? "").trim()
-  if (!domain) return "the store"
-  return domain.replace(/\.myshopify\.com$/i, "") || "the store"
+  return shopDomainLabel(shopDomain ?? "") || "the store"
 }
 
 export function recoveryEmailSubject(storeName: string): string {
-  const name = storeName.replace(/[\r\n]+/g, " ").trim() || "the store"
+  const name = singleLine(storeName) || "the store"
   return `You left something in your cart at ${name}`
 }
 
@@ -18,9 +26,9 @@ export function recoveryFromName(
   emailFromName: string | null | undefined,
   storeName: string
 ): string {
-  const custom = (emailFromName ?? "").replace(/[\r\n]+/g, " ").trim()
+  const custom = singleLine(emailFromName ?? "")
   if (custom) return custom
-  return storeName.replace(/[\r\n]+/g, " ").trim() || "the store"
+  return singleLine(storeName) || "the store"
 }
 
 export type RecoveryEmailItem = { title: string; quantity: number }
@@ -58,7 +66,7 @@ export function renderRecoveryEmail(input: {
   unsubscribeUrl: string
   postalAddress: string
 }): { html: string; text: string } {
-  const store = escapeHtml(input.storeName || "the store")
+  const store = escapeHtml(singleLine(input.storeName) || "the store")
   const brandName = escapeHtml(input.brandName || "Pingza")
   const heading = `You left something in your cart at ${store}`
   const footer = `Sent on behalf of ${store} via ${brandName}`
@@ -96,7 +104,7 @@ export function renderRecoveryEmail(input: {
 </body>
 </html>`
 
-  const plainStore = input.storeName.replace(/[\r\n]+/g, " ").trim() || "the store"
+  const plainStore = singleLine(input.storeName) || "the store"
   const plainBrand = input.brandName.replace(/[\r\n]+/g, " ").trim() || "Pingza"
   const text = `You left something in your cart at ${plainStore}
 
