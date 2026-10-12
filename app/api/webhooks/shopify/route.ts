@@ -4,6 +4,7 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from 'next/server'
 import { nextRecoveryAt } from '@/lib/recovery-retry-policy'
 import { readBuyerAcceptsMarketing } from '@/lib/email/buyer-consent'
+import { summarizeCheckoutConsent } from '@/lib/email/checkout-consent-log'
 import { brand } from '@/lib/brand'
 import { supabaseAdmin } from '@/lib/supabase'
 import {
@@ -125,6 +126,21 @@ export async function POST(req: NextRequest) {
     }
     
     const payload = JSON.parse(body)
+
+    // TEMPORARY: which checkout API version and consent fields Shopify actually sent.
+    if (topic === 'checkouts/create' || topic === 'checkouts/update') {
+      const consentLog = summarizeCheckoutConsent(payload, {
+        topic,
+        apiVersion: req.headers.get('x-shopify-api-version'),
+      })
+      const readConsent = readBuyerAcceptsMarketing(
+        payload && typeof payload === 'object' ? payload : {}
+      )
+      console.log('checkout consent fields', {
+        ...consentLog,
+        buyerAcceptsMarketingRead: readConsent === undefined ? null : readConsent,
+      })
+    }
 
     console.log('🔥 LIVE WEBHOOK RECEIVED (parsed Abandoned Checkout payload):', {
       topic,
