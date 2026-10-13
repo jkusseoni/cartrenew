@@ -129,7 +129,7 @@ export default function SettingsPage({
           <div className="rounded-2xl border border-amber-900/60 bg-amber-950/30 p-4 text-sm text-amber-100">
             <p className="font-black">Turn off Shopify&apos;s own abandoned checkout email</p>
             <p className="mt-1 text-amber-100/80">
-              {brand.name} can email a checkout that has no phone number. In Shopify admin
+              {brand.name}{" "}can email a checkout that has no phone number. In Shopify admin
               open Settings → Checkout → Abandoned checkout emails and turn that
               notification off. If Shopify Messaging&apos;s abandoned-checkout automation
               is active, turn it off too so the shopper does not get a second email.
