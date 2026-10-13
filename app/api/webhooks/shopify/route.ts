@@ -17,9 +17,11 @@ import {
   inferPlanIdFromSubscriptionName,
   toDbBillingStatus,
 } from '@/lib/shopify/billing'
+import { getValidShopifyAccessToken } from '@/lib/shopify/access-token'
 import {
   devStoreGuardActive,
   guardShopifyShopWrite,
+  guardShopifyUninstallWrite,
   readShopPlan,
 } from '@/lib/shopify/dev-store-guard'
 
@@ -133,15 +135,21 @@ export async function POST(req: NextRequest) {
       if (!shopDomain) {
         return NextResponse.json({ error: 'Missing X-Shopify-Shop-Domain header' }, { status: 400 })
       }
-      const devStoreDecision = await guardShopifyShopWrite({
+      const guardEnv = {
         shop: shopDomain,
         isDefaultBrand: brand.isDefault,
         vercelEnv: process.env.VERCEL_ENV,
         allowDevStores: process.env.PINGZA_ALLOW_DEV_STORES,
         devShopList: process.env.PINGZA_DEV_SHOPS,
-        readAccessToken: readStoredShopifyAccessToken,
-        readPlan: readShopPlan,
-      })
+      }
+      const devStoreDecision =
+        topic === 'app/uninstalled'
+          ? await guardShopifyUninstallWrite({ ...guardEnv, storeExists: shopifyStoreExists })
+          : await guardShopifyShopWrite({
+              ...guardEnv,
+              readAccessToken: readUsableShopifyAccessToken,
+              readPlan: readShopPlan,
+            })
       if (devStoreDecision === 'block') {
         console.info('[dev-store] skipped', { shop: shopDomain })
         return NextResponse.json({ success: true })
@@ -246,16 +254,31 @@ export async function POST(req: NextRequest) {
   }
 }
 
-async function readStoredShopifyAccessToken(shop: string): Promise<string | null> {
+async function findShopifyStoreId(shop: string): Promise<string | null> {
   const { data, error } = await supabaseAdmin
     .from('stores')
-    .select('shopify_access_token')
+    .select('id')
     .eq('shopify_domain', shop)
     .maybeSingle()
 
   if (error) throw new Error('store_lookup_failed')
-  const token = data?.shopify_access_token
-  return typeof token === 'string' && token.trim() ? token : null
+  return typeof data?.id === 'string' ? data.id : null
+}
+
+async function shopifyStoreExists(shop: string): Promise<boolean> {
+  return Boolean(await findShopifyStoreId(shop))
+}
+
+/** Refreshes an expiring token. Null means the shop has no usable install. */
+async function readUsableShopifyAccessToken(shop: string): Promise<string | null> {
+  const storeId = await findShopifyStoreId(shop)
+  if (!storeId) return null
+  const token = await getValidShopifyAccessToken(storeId)
+  if (token.ok) return token.accessToken
+  if (token.reason === 'busy' || token.reason === 'unavailable') {
+    throw new Error('token_unavailable')
+  }
+  return null
 }
 
 async function getOrCreateStore(shopDomain: string) {
