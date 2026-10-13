@@ -1,6 +1,8 @@
 import { randomBytes } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 
+import { brand } from "@/lib/brand";
+import { legacyCommerceRouteEnabled } from "@/lib/privacy/legacy-commerce";
 import { supabaseAdmin } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
@@ -40,6 +42,10 @@ function syntheticClerkUserId(siteUrl: string): string {
 }
 
 export async function POST(req: NextRequest) {
+  if (!legacyCommerceRouteEnabled(brand.isDefault)) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   let body: RegisterStoreBody;
   try {
     body = (await req.json()) as RegisterStoreBody;

@@ -1,8 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { notFound } from "next/navigation";
 
 import { Link } from "@/i18n/routing";
+import { brand } from "@/lib/brand";
+import { legacyCommerceRouteEnabled } from "@/lib/privacy/legacy-commerce";
 
 type Step = 1 | 2 | 3;
 
@@ -92,6 +95,7 @@ export default function WooCommerceConnectPage() {
   const [error, setError] = useState<string | null>(null);
   const [existingStoreId, setExistingStoreId] = useState<string | null>(null);
   const [credentials, setCredentials] = useState<Credentials | null>(null);
+  if (!legacyCommerceRouteEnabled(brand.isDefault)) notFound();
 
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
