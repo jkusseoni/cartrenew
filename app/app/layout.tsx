@@ -1,4 +1,6 @@
 import GlobalApiStatusBar from "@/components/global-api-status";
+import { brand } from "@/lib/brand";
+import { PINGZA_PRIVACY_PATH, PINGZA_TERMS_PATH } from "@/lib/legal/pingza";
 
 /**
  * Embedded Shopify App Home layout.
@@ -15,6 +17,16 @@ export default function EmbeddedAppLayout({
     <>
       <GlobalApiStatusBar />
       {children}
+      {brand.isDefault ? null : (
+        <nav className="flex gap-4 px-4 py-3 text-xs font-bold text-neutral-500">
+          <a href={PINGZA_PRIVACY_PATH} className="hover:text-neutral-800">
+            Privacy Policy
+          </a>
+          <a href={PINGZA_TERMS_PATH} className="hover:text-neutral-800">
+            Terms of Service
+          </a>
+        </nav>
+      )}
     </>
   );
 }

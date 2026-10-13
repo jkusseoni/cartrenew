@@ -1,8 +1,10 @@
 import React from 'react';
 import Link from 'next/link';
 import { brand } from '@/lib/brand';
+import { PingzaDataDeletion } from '@/components/legal/PingzaLegal';
 
 export default function DataDeletion() {
+  if (!brand.isDefault) return <PingzaDataDeletion />;
   return (
     <main className="min-h-screen bg-[#060913] text-neutral-300 py-16 px-4 sm:px-6 lg:px-8 relative z-10">
       <div className="max-w-4xl mx-auto space-y-8 bg-slate-950/40 border border-white/5 p-8 sm:p-12 rounded-2xl backdrop-blur-md">

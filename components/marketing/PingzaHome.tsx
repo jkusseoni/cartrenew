@@ -1,5 +1,6 @@
 import { Link } from "@/i18n/routing";
 import { brand } from "@/lib/brand";
+import { PINGZA_SUPPORT_EMAIL } from "@/lib/legal/pingza";
 import { shopifyAppStoreListingHref } from "@/lib/marketing/shopify-listing";
 import Footer from "@/components/sections/Footer";
 
@@ -55,8 +56,8 @@ export default function PingzaHome() {
               {item.label}
             </Link>
           ))}
-          <a href={`mailto:${brand.supportEmail}`} className="hover:text-slate-900">
-            {brand.supportEmail}
+          <a href={`mailto:${PINGZA_SUPPORT_EMAIL}`} className="hover:text-slate-900">
+            {PINGZA_SUPPORT_EMAIL}
           </a>
         </nav>
       </div>

@@ -42,9 +42,7 @@ function syntheticClerkUserId(siteUrl: string): string {
 }
 
 export async function POST(req: NextRequest) {
-  if (!legacyCommerceRouteEnabled(brand.isDefault)) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
+  if (!legacyCommerceRouteEnabled(brand.isDefault)) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   let body: RegisterStoreBody;
   try {

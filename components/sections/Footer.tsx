@@ -5,6 +5,7 @@ import { Link } from '@/i18n/routing';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { brand } from '@/lib/brand';
+import { publicSupportEmail } from '@/lib/legal/pingza';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -95,7 +96,7 @@ export default function Footer() {
           <Link href="/support" className="hover:text-slate-900 transition-colors">
             Support
           </Link>
-          <a href={`mailto:${brand.supportEmail}`} className="text-indigo-600 hover:text-indigo-500 transition-colors font-extrabold">
+          <a href={`mailto:${publicSupportEmail(brand.isDefault, brand.supportEmail)}`} className="text-indigo-600 hover:text-indigo-500 transition-colors font-extrabold">
             Contact Support
           </a>
         </div>
