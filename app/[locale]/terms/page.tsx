@@ -1,8 +1,10 @@
 import React from 'react';
 import Link from 'next/link';
 import { brand } from '@/lib/brand';
+import { PingzaTerms } from '@/components/legal/PingzaLegal';
 
 export default function TermsOfService() {
+  if (!brand.isDefault) return <PingzaTerms />;
   return (
     <main className="min-h-screen bg-[#0B0F17] text-neutral-300 py-16 px-4 sm:px-6 lg:px-8">
       <div className="max-w-4xl mx-auto space-y-8 bg-neutral-900/20 border border-neutral-900 p-8 sm:p-12 rounded-2xl backdrop-blur-md">

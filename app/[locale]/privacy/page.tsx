@@ -3,8 +3,10 @@ import React from 'react';
 import Link from 'next/link';
 import { Link as LocaleLink } from '@/i18n/routing';
 import { brand } from '@/lib/brand';
+import { PingzaPrivacyPolicy } from '@/components/legal/PingzaLegal';
 
 export default function PrivacyPolicy() {
+  if (!brand.isDefault) return <PingzaPrivacyPolicy />;
   return (
     <main className="min-h-screen bg-[#060913] text-neutral-300 py-16 px-4 sm:px-6 lg:px-8 relative z-10">
       {/* 🌟 प्रीमियम ग्लासमोर्फिज़्म कंटेनर */}

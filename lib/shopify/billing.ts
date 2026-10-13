@@ -5,7 +5,7 @@
  * Mutation: appSubscriptionCreate
  */
 
-import { brandPlanName, growthChannelsLabel, type BrandPlanTier } from "@/lib/brand";
+import { brand, brandPlanName, growthChannelsLabel, type BrandPlanTier } from "@/lib/brand";
 import { getShopifyApiVersion, getShopifyAppUrl } from "@/lib/shopify/config";
 import { TRIAL_DURATION_DAYS } from "@/lib/billing/trial-config";
 
@@ -202,12 +202,40 @@ export async function isPartnerDevelopmentStore(
 }
 
 /**
+ * Whether SHOPIFY_BILLING_TEST=true should force a test charge.
+ * Pingza production ignores the flag. CartRenew still honors it.
+ */
+export function isShopifyBillingTestFlagActive(input: {
+  isDefaultBrand: boolean;
+  billingTest: string | undefined;
+  vercelEnv: string | undefined;
+}): boolean {
+  if (input.billingTest !== "true") return false;
+  if (!input.isDefaultBrand && input.vercelEnv === "production") return false;
+  return true;
+}
+
+/**
  * Test charges when SHOPIFY_BILLING_TEST=true, outside production, or on a
  * development store. If the plan lookup fails, fall back to a real charge so
  * paying stores are never silently given free test subscriptions.
+ * Pingza production (VERCEL_ENV=production and not the default brand) ignores
+ * SHOPIFY_BILLING_TEST.
  */
 async function resolveBillingTestMode(shop: string, accessToken: string): Promise<boolean> {
-  if (process.env.SHOPIFY_BILLING_TEST === "true" || process.env.NODE_ENV !== "production") {
+  const billingTest = process.env.SHOPIFY_BILLING_TEST;
+  const vercelEnv = process.env.VERCEL_ENV;
+  if (!brand.isDefault && vercelEnv === "production" && billingTest === "true") {
+    console.error("[billing] SHOPIFY_BILLING_TEST is ignored for this production brand");
+  }
+  if (
+    isShopifyBillingTestFlagActive({
+      isDefaultBrand: brand.isDefault,
+      billingTest,
+      vercelEnv,
+    }) ||
+    process.env.NODE_ENV !== "production"
+  ) {
     return true;
   }
 

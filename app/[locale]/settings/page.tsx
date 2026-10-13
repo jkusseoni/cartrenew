@@ -41,7 +41,9 @@ export default function SettingsPage({
   // Mock states for key configuration parameters
   const [shopifyDomain, setShopifyDomain] = useState("cartrenew-test-store.myshopify.com");
   const [whatsappPhoneId, setWhatsappPhoneId] = useState("9755612850"); // Verified active phone connection node
-  const [shiprocketEmail, setShiprocketEmail] = useState("contact@cartrenew.com");
+  const [shiprocketEmail, setShiprocketEmail] = useState(
+    brand.isDefault ? "contact@cartrenew.com" : brand.supportEmail
+  );
   const [shiprocketPassword, setShiprocketPassword] = useState("");
   const [isSaved, setIsSaved] = useState(false);
   const [errors, setErrors] = useState<SettingsErrors>(NO_ERRORS);
