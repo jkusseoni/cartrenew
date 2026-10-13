@@ -1,10 +1,12 @@
 import * as Sentry from "@sentry/nextjs";
 
+import { brand } from "@/lib/brand";
 import { supabaseAdmin } from "@/lib/supabase";
 import {
   getShopifyApiSecret,
   getShopifyClientId,
 } from "@/lib/shopify/config";
+import { guardShopifyShopWrite, readShopPlan } from "@/lib/shopify/dev-store-guard";
 import {
   parseExpiringTokenResponse,
   tokenGrantColumns,
@@ -80,6 +82,24 @@ export async function installShopifyStoreFromSessionToken(
   }
   const accessToken = grant.accessToken;
   const tokenColumns = tokenGrantColumns(grant);
+
+  const devStoreDecision = await guardShopifyShopWrite({
+    shop,
+    isDefaultBrand: brand.isDefault,
+    vercelEnv: process.env.VERCEL_ENV,
+    allowDevStores: process.env.PINGZA_ALLOW_DEV_STORES,
+    devShopList: process.env.PINGZA_DEV_SHOPS,
+    readAccessToken: async () => accessToken,
+    readPlan: readShopPlan,
+  });
+  if (devStoreDecision !== "allow") {
+    console.info("[dev-store] install skipped", { shop });
+    return {
+      ok: false,
+      status: devStoreDecision === "block" ? 403 : 503,
+      error: "Store was not accepted",
+    };
+  }
 
   // Prisma is optional infra — never block the install response on it.
   void findOrCreateMerchantByShopDomain(shop).catch((merchantError) => {

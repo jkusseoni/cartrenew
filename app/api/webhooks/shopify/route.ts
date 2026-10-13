@@ -17,6 +17,11 @@ import {
   inferPlanIdFromSubscriptionName,
   toDbBillingStatus,
 } from '@/lib/shopify/billing'
+import {
+  devStoreGuardActive,
+  guardShopifyShopWrite,
+  readShopPlan,
+} from '@/lib/shopify/dev-store-guard'
 
 const SHOPIFY_WEBHOOK_VERIFY = process.env.SHOPIFY_WEBHOOK_VERIFY !== 'false'
 const SHOPIFY_WEBHOOK_BYPASS = process.env.SHOPIFY_WEBHOOK_BYPASS === 'true'
@@ -117,7 +122,36 @@ export async function POST(req: NextRequest) {
     } else {
       console.warn('⚠️ Shopify webhook HMAC verification skipped (dev bypass)')
     }
-    
+
+    if (
+      devStoreGuardActive({
+        isDefaultBrand: brand.isDefault,
+        vercelEnv: process.env.VERCEL_ENV,
+        allowDevStores: process.env.PINGZA_ALLOW_DEV_STORES,
+      })
+    ) {
+      if (!shopDomain) {
+        return NextResponse.json({ error: 'Missing X-Shopify-Shop-Domain header' }, { status: 400 })
+      }
+      const devStoreDecision = await guardShopifyShopWrite({
+        shop: shopDomain,
+        isDefaultBrand: brand.isDefault,
+        vercelEnv: process.env.VERCEL_ENV,
+        allowDevStores: process.env.PINGZA_ALLOW_DEV_STORES,
+        devShopList: process.env.PINGZA_DEV_SHOPS,
+        readAccessToken: readStoredShopifyAccessToken,
+        readPlan: readShopPlan,
+      })
+      if (devStoreDecision === 'block') {
+        console.info('[dev-store] skipped', { shop: shopDomain })
+        return NextResponse.json({ success: true })
+      }
+      if (devStoreDecision === 'retry') {
+        console.info('[dev-store] plan unavailable', { shop: shopDomain })
+        return NextResponse.json({ success: false }, { status: 500 })
+      }
+    }
+
     const payload = JSON.parse(body)
 
     // TEMPORARY: which checkout API version and consent fields Shopify actually sent.
@@ -210,6 +244,18 @@ export async function POST(req: NextRequest) {
     console.error('Shopify webhook error:', error)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
   }
+}
+
+async function readStoredShopifyAccessToken(shop: string): Promise<string | null> {
+  const { data, error } = await supabaseAdmin
+    .from('stores')
+    .select('shopify_access_token')
+    .eq('shopify_domain', shop)
+    .maybeSingle()
+
+  if (error) throw new Error('store_lookup_failed')
+  const token = data?.shopify_access_token
+  return typeof token === 'string' && token.trim() ? token : null
 }
 
 async function getOrCreateStore(shopDomain: string) {
