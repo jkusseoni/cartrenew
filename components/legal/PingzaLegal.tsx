@@ -14,9 +14,11 @@ const EFFECTIVE = "13 October 2026"
 
 function Shell({
   title,
+  dateLabel = "Effective date",
   children,
 }: {
   title: string
+  dateLabel?: string
   children: ReactNode
 }) {
   return (
@@ -27,7 +29,7 @@ function Shell({
             ← Back to Home
           </Link>
           <h1 className="mt-4 text-3xl font-black tracking-tight text-white sm:text-4xl">{title}</h1>
-          <p className="mt-2 text-xs text-neutral-500">Effective date: {EFFECTIVE}</p>
+          <p className="mt-2 text-xs text-neutral-500">{dateLabel}: {EFFECTIVE}</p>
         </div>
         <div className="space-y-6 text-sm leading-relaxed sm:text-base">{children}</div>
       </div>
@@ -41,7 +43,7 @@ function H({ children }: { children: ReactNode }) {
 
 export function PingzaPrivacyPolicy() {
   return (
-    <Shell title="Privacy Policy">
+    <Shell title="Privacy Policy" dateLabel="Last updated">
       <section className="space-y-2">
         <H>Who we are</H>
         <p>
@@ -55,6 +57,14 @@ export function PingzaPrivacyPolicy() {
         <p>
           Pingza sends abandoned-cart reminders for a Shopify store, on WhatsApp and, when WhatsApp cannot be
           used, by email. This policy describes that service only.
+        </p>
+      </section>
+
+      <section className="space-y-2">
+        <H>Merchant and Pingza roles</H>
+        <p>
+          The merchant decides to message its customers. Pingza processes those messages on the merchant&apos;s
+          behalf.
         </p>
       </section>
 
@@ -168,9 +178,9 @@ export function PingzaPrivacyPolicy() {
           the customer&apos;s email, phone, or checkout URL in our logs.
         </p>
         <p>
-          Uninstalling the app stops new reminders, marks open carts as lost, cancels billing, and clears the
-          Shopify access token. It does not by itself clear customer fields. Those are cleared by shop/redact or
-          by the retention job once writes are on.
+          Uninstalling the app stops new reminders, marks all carts for the store as lost, cancels billing, and
+          clears the Shopify access token. It does not by itself clear customer fields. Those are cleared by
+          shop/redact or by the retention job once writes are on.
         </p>
       </section>
 
@@ -184,6 +194,14 @@ export function PingzaPrivacyPolicy() {
         <p>
           If we learn of a breach that affects a merchant&apos;s customer data, we will tell that merchant
           without undue delay. Merchants can also write to {PINGZA_SUPPORT_EMAIL}.
+        </p>
+      </section>
+
+      <section className="space-y-2">
+        <H>Changes to this policy</H>
+        <p>
+          The date at the top of this page is when this policy was last updated. If we make a material change,
+          we will email the merchants who use Pingza.
         </p>
       </section>
 
@@ -219,7 +237,7 @@ export function PingzaTerms() {
         <p>The merchant is responsible for:</p>
         <ul className="list-disc space-y-1 pl-5 text-neutral-400">
           <li>Having a lawful basis to message the customer on WhatsApp and by email.</li>
-          <li>Turning on email recovery only for customers who accepted marketing.</li>
+          <li>Email recovery is only sent for customers whose Shopify checkout says they accepted marketing.</li>
           <li>Honoring opt-outs. Email unsubscribe is handled by the link in the message. Other opt-outs must be passed to {PINGZA_SUPPORT_EMAIL}.</li>
           <li>Following WhatsApp&apos;s and Shopify&apos;s rules.</li>
         </ul>

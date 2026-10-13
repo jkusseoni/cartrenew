@@ -2,12 +2,8 @@ import { randomBytes } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 
 import { brand } from "@/lib/brand";
+import { legacyCommerceRouteEnabled } from "@/lib/privacy/legacy-commerce";
 import { supabaseAdmin } from "@/lib/supabase";
-import {
-  authorizeRegisterStore,
-  REGISTER_STORE_GENERIC_ERROR,
-} from "@/lib/privacy/register-store-guard";
-import { verifySessionToken } from "@/lib/shopify/verifySessionToken";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -46,27 +42,7 @@ function syntheticClerkUserId(siteUrl: string): string {
 }
 
 export async function POST(req: NextRequest) {
-  if (!brand.isDefault) {
-    const decision = await authorizeRegisterStore({
-      isDefaultBrand: false,
-      authorization: req.headers.get("authorization"),
-      forwardedFor: req.headers.get("x-forwarded-for"),
-      now: Date.now(),
-      verify: async (token) => {
-        const session = await verifySessionToken(token);
-        return { shop: session.shop };
-      },
-    });
-    if (!decision.ok) {
-      console.error("[register-store]", {
-        code: decision.status === 429 ? "rate_limited" : "unauthorized",
-      });
-      return NextResponse.json(
-        { error: REGISTER_STORE_GENERIC_ERROR },
-        { status: decision.status }
-      );
-    }
-  }
+  if (!legacyCommerceRouteEnabled(brand.isDefault)) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   let body: RegisterStoreBody;
   try {
@@ -99,8 +75,7 @@ export async function POST(req: NextRequest) {
     .maybeSingle();
 
   if (lookupError) {
-    if (brand.isDefault) console.error("[register-store] lookup failed", lookupError);
-    else console.error("[register-store] lookup failed");
+    console.error("[register-store] lookup failed", lookupError);
     return NextResponse.json({ error: "Failed to check existing store." }, { status: 500 });
   }
 
@@ -146,8 +121,7 @@ export async function POST(req: NextRequest) {
         );
       }
     }
-    if (brand.isDefault) console.error("[register-store] insert failed", insertError);
-    else console.error("[register-store] insert failed");
+    console.error("[register-store] insert failed", insertError);
     return NextResponse.json({ error: "Failed to create store." }, { status: 500 });
   }
 
