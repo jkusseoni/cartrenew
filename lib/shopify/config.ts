@@ -1,5 +1,7 @@
 import crypto from "crypto";
 
+import { brand } from "@/lib/brand";
+
 /**
  * Centralized Shopify credential + crypto helpers.
  *
@@ -12,7 +14,18 @@ import crypto from "crypto";
  *   - App URL:       SHOPIFY_APP_URL                -> NEXT_PUBLIC_APP_URL
  */
 
-export const SHOPIFY_SCOPES = ["read_orders", "write_orders", "read_checkouts"] as const;
+/** CartRenew still requests write_orders. Nothing in this repo writes orders. */
+const CARTRENEW_SHOPIFY_SCOPES = ["read_orders", "write_orders", "read_checkouts"] as const;
+
+/** Non-default brands (Pingza) only read orders and checkouts. */
+const NON_DEFAULT_SHOPIFY_SCOPES = ["read_orders", "read_checkouts"] as const;
+
+export function shopifyScopesForBrand(isDefaultBrand: boolean): readonly string[] {
+  return isDefaultBrand ? CARTRENEW_SHOPIFY_SCOPES : NON_DEFAULT_SHOPIFY_SCOPES;
+}
+
+/** Scopes for this deployment. Frozen with the brand at startup. */
+export const SHOPIFY_SCOPES = shopifyScopesForBrand(brand.isDefault);
 
 function clean(value?: string | null): string {
   return (value ?? "").replace(/['"]/g, "").trim();
@@ -90,8 +103,8 @@ export function getShopifyApiVersion(): string {
   return clean(process.env.SHOPIFY_API_VERSION) || "2024-10";
 }
 
-export function getShopifyScopes(): string {
-  return SHOPIFY_SCOPES.join(",");
+export function getShopifyScopes(isDefaultBrand: boolean = brand.isDefault): string {
+  return shopifyScopesForBrand(isDefaultBrand).join(",");
 }
 
 /** Guard against open-redirect / SSRF: only accept genuine *.myshopify.com hosts. */
