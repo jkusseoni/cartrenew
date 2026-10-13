@@ -4,7 +4,7 @@ export const runtime = 'nodejs'
 import { NextResponse } from 'next/server'
 
 import { brand } from '@/lib/brand'
-import { hasTwilioWhatsAppCredentials } from '@/lib/services/twilio-whatsapp'
+import { whatsAppEngineStatus } from '@/lib/services/whatsapp-engine-status'
 import { supabaseAdmin } from '@/lib/supabase'
 
 export async function GET() {
@@ -23,8 +23,6 @@ export async function GET() {
   )
   const shopifyWebhooksOk = appUrlConfigured || process.env.NODE_ENV === 'development'
 
-  const whatsAppBypass = !hasTwilioWhatsAppCredentials()
-
   return NextResponse.json({
     supabase: {
       ok: supabaseOk,
@@ -35,15 +33,7 @@ export async function GET() {
       label: shopifyWebhooksOk ? 'Listening' : 'Offline',
       bypass: webhookBypass,
     },
-    whatsApp: {
-      ok: true,
-      bypass: whatsAppBypass,
-      label: whatsAppBypass
-        ? brand.isDefault
-          ? 'Bypass Mode'
-          : 'Twilio not connected'
-        : 'Active Mode',
-    },
+    whatsApp: whatsAppEngineStatus(brand.isDefault),
     checkedAt: new Date().toISOString(),
   })
 }
