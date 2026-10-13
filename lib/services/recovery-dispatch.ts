@@ -15,6 +15,7 @@
 import { supabaseAdmin } from '@/lib/supabase'
 import { maskPhone } from '@/lib/phone'
 import { getTrackedRecoveryUrl } from '@/lib/recovery-link'
+import { storedCustomerError } from '@/lib/privacy/sanitize-customer-text'
 import { redactSecrets } from '@/lib/services/redact-secrets'
 import { brand } from '@/lib/brand'
 import { cronFirstChannel } from '@/lib/email/cron-candidate'
@@ -73,7 +74,7 @@ async function markCartEmailSkipped(cartId: string, reason: string) {
     .from('abandoned_carts')
     .update({
       status: 'skipped',
-      last_send_error: reason,
+      last_send_error: storedCustomerError(reason),
       last_send_failed_at: nowIso(),
     })
     .eq('id', cartId)
@@ -119,7 +120,7 @@ export async function recordCartSendFailure(
 
     const { error } = await supabaseAdmin
       .from('abandoned_carts')
-      .update({ last_send_error: redactSecrets(reason).slice(0, 500), last_send_failed_at: failedAt })
+      .update({ last_send_error: storedCustomerError(reason), last_send_failed_at: failedAt })
       .in('id', batch)
     if (error) {
       console.error(
@@ -146,7 +147,7 @@ export async function recordAttemptOutcome({
   whatsappMessageId?: string | null
   error?: string | null
 }): Promise<SendOutcomeDecision> {
-  const safeError = error ? redactSecrets(error) : error
+  const safeError = error ? storedCustomerError(error) : error
   const decision = decideAfterAttempt(accepted, safeError, attemptsMade)
   const at = nowIso()
 
@@ -487,7 +488,7 @@ type PendingMessageRow = {
 }
 
 async function failMessage(messageId: string, reason: string, fromStatus: 'pending' | 'queued') {
-  const safeReason = redactSecrets(reason)
+  const safeReason = storedCustomerError(reason)
   const { error } = await supabaseAdmin
     .from('messages')
     .update({ status: 'failed', error_message: safeReason, next_retry_at: null })

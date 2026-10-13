@@ -1,5 +1,12 @@
+import { randomUUID } from 'crypto'
+
 import { NextRequest } from 'next/server'
 
+import { brand } from '@/lib/brand'
+import { complianceErrorCode, runCompliance } from '@/lib/privacy/compliance'
+import { createSupabasePrivacyDb } from '@/lib/privacy/compliance-db'
+import { deliverPrivacyExportEmail, privacyExportRecipient } from '@/lib/privacy/export-mail'
+import { PrivacyConfigError } from '@/lib/privacy/compliance-errors'
 import { hasShopifyClientSecret, verifyWebhookHmac } from '@/lib/shopify/config'
 
 function resolveTopic(req: NextRequest, topic?: string): string {
@@ -46,7 +53,53 @@ export async function handleShopifyComplianceWebhook(
     return new Response('Unauthorized', { status: 401 })
   }
 
-  console.info(`[compliance-webhook] ${resolvedTopic} acknowledged for ${shopDomain}`)
+  let payload: unknown = {}
+  if (rawBody) {
+    try {
+      payload = JSON.parse(rawBody) as unknown
+    } catch {
+      return new Response('Bad request', { status: 400 })
+    }
+  }
+
+  const requestId = randomUUID()
+  try {
+    await runCompliance({
+      topic: resolvedTopic,
+      shopDomain,
+      body: payload,
+      requestId,
+      skipSuppressions: brand.isDefault,
+      hashSecret: process.env.SUPPRESSION_HASH_SECRET ?? '',
+      db: createSupabasePrivacyDb(),
+      log: (entry) => {
+        console.info('[compliance-webhook]', entry)
+      },
+      deliverExport: async ({ requestId: exportId, body }) => {
+        const recipient = privacyExportRecipient(brand.isDefault, brand.supportEmail)
+        const from = (process.env.RESEND_FROM_EMAIL ?? '').trim()
+        const apiKey = (process.env.RESEND_API_KEY ?? '').trim()
+        if (!recipient || !from || !apiKey) {
+          throw new PrivacyConfigError('export_not_configured')
+        }
+        await deliverPrivacyExportEmail({
+          requestId: exportId,
+          body,
+          recipient,
+          from,
+          apiKey,
+        })
+      },
+    })
+  } catch (error) {
+    console.error('[compliance-webhook] failed', {
+      topic: resolvedTopic,
+      shopDomain,
+      requestId,
+      code: complianceErrorCode(error),
+    })
+    return new Response('Retry', { status: 500 })
+  }
 
   return new Response(null, { status: 200 })
 }

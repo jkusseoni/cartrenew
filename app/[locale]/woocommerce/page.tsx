@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 
 import WooCommerceLanding from "@/components/woocommerce/WooCommerceLanding";
+import { brand } from "@/lib/brand";
+import { legacyCommerceRouteEnabled } from "@/lib/privacy/legacy-commerce";
 
 export const metadata: Metadata = {
   title: "CartRenew for WooCommerce — WhatsApp Abandoned Cart Recovery",
@@ -9,5 +12,6 @@ export const metadata: Metadata = {
 };
 
 export default function WooCommerceMarketingPage() {
+  if (!legacyCommerceRouteEnabled(brand.isDefault)) notFound();
   return <WooCommerceLanding />;
 }
