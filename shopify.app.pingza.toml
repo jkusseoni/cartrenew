@@ -1,0 +1,55 @@
+# Pingza — Shopify app configuration
+# Docs: https://shopify.dev/docs/apps/tools/cli/configuration
+#
+# Deploy with: shopify app deploy --config pingza
+# Replace client_id before deploying. Do not deploy the CartRenew configs with this file.
+
+name = "Pingza"
+client_id = "1faa00ee097c7e2f53fa3aa81b349ebc"
+application_url = "https://app.pingza.app/shopify"
+embedded = true
+
+[access_scopes]
+scopes = "read_checkouts,read_orders"
+
+[auth]
+redirect_urls = [
+  "https://app.pingza.app/api/auth/shopify/callback",
+  "https://app.pingza.app/api/shopify/callback",
+  "https://app.pingza.app/api/shopify/billing/callback"
+]
+
+[webhooks]
+api_version = "2026-07"
+
+# HTTP delivery. Shopify picks the delivery method from the URI scheme:
+#   https://…            -> HTTP
+#   pubsub://project:top -> Google Pub/Sub      (not used)
+#   arn:aws:events:…     -> Amazon EventBridge  (not used)
+
+# Cart / checkout / order lifecycle
+[[webhooks.subscriptions]]
+topics = [
+  "checkouts/create",
+  "checkouts/update",
+  "carts/create",
+  "carts/update",
+  "orders/create",
+  "orders/paid",
+  "app/uninstalled",
+  "app_subscriptions/update"
+]
+uri = "https://app.pingza.app/api/webhooks/shopify"
+
+# Mandatory GDPR / compliance topics
+[[webhooks.subscriptions]]
+compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]
+uri = "https://app.pingza.app/api/webhooks"
+
+[pos]
+embedded = false
+
+[build]
+# Keep false so `shopify app dev` does not overwrite application_url and
+# redirect_urls with a tunnel URL.
+automatically_update_urls_on_dev = false
