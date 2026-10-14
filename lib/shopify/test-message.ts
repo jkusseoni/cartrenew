@@ -10,8 +10,9 @@
 import { maskPhone } from '@/lib/phone'
 import { storedCustomerError } from '@/lib/privacy/sanitize-customer-text'
 import { resolveWhatsAppRecipient, type WhatsAppSendResult } from '@/lib/services/whatsapp-meta'
+import { TEST_MESSAGE_DAILY_LIMIT } from '@/lib/shopify/test-message-config'
 
-export const TEST_MESSAGE_DAILY_LIMIT = 3
+export { TEST_MESSAGE_DAILY_LIMIT }
 
 /** cart_delivery_metrics.cart_id marker. Not a real cart id. */
 export const TEST_MESSAGE_LOG_CART_ID = 'shopify-test-message'
