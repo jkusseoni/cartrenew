@@ -10,8 +10,11 @@ type Props = {
   dailyLimit: number;
 };
 
+/** Longer than the route's 20s wait on Meta, so its 202 reply arrives. */
+const TEST_MESSAGE_REQUEST_TIMEOUT_MS = 30_000;
+
 type Result =
-  | { kind: "sent"; phone: string; remaining: number }
+  | { kind: "sent"; phone: string; remaining: number; pendingMessage: string | null }
   | { kind: "error"; message: string; limitReached: boolean };
 
 function remainingText(remaining: number): string {
@@ -37,9 +40,12 @@ export default function ShopifyTestMessageCard({ shop, dailyLimit }: Props) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone: target, shop }),
+        timeoutMs: TEST_MESSAGE_REQUEST_TIMEOUT_MS,
       });
       const data = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
+        pending?: boolean;
+        message?: string;
         remaining?: number;
         error?: string;
       };
@@ -53,7 +59,12 @@ export default function ShopifyTestMessageCard({ shop, dailyLimit }: Props) {
         return;
       }
 
-      setResult({ kind: "sent", phone: target, remaining: data.remaining ?? 0 });
+      setResult({
+        kind: "sent",
+        phone: target,
+        remaining: data.remaining ?? 0,
+        pendingMessage: res.status === 202 || data.pending ? data.message || null : null,
+      });
     } catch (err) {
       setResult({
         kind: "error",
@@ -105,9 +116,12 @@ export default function ShopifyTestMessageCard({ shop, dailyLimit }: Props) {
       <div aria-live="polite">
         {result?.kind === "sent" ? (
           <div className="mt-4 rounded-xl border border-emerald-900/40 bg-emerald-950/20 px-4 py-3 text-xs text-emerald-300">
-            <p className="font-black">Test message sent to {maskPhone(result.phone)}.</p>
+            <p className="font-black">
+              {result.pendingMessage ?? `Test message sent to ${maskPhone(result.phone)}.`}
+            </p>
             <p className="mt-1 text-emerald-200/80">
-              It can take a minute to arrive. {remainingText(result.remaining)}
+              {result.pendingMessage ? "" : "It can take a minute to arrive. "}
+              {remainingText(result.remaining)}
             </p>
           </div>
         ) : null}

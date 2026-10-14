@@ -1,7 +1,9 @@
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+// Room for a slow Meta send to finish in after() once the 202 is returned.
+export const maxDuration = 60;
 
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 
 import { brand } from "@/lib/brand";
 import { supabaseAdmin } from "@/lib/supabase";
@@ -9,7 +11,7 @@ import { sendRecoveryTemplate } from "@/lib/services/recovery-dispatch";
 import { hasWhatsAppCredentials } from "@/lib/services/whatsapp-meta";
 import {
   sendShopifyTestMessage,
-  TEST_MESSAGE_DAILY_LIMIT,
+  testMessageHttpResult,
   validateTestPhone,
 } from "@/lib/shopify/test-message";
 import { supabaseTestMessageLog } from "@/lib/shopify/test-message-log";
@@ -93,30 +95,10 @@ export async function POST(req: NextRequest) {
     send: sendRecoveryTemplate,
   });
 
-  switch (outcome.status) {
-    case "sent":
-      return NextResponse.json({ ok: true, remaining: outcome.remaining });
-    case "send_failed":
-      return NextResponse.json(
-        {
-          error:
-            "WhatsApp didn't accept the test message. Check that the number is on WhatsApp and try again.",
-          remaining: outcome.remaining,
-        },
-        { status: 502 }
-      );
-    case "rate_limited":
-      return NextResponse.json(
-        {
-          error: `You've used all ${TEST_MESSAGE_DAILY_LIMIT} test messages for today. The limit resets at 00:00 UTC.`,
-          remaining: 0,
-        },
-        { status: 429 }
-      );
-    case "log_unavailable":
-      return NextResponse.json(
-        { error: "Test messages are unavailable right now. Try again in a moment." },
-        { status: 503 }
-      );
+  if (outcome.status === "pending") {
+    after(() => outcome.completion);
   }
+
+  const { status, body: responseBody } = testMessageHttpResult(outcome);
+  return NextResponse.json(responseBody, { status });
 }

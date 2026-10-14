@@ -63,9 +63,14 @@ export type SendTestTemplate = (input: {
   checkoutUrl: string
 }) => Promise<WhatsAppSendResult>
 
+/** How long the request waits for Meta before answering "still sending". */
+export const TEST_MESSAGE_SEND_TIMEOUT_MS = 20_000
+
 export type TestMessageOutcome =
   | { status: 'sent'; remaining: number }
   | { status: 'send_failed'; remaining: number }
+  /** Meta hasn't answered in time. `completion` settles when the send and its log row finish. */
+  | { status: 'pending'; remaining: number; completion: Promise<void> }
   | { status: 'rate_limited' }
   | { status: 'log_unavailable' }
 
@@ -78,7 +83,8 @@ function errorText(error: unknown): string {
 /**
  * Reserve a slot, send once, record the result. A reservation that lands
  * outside the first TEST_MESSAGE_DAILY_LIMIT rows of the UTC day is removed
- * again, so concurrent requests can't exceed the limit.
+ * again, so concurrent requests can't exceed the limit. If Meta takes longer
+ * than `sendTimeoutMs`, the send keeps running and the outcome is 'pending'.
  */
 export async function sendShopifyTestMessage({
   storeId,
@@ -87,6 +93,7 @@ export async function sendShopifyTestMessage({
   now = new Date(),
   log,
   send,
+  sendTimeoutMs = TEST_MESSAGE_SEND_TIMEOUT_MS,
 }: {
   storeId: string
   shop: string
@@ -94,6 +101,7 @@ export async function sendShopifyTestMessage({
   now?: Date
   log: TestMessageLog
   send: SendTestTemplate
+  sendTimeoutMs?: number
 }): Promise<TestMessageOutcome> {
   const maskedPhone = maskPhone(e164)
 
@@ -127,34 +135,100 @@ export async function sendShopifyTestMessage({
     return { status: 'rate_limited' }
   }
 
-  let result: WhatsAppSendResult
-  try {
-    result = await send({
-      phone: e164,
-      customerName: TEST_MESSAGE_CUSTOMER_NAME,
-      checkoutUrl: testMessageCheckoutUrl(shop),
-    })
-  } catch (error) {
-    result = { success: false, error: error instanceof Error ? error.message : String(error) }
-  }
-
-  const error = result.success ? null : storedCustomerError(result.error || 'send_failed')
-  try {
-    await log.finish(id, {
-      success: result.success,
-      messageId: result.messageId ?? null,
-      error,
-    })
-  } catch (finishError) {
-    console.error(`${LOG_TAG} log update failed`, { shop, error: errorText(finishError) })
-  }
-
   const remaining = TEST_MESSAGE_DAILY_LIMIT - (slot + 1)
-  if (!result.success) {
-    console.warn(`${LOG_TAG} send failed`, { shop, phone: maskedPhone, error })
-    return { status: 'send_failed', remaining }
+  const startedAt = Date.now()
+
+  const delivery = (async (): Promise<boolean> => {
+    let result: WhatsAppSendResult
+    try {
+      result = await send({
+        phone: e164,
+        customerName: TEST_MESSAGE_CUSTOMER_NAME,
+        checkoutUrl: testMessageCheckoutUrl(shop),
+      })
+    } catch (error) {
+      result = { success: false, error: error instanceof Error ? error.message : String(error) }
+    }
+    const durationMs = Date.now() - startedAt
+
+    const error = result.success ? null : storedCustomerError(result.error || 'send_failed')
+    try {
+      await log.finish(id, {
+        success: result.success,
+        messageId: result.messageId ?? null,
+        error,
+      })
+    } catch (finishError) {
+      console.error(`${LOG_TAG} log update failed`, { shop, error: errorText(finishError) })
+    }
+
+    if (result.success) {
+      console.info(`${LOG_TAG} sent`, {
+        shop,
+        messageId: result.messageId ?? null,
+        duration_ms: durationMs,
+      })
+    } else {
+      console.warn(`${LOG_TAG} send failed`, { shop, error, duration_ms: durationMs })
+    }
+    return result.success
+  })()
+
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timedOut = new Promise<'timeout'>((resolve) => {
+    timer = setTimeout(() => resolve('timeout'), sendTimeoutMs)
+  })
+  const first = await Promise.race([delivery, timedOut])
+  clearTimeout(timer)
+
+  if (first === 'timeout') {
+    console.warn(`${LOG_TAG} send still running after timeout`, {
+      shop,
+      duration_ms: Date.now() - startedAt,
+    })
+    return { status: 'pending', remaining, completion: delivery.then(() => undefined) }
   }
 
-  console.info(`${LOG_TAG} sent`, { shop, phone: maskedPhone, messageId: result.messageId ?? null })
-  return { status: 'sent', remaining }
+  return first ? { status: 'sent', remaining } : { status: 'send_failed', remaining }
+}
+
+export const TEST_MESSAGE_PENDING_TEXT =
+  'Your test message is being sent. It can take a minute to arrive.'
+
+/** HTTP status and JSON body for each outcome of sendShopifyTestMessage. */
+export function testMessageHttpResult(outcome: TestMessageOutcome): {
+  status: number
+  body: Record<string, unknown>
+} {
+  switch (outcome.status) {
+    case 'sent':
+      return { status: 200, body: { ok: true, remaining: outcome.remaining } }
+    case 'pending':
+      return {
+        status: 202,
+        body: { ok: true, pending: true, message: TEST_MESSAGE_PENDING_TEXT, remaining: outcome.remaining },
+      }
+    case 'send_failed':
+      return {
+        status: 502,
+        body: {
+          error:
+            "WhatsApp didn't accept the test message. Check that the number is on WhatsApp and try again.",
+          remaining: outcome.remaining,
+        },
+      }
+    case 'rate_limited':
+      return {
+        status: 429,
+        body: {
+          error: `You've used all ${TEST_MESSAGE_DAILY_LIMIT} test messages for today. The limit resets at 00:00 UTC.`,
+          remaining: 0,
+        },
+      }
+    case 'log_unavailable':
+      return {
+        status: 503,
+        body: { error: 'Test messages are unavailable right now. Try again in a moment.' },
+      }
+  }
 }
