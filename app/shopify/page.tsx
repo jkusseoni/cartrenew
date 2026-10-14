@@ -4,6 +4,8 @@ import { brand } from "@/lib/brand";
 import { AppBridgeHead } from "@/components/shopify/AppBridgeHead";
 import { ShopifyEmbedGuard } from "@/components/shopify/ShopifyEmbedGuard";
 import ShopifyBillingPlans from "@/components/shopify/ShopifyBillingPlans";
+import ShopifyTestMessageCard from "@/components/shopify/ShopifyTestMessageCard";
+import { TEST_MESSAGE_DAILY_LIMIT } from "@/lib/shopify/test-message";
 import {
   loadShopifyStoreDashboard,
   type ShopifyCartRow,
@@ -125,6 +127,10 @@ function Console({
         currentPlan={store.billing_plan}
         billingStatus={store.billing_status}
       />
+
+      {!brand.isDefault ? (
+        <ShopifyTestMessageCard shop={store.shopify_domain} dailyLimit={TEST_MESSAGE_DAILY_LIMIT} />
+      ) : null}
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
         <div className="bg-neutral-950/40 border border-neutral-900 p-5 rounded-2xl">
