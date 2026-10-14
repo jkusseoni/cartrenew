@@ -3,9 +3,11 @@
 import { useEffect, useState, useTransition } from "react";
 
 import ShopifyBillingPlans from "@/components/shopify/ShopifyBillingPlans";
+import ShopifyTestMessageCard from "@/components/shopify/ShopifyTestMessageCard";
 import EmailRecoveryNotice from "@/components/shopify/EmailRecoveryNotice";
 import { brand } from "@/lib/brand";
 import { authFetch } from "@/lib/shopify/authFetch";
+import { TEST_MESSAGE_DAILY_LIMIT } from "@/lib/shopify/test-message-config";
 import type {
   ShopifyCartRow,
   ShopifyDashboardMetrics,
@@ -522,6 +524,10 @@ export default function EmbeddedAppHomePage() {
           setupPending={setupPending}
           onRetrySetup={retrySetup}
         />
+      ) : null}
+
+      {!brand.isDefault && shopDomain ? (
+        <ShopifyTestMessageCard shop={shopDomain} dailyLimit={TEST_MESSAGE_DAILY_LIMIT} />
       ) : null}
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">

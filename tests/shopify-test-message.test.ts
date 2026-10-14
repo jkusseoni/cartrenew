@@ -302,7 +302,56 @@ test("test message card renders the form and the daily limit", async () => {
   assert.match(html, /disabled=""/, "button is disabled until a number is entered")
 })
 
-test("dashboard renders the card only for non-default brands", () => {
+// The embedded App Home loads its dashboard in an effect, which a server
+// render never runs. Seed the page's first useState calls (data, status
+// message, loading, setup error, load nonce) with a loaded dashboard so the
+// console itself renders. Child components keep the real useState.
+function renderAppHome(appName: string): string {
+  const dashboard = {
+    shop: SHOP,
+    store: { id: "store-1", shopify_domain: SHOP, billing_plan: null, billing_status: "NONE" },
+    metrics: { trackedCarts: 0, recovered: 0, recoveredValue: 0 },
+    carts: [],
+  }
+  const script = `
+    import { createRequire } from "node:module"
+    const require = createRequire(process.cwd() + "/")
+    const React = require("react")
+    const realUseState = React.useState
+    const seeded = [${JSON.stringify(dashboard)}, "", false, false, 0]
+    let calls = 0
+    React.useState = (initial) =>
+      calls < seeded.length ? [seeded[calls++], () => {}] : realUseState(initial)
+    const { renderToStaticMarkup } = await import("react-dom/server")
+    const mod = await import("./app/app/page.tsx")
+    const Page = mod.default?.default ?? mod.default
+    console.log("RESULT:" + JSON.stringify(renderToStaticMarkup(React.createElement(Page))))
+  `
+  const result = spawnSync(
+    process.execPath,
+    ["--import", "tsx", "--input-type=module", "-e", script],
+    { cwd: root, env: { ...process.env, NEXT_PUBLIC_APP_NAME: appName }, encoding: "utf8" }
+  )
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+  const line = result.stdout.split(/\r?\n/).find((l) => l.startsWith("RESULT:"))
+  assert.ok(line, result.stdout)
+  return JSON.parse(line.slice("RESULT:".length)) as string
+}
+
+test("embedded App Home (app/app/page.tsx) shows the card for Pingza", () => {
+  const html = renderAppHome("Pingza")
+  assert.match(html, /Shopify Billing/, "console rendered")
+  assert.match(html, /Send test message/)
+  assert.match(html, /Up to 3 per day/)
+})
+
+test("embedded App Home (app/app/page.tsx) has no card for CartRenew", () => {
+  const html = renderAppHome("CartRenew")
+  assert.match(html, /Shopify Billing/, "console rendered")
+  assert.equal(html.includes("Send test message"), false)
+})
+
+test("legacy /shopify dashboard renders the card only for non-default brands", () => {
   const page = fs.readFileSync(path.join(root, "app/shopify/page.tsx"), "utf8")
   assert.match(page, /\{!brand\.isDefault \? \(\s*<ShopifyTestMessageCard/)
 })
