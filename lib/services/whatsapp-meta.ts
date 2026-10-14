@@ -13,6 +13,8 @@
 
 import { e164ToWhatsAppRecipient, maskPhone, toE164 } from '@/lib/phone'
 import { redactSecrets } from '@/lib/services/redact-secrets'
+import { checkWhatsAppOptOut } from '@/lib/services/whatsapp-opt-out'
+import { WHATSAPP_OPT_OUT_CHECK_FAILED, WHATSAPP_OPTED_OUT_ERROR } from '@/lib/whatsapp/opt-out'
 
 function cleanEnv(value?: string | null): string {
     return (value ?? '').replace(/['"]/g, '').trim()
@@ -196,6 +198,15 @@ function cleanEnv(value?: string | null): string {
         phone: maskPhone(toPhone),
       })
       return { success: false, error: recipient.error, to: null }
+    }
+
+    const optOut = await checkWhatsAppOptOut(recipient.to)
+    if (optOut === 'opted_out') {
+      console.warn('⚠️ WhatsApp send skipped — recipient opted out:', { phone: maskPhone(toPhone) })
+      return { success: false, error: WHATSAPP_OPTED_OUT_ERROR, to: null }
+    }
+    if (optOut === 'error') {
+      return { success: false, error: WHATSAPP_OPT_OUT_CHECK_FAILED, to: null }
     }
   
     if (!options.templateName) {
