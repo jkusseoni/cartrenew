@@ -5,7 +5,7 @@ import { AppBridgeHead } from "@/components/shopify/AppBridgeHead";
 import { ShopifyEmbedGuard } from "@/components/shopify/ShopifyEmbedGuard";
 import ShopifyBillingPlans from "@/components/shopify/ShopifyBillingPlans";
 import ShopifyTestMessageCard from "@/components/shopify/ShopifyTestMessageCard";
-import { TEST_MESSAGE_DAILY_LIMIT } from "@/lib/shopify/test-message";
+import { TEST_MESSAGE_DAILY_LIMIT } from "@/lib/shopify/test-message-config";
 import {
   loadShopifyStoreDashboard,
   type ShopifyCartRow,
