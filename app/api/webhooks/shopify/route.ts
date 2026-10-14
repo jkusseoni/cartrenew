@@ -17,6 +17,13 @@ import {
   inferPlanIdFromSubscriptionName,
   toDbBillingStatus,
 } from '@/lib/shopify/billing'
+import { getValidShopifyAccessToken } from '@/lib/shopify/access-token'
+import {
+  devStoreGuardActive,
+  guardShopifyShopWrite,
+  guardShopifyUninstallWrite,
+  readShopPlan,
+} from '@/lib/shopify/dev-store-guard'
 
 const SHOPIFY_WEBHOOK_VERIFY = process.env.SHOPIFY_WEBHOOK_VERIFY !== 'false'
 const SHOPIFY_WEBHOOK_BYPASS = process.env.SHOPIFY_WEBHOOK_BYPASS === 'true'
@@ -117,7 +124,42 @@ export async function POST(req: NextRequest) {
     } else {
       console.warn('⚠️ Shopify webhook HMAC verification skipped (dev bypass)')
     }
-    
+
+    if (
+      devStoreGuardActive({
+        isDefaultBrand: brand.isDefault,
+        vercelEnv: process.env.VERCEL_ENV,
+        allowDevStores: process.env.PINGZA_ALLOW_DEV_STORES,
+      })
+    ) {
+      if (!shopDomain) {
+        return NextResponse.json({ error: 'Missing X-Shopify-Shop-Domain header' }, { status: 400 })
+      }
+      const guardEnv = {
+        shop: shopDomain,
+        isDefaultBrand: brand.isDefault,
+        vercelEnv: process.env.VERCEL_ENV,
+        allowDevStores: process.env.PINGZA_ALLOW_DEV_STORES,
+        devShopList: process.env.PINGZA_DEV_SHOPS,
+      }
+      const devStoreDecision =
+        topic === 'app/uninstalled'
+          ? await guardShopifyUninstallWrite({ ...guardEnv, storeExists: shopifyStoreExists })
+          : await guardShopifyShopWrite({
+              ...guardEnv,
+              readAccessToken: readUsableShopifyAccessToken,
+              readPlan: readShopPlan,
+            })
+      if (devStoreDecision === 'block') {
+        console.info('[dev-store] skipped', { shop: shopDomain })
+        return NextResponse.json({ success: true })
+      }
+      if (devStoreDecision === 'retry') {
+        console.info('[dev-store] plan unavailable', { shop: shopDomain })
+        return NextResponse.json({ success: false }, { status: 500 })
+      }
+    }
+
     const payload = JSON.parse(body)
 
     // TEMPORARY: which checkout API version and consent fields Shopify actually sent.
@@ -210,6 +252,33 @@ export async function POST(req: NextRequest) {
     console.error('Shopify webhook error:', error)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
   }
+}
+
+async function findShopifyStoreId(shop: string): Promise<string | null> {
+  const { data, error } = await supabaseAdmin
+    .from('stores')
+    .select('id')
+    .eq('shopify_domain', shop)
+    .maybeSingle()
+
+  if (error) throw new Error('store_lookup_failed')
+  return typeof data?.id === 'string' ? data.id : null
+}
+
+async function shopifyStoreExists(shop: string): Promise<boolean> {
+  return Boolean(await findShopifyStoreId(shop))
+}
+
+/** Refreshes an expiring token. Null means the shop has no usable install. */
+async function readUsableShopifyAccessToken(shop: string): Promise<string | null> {
+  const storeId = await findShopifyStoreId(shop)
+  if (!storeId) return null
+  const token = await getValidShopifyAccessToken(storeId)
+  if (token.ok) return token.accessToken
+  if (token.reason === 'busy' || token.reason === 'unavailable') {
+    throw new Error('token_unavailable')
+  }
+  return null
 }
 
 async function getOrCreateStore(shopDomain: string) {
