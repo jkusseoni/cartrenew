@@ -13,8 +13,13 @@ export const RECOVERY_INACTIVITY_MS = 60 * 60 * 1000
 
 const BASE_RETRY_DELAY_MS = 5 * 60 * 1000
 
-/** Errors that will not succeed on retry (bad/unknown phone). */
-const PERMANENT_SEND_ERRORS = new Set(['phone_missing', 'phone_invalid', 'phone_country_unknown'])
+/** Errors that will not succeed on retry (bad/unknown phone, recipient opted out). */
+const PERMANENT_SEND_ERRORS = new Set([
+  'phone_missing',
+  'phone_invalid',
+  'phone_country_unknown',
+  'whatsapp_opted_out',
+])
 
 export function isPermanentSendError(error: string | null | undefined): boolean {
   return !!error && PERMANENT_SEND_ERRORS.has(error)

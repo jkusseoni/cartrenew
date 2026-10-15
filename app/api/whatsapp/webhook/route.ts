@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { brand } from '@/lib/brand';
+import { maskPhone } from '@/lib/phone';
+import { recordWhatsAppOptOut } from '@/lib/services/whatsapp-opt-out';
 import { applyStatusEvent } from '@/lib/services/whatsapp-status-sync';
+import { extractOptOutSenders } from '@/lib/whatsapp/opt-out';
 import { extractStatusEvents, verifyMetaSignature } from '@/lib/whatsapp-status';
 
 export const dynamic = 'force-dynamic';
@@ -20,17 +24,18 @@ export async function GET(request: NextRequest) {
       return new NextResponse('Forbidden', { status: 403 });
     }
     return new NextResponse('Bad Request', { status: 400 });
-  } catch (error: any) {
-    console.error("❌ WhatsApp Webhook GET Error:", error.message);
+  } catch (error) {
+    console.error("❌ WhatsApp Webhook GET Error:", error instanceof Error ? error.message : error);
     return new NextResponse('Internal Server Error', { status: 500 });
   }
 }
 
 /**
  * 2. Meta delivery-status events (POST). Signed with X-Hub-Signature-256
- * using the Meta app secret. Non-status events (incoming messages etc.) are
- * acknowledged and ignored. Returns 500 only on DB errors so Meta retries;
- * applying an event twice is a no-op.
+ * using the Meta app secret. Pingza also records inbound STOP-style replies
+ * as opt-outs (no reply is sent); other incoming messages are acknowledged
+ * and ignored. Returns 500 only on DB errors so Meta retries; applying an
+ * event twice is a no-op.
  */
 export async function POST(request: NextRequest) {
   const rawBody = await request.text();
@@ -73,8 +78,28 @@ export async function POST(request: NextRequest) {
     console.log('📬 WhatsApp status webhook processed', { statuses: events.length, ...counts });
   }
 
-  if (counts.errors > 0) {
-    return NextResponse.json({ success: false, ...counts }, { status: 500 });
+  let optOuts = 0;
+  if (!brand.isDefault) {
+    for (const phone of extractOptOutSenders(body)) {
+      try {
+        await recordWhatsAppOptOut(phone);
+        optOuts += 1;
+      } catch (error) {
+        counts.errors += 1;
+        console.error('❌ WhatsApp opt-out not recorded', {
+          phone: maskPhone(phone),
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
   }
-  return NextResponse.json({ success: true, statuses: events.length, ...counts }, { status: 200 });
+  const optOutCount = brand.isDefault ? {} : { opt_outs: optOuts };
+
+  if (counts.errors > 0) {
+    return NextResponse.json({ success: false, ...counts, ...optOutCount }, { status: 500 });
+  }
+  return NextResponse.json(
+    { success: true, statuses: events.length, ...counts, ...optOutCount },
+    { status: 200 }
+  );
 }

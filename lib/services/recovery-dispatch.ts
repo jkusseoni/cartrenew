@@ -34,6 +34,7 @@ import {
   sendWhatsAppMessage,
   type WhatsAppSendResult,
 } from '@/lib/services/whatsapp-meta'
+import { WHATSAPP_OPTED_OUT_ERROR } from '@/lib/whatsapp/opt-out'
 
 export const RECOVERY_TEMPLATE_NAME = 'abandoned_cart_reminder'
 
@@ -97,8 +98,9 @@ export async function markCartMessaged(cartId: string, sentAt: string) {
 
 /**
  * Record a rejected/unsendable attempt on carts. `final` moves still-pending
- * carts to 'lost'. The failure columns are written separately so a missing
- * migration can't block the status change.
+ * carts to 'lost', or 'opted_out' when the recipient opted out. The failure
+ * columns are written separately so a missing migration can't block the
+ * status change.
  */
 export async function recordCartSendFailure(
   cartIds: string | string[],
@@ -107,12 +109,13 @@ export async function recordCartSendFailure(
 ) {
   const ids = Array.from(new Set(Array.isArray(cartIds) ? cartIds : [cartIds])).filter(Boolean)
   const failedAt = nowIso()
+  const finalStatus = reason === WHATSAPP_OPTED_OUT_ERROR ? 'opted_out' : 'lost'
 
   for (const batch of chunk(ids, IN_FILTER_CHUNK)) {
     if (final) {
       const { error } = await supabaseAdmin
         .from('abandoned_carts')
-        .update({ status: 'lost' })
+        .update({ status: finalStatus })
         .in('id', batch)
         .eq('status', 'pending')
       if (error) console.error('Failed to mark carts lost after send failure:', error.message)
