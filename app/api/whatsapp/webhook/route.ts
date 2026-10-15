@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { brand } from '@/lib/brand';
-import { maskPhone } from '@/lib/phone';
 import { recordWhatsAppOptOut } from '@/lib/services/whatsapp-opt-out';
 import { applyStatusEvent } from '@/lib/services/whatsapp-status-sync';
-import { extractOptOutSenders } from '@/lib/whatsapp/opt-out';
+import { extractOptOutSenders, summarizeInboundMessages } from '@/lib/whatsapp/opt-out';
 import {
   forwardOptOutWebhook,
   OPT_OUT_FORWARDED_HEADER,
-  optOutForwardTarget,
+  optOutForwardDecision,
   runAfterResponse,
+  WEBHOOK_LOG_PREFIX as LOG,
 } from '@/lib/whatsapp/opt-out-forward';
 import { extractStatusEvents, verifyMetaSignature } from '@/lib/whatsapp-status';
 
@@ -43,19 +43,30 @@ export async function GET(request: NextRequest) {
  * and ignored. CartRenew, which Meta calls for the shared number, forwards
  * opt-out payloads to Pingza after responding. Returns 500 only on DB errors
  * so Meta retries; applying an event twice is a no-op.
+ *
+ * Logs at each decision point carry no phone numbers, message text or body.
  */
 export async function POST(request: NextRequest) {
   const rawBody = await request.text();
   const appSecret = (process.env.WHATSAPP_APP_SECRET ?? '').trim();
+  const signatureHeader = request.headers.get('x-hub-signature-256');
+  const alreadyForwarded = request.headers.has(OPT_OUT_FORWARDED_HEADER);
+  const source = `forwarded=${alreadyForwarded}`;
 
   if (!appSecret) {
     if (process.env.NODE_ENV === 'production') {
-      console.error('❌ WHATSAPP_APP_SECRET is not configured — rejecting WhatsApp webhook');
+      console.error(`${LOG} rejected: secret not configured (WHATSAPP_APP_SECRET) ${source}`);
       return NextResponse.json({ error: 'Webhook secret not configured' }, { status: 500 });
     }
-  } else if (!verifyMetaSignature(rawBody, request.headers.get('x-hub-signature-256'), appSecret)) {
-    console.warn('⚠️ WhatsApp webhook rejected: invalid X-Hub-Signature-256');
+    console.log(`${LOG} signature verified=false (no app secret, non-production) ${source}`);
+  } else if (!verifyMetaSignature(rawBody, signatureHeader, appSecret)) {
+    console.warn(`${LOG} signature verified=false ${source}`);
+    console.warn(
+      `${LOG} rejected: signature (header=${signatureHeader ? 'invalid' : 'missing'}) ${source}`
+    );
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
+  } else {
+    console.log(`${LOG} signature verified=true ${source}`);
   }
   // Without a secret (local dev only) the body is unsigned: never trusted for opt-outs.
   const signatureVerified = Boolean(appSecret);
@@ -64,7 +75,16 @@ export async function POST(request: NextRequest) {
   try {
     body = JSON.parse(rawBody);
   } catch {
+    console.warn(`${LOG} rejected: invalid JSON`);
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+  }
+
+  const inbound = summarizeInboundMessages(body);
+  for (const message of inbound) {
+    console.log(`${LOG} inbound message received (type=${message.type}, reply=${message.isReply})`);
+  }
+  if (inbound.length) {
+    console.log(`${LOG} opt-out keyword detected=${inbound.some((m) => m.optOutKeyword)}`);
   }
 
   const events = extractStatusEvents(body);
@@ -88,32 +108,46 @@ export async function POST(request: NextRequest) {
   }
 
   let optOuts = 0;
-  if (!brand.isDefault && signatureVerified) {
-    for (const phone of extractOptOutSenders(body)) {
+  if (!brand.isDefault) {
+    const senders = extractOptOutSenders(body);
+    if (senders.length && !signatureVerified) {
+      console.warn(`${LOG} opt-out not recorded reason=signature_unverified`);
+    } else if (inbound.some((m) => m.optOutKeyword) && !senders.length) {
+      console.warn(`${LOG} opt-out not recorded reason=invalid_sender`);
+    }
+    for (const phone of signatureVerified ? senders : []) {
       try {
         await recordWhatsAppOptOut(phone);
         optOuts += 1;
+        console.log(`${LOG} opt-out recorded`);
       } catch (error) {
         counts.errors += 1;
-        console.error('❌ WhatsApp opt-out not recorded', {
-          phone: maskPhone(phone),
-          error: error instanceof Error ? error.message : String(error),
-        });
+        console.error(
+          `${LOG} opt-out not recorded error=${error instanceof Error ? error.message : String(error)}`
+        );
       }
     }
   }
   const optOutCount = brand.isDefault ? {} : { opt_outs: optOuts };
 
-  const forwardTo = optOutForwardTarget({
-    isDefaultBrand: brand.isDefault,
-    configuredUrl: process.env.PINGZA_WEBHOOK_FORWARD_URL,
-    signatureVerified,
-    alreadyForwarded: request.headers.has(OPT_OUT_FORWARDED_HEADER),
-    body,
-  });
-  const signature = request.headers.get('x-hub-signature-256');
-  if (forwardTo && signature) {
-    runAfterResponse(() => forwardOptOutWebhook({ url: forwardTo, rawBody, signature }));
+  if (brand.isDefault) {
+    const decision = optOutForwardDecision({
+      isDefaultBrand: true,
+      configuredUrl: process.env.PINGZA_WEBHOOK_FORWARD_URL,
+      signatureVerified,
+      signatureHeader,
+      alreadyForwarded,
+      body,
+    });
+    if (decision.forward && signatureHeader) {
+      const { url } = decision;
+      const via = runAfterResponse(() =>
+        forwardOptOutWebhook({ url, rawBody, signature: signatureHeader })
+      );
+      console.log(`${LOG} forward scheduled via=${via}`);
+    } else if (!decision.forward && inbound.length) {
+      console.log(`${LOG} forward skipped reason=${decision.reason}`);
+    }
   }
 
   if (counts.errors > 0) {

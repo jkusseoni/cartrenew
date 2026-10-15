@@ -30,6 +30,9 @@ test("opt-out keywords match the whole reply, trimmed and case-insensitive", () 
     "OPTOUT",
     "रोको",
     " रोको। ",
+    "STOP\u200B",
+    "\uFEFFStop",
+    "Stop promotions",
   ]) {
     assert.equal(isOptOutReply(text), true, text)
   }
@@ -40,6 +43,7 @@ test("opt-out keywords match the whole reply, trimmed and case-insensitive", () 
     "don't stop",
     "hello",
     "stopp",
+    "stop promotions please",
     "रोको मत",
     null,
     42,
