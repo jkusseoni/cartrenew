@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireServerSecret } from '@/lib/api-auth'
 import { maskPhone } from '@/lib/phone'
 import { checkoutUrlForLog } from '@/lib/log-safe'
 import {
@@ -25,14 +26,21 @@ export async function GET(request: NextRequest) {
       return new NextResponse('Forbidden', { status: 403 })
     }
     return new NextResponse('Bad Request', { status: 400 })
-  } catch (error: any) {
-    console.error('❌ WhatsApp Webhook GET Verification Error:', error.message)
+  } catch (error) {
+    console.error(
+      '❌ WhatsApp Webhook GET Verification Error:',
+      error instanceof Error ? error.message : error
+    )
     return new NextResponse('Internal Server Error', { status: 500 })
   }
 }
 
-// 2. Abandoned-cart Meta WhatsApp send (POST)
+// 2. Abandoned-cart Meta WhatsApp send (POST). Server-to-server only:
+// requires ADMIN_PROCESS_SECRET in x-admin-secret or Authorization: Bearer.
 export async function POST(request: Request) {
+  const denied = requireServerSecret(request)
+  if (denied) return denied
+
   try {
     const body = await request.json()
 
@@ -97,12 +105,13 @@ export async function POST(request: Request) {
       deliveryStatus: sendResult.status,
       templateName: sendResult.templateName ?? 'abandoned_cart_reminder',
     })
-  } catch (error: any) {
-    console.error('❌ Send WhatsApp API Route Node Collision Error:', error.message)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : ''
+    console.error('❌ Send WhatsApp API Route Node Collision Error:', message)
     return NextResponse.json(
       {
         success: false,
-        error: error.message || 'Internal network delivery pipe exception',
+        error: message || 'Internal network delivery pipe exception',
       },
       { status: 500 }
     )

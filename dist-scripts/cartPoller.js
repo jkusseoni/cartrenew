@@ -42,7 +42,7 @@ node_cron_1.default.schedule("*/15 * * * *", async () => {
                     phoneNumber: cart.phoneNumber,
                     cartTotalAmount: cart.totalAmount,
                     abandonCartUrl: cart.cartUrl,
-                });
+                }, { headers: { "x-admin-secret": (process.env.ADMIN_PROCESS_SECRET || "").trim() } });
                 console.log(`[${new Date().toLocaleTimeString()}] WhatsApp sent to ${maskedPhone}`);
             }
             catch (apiError) {

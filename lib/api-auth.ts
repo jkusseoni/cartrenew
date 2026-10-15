@@ -113,6 +113,38 @@ export async function requireAutomationSecret(req: Request): Promise<NextRespons
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 }
 
+export type ServerSecretCheck = "ok" | "not_configured" | "unauthorized";
+
+/**
+ * Header-only ADMIN_PROCESS_SECRET check (`x-admin-secret` or
+ * `Authorization: Bearer`). No query param, no Clerk session, no dev bypass.
+ */
+export function checkServerSecret(
+  headers: Headers,
+  expected: string | undefined
+): ServerSecretCheck {
+  const secret = expected?.trim();
+  if (!secret) return "not_configured";
+
+  const bearer = headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
+  const provided = headers.get("x-admin-secret")?.trim() || bearer;
+  return provided && secretsMatch(provided, secret) ? "ok" : "unauthorized";
+}
+
+/**
+ * Guard for server-to-server routes that must never be reachable from a
+ * browser session. Returns a response to short-circuit with, or null.
+ */
+export function requireServerSecret(req: Request): NextResponse | null {
+  const result = checkServerSecret(req.headers, process.env.ADMIN_PROCESS_SECRET);
+  if (result === "ok") return null;
+  if (result === "not_configured") {
+    console.error("[api-auth] ADMIN_PROCESS_SECRET is not configured — rejecting server request.");
+    return NextResponse.json({ error: "Server secret is not configured." }, { status: 500 });
+  }
+  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+}
+
 /** Parses a JSON request body without throwing on malformed input. */
 export async function safeParseBody<T = Record<string, unknown>>(req: Request): Promise<T | null> {
   try {
