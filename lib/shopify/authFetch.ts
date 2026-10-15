@@ -4,6 +4,12 @@
  */
 
 const AUTH_TIMEOUT_MS = 8_000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 8_000;
+
+export type AuthFetchOptions = RequestInit & {
+  /** Abort the request after this many ms. Defaults to 8000. */
+  timeoutMs?: number;
+};
 
 type ShopifyIdTokenWindow = Window & {
   shopify?: {
@@ -53,7 +59,7 @@ async function getSessionToken(): Promise<string> {
 
 export async function authFetch(
   url: string | URL,
-  options: RequestInit = {}
+  { timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS, ...options }: AuthFetchOptions = {}
 ): Promise<Response> {
   const token = await getSessionToken();
   const headers = new Headers(options.headers);
@@ -66,7 +72,7 @@ export async function authFetch(
   const abortFromCaller = () => controller.abort();
   options.signal?.addEventListener("abort", abortFromCaller);
 
-  const timer = window.setTimeout(() => controller.abort(), AUTH_TIMEOUT_MS);
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     return await fetch(url, {

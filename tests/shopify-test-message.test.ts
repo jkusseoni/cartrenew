@@ -13,7 +13,10 @@ import {
   sendShopifyTestMessage,
   TEST_MESSAGE_CUSTOMER_NAME,
   TEST_MESSAGE_DAILY_LIMIT,
+  TEST_MESSAGE_PENDING_TEXT,
+  TEST_MESSAGE_SEND_TIMEOUT_MS,
   testMessageCheckoutUrl,
+  testMessageHttpResult,
   utcDayStart,
   validateTestPhone,
   type SendTestTemplate,
@@ -195,6 +198,123 @@ test("does not send when the log is unavailable", async () => {
   )
   assert.equal(calls.length, 0)
   assert.deepEqual(released, ["row-1"])
+})
+
+function captureLogs(t: import("node:test").TestContext) {
+  const lines: string[] = []
+  for (const level of ["info", "warn", "error"] as const) {
+    t.mock.method(console, level, (...args: unknown[]) => {
+      lines.push(JSON.stringify(args))
+    })
+  }
+  return lines
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((r) => {
+    resolve = r
+  })
+  return { promise, resolve }
+}
+
+test("Meta send waits 20s by default", () => {
+  assert.equal(TEST_MESSAGE_SEND_TIMEOUT_MS, 20_000)
+})
+
+test("send logs carry duration_ms and no phone number", async (t) => {
+  const lines = captureLogs(t)
+  const clock = { now: new Date("2026-10-13T10:00:00Z") }
+  const { log } = memoryLog(clock)
+
+  await sendShopifyTestMessage({ storeId: "s", shop: SHOP, e164: PHONE, now: clock.now, log, send: recordingSend().send })
+  await sendShopifyTestMessage({
+    storeId: "s",
+    shop: SHOP,
+    e164: PHONE,
+    now: clock.now,
+    log,
+    send: recordingSend({ success: false, error: `bad ${PHONE}` }).send,
+  })
+
+  const sent = lines.find((l) => l.includes("] sent"))
+  const failed = lines.find((l) => l.includes("send failed"))
+  assert.match(sent ?? "", /"duration_ms":\d+/)
+  assert.match(failed ?? "", /"duration_ms":\d+/)
+  for (const line of lines) {
+    assert.equal(line.includes("0123"), false, `phone digits in log: ${line}`)
+  }
+})
+
+test("a send slower than the timeout is 'pending' and still completes", async (t) => {
+  const lines = captureLogs(t)
+  const clock = { now: new Date("2026-10-13T10:00:00Z") }
+  const { log, rows } = memoryLog(clock)
+  const meta = deferred<Awaited<ReturnType<SendTestTemplate>>>()
+  let sends = 0
+
+  const outcome = await sendShopifyTestMessage({
+    storeId: "s",
+    shop: SHOP,
+    e164: PHONE,
+    now: clock.now,
+    log,
+    sendTimeoutMs: 20,
+    send: () => {
+      sends += 1
+      return meta.promise
+    },
+  })
+
+  assert.equal(outcome.status, "pending")
+  assert.equal("remaining" in outcome && outcome.remaining, TEST_MESSAGE_DAILY_LIMIT - 1)
+  assert.equal(sends, 1, "the send is not cancelled or retried")
+  assert.equal(rows[0].success, undefined, "log row still in progress")
+  assert.match(lines.find((l) => l.includes("after timeout")) ?? "", /"duration_ms":\d+/)
+
+  meta.resolve({ success: true, messageId: "wamid.late" })
+  if (outcome.status === "pending") await outcome.completion
+  assert.equal(rows[0].success, true)
+  assert.equal(rows[0].messageId, "wamid.late")
+  assert.ok(lines.some((l) => l.includes("] sent") && /"duration_ms":\d+/.test(l)))
+  assert.equal(lines.some((l) => l.includes("0123")), false)
+})
+
+test("a fast send isn't reported as pending", async () => {
+  const clock = { now: new Date("2026-10-13T10:00:00Z") }
+  const { log } = memoryLog(clock)
+  const outcome = await sendShopifyTestMessage({
+    storeId: "s",
+    shop: SHOP,
+    e164: PHONE,
+    now: clock.now,
+    log,
+    sendTimeoutMs: 1_000,
+    send: recordingSend().send,
+  })
+  assert.deepEqual(outcome, { status: "sent", remaining: TEST_MESSAGE_DAILY_LIMIT - 1 })
+})
+
+test("HTTP mapping: timeout is 202 with the being-sent text", () => {
+  const pending = testMessageHttpResult({ status: "pending", remaining: 1, completion: Promise.resolve() })
+  assert.equal(pending.status, 202)
+  assert.deepEqual(pending.body, { ok: true, pending: true, message: TEST_MESSAGE_PENDING_TEXT, remaining: 1 })
+  assert.equal(TEST_MESSAGE_PENDING_TEXT, "Your test message is being sent. It can take a minute to arrive.")
+
+  assert.deepEqual(testMessageHttpResult({ status: "sent", remaining: 2 }), { status: 200, body: { ok: true, remaining: 2 } })
+  assert.equal(testMessageHttpResult({ status: "send_failed", remaining: 0 }).status, 502)
+  assert.equal(testMessageHttpResult({ status: "rate_limited" }).status, 429)
+  assert.equal(testMessageHttpResult({ status: "log_unavailable" }).status, 503)
+})
+
+test("route keeps a pending send alive and the card waits 30s", () => {
+  const route = fs.readFileSync(path.join(root, "app/api/shopify/test-message/route.ts"), "utf8")
+  assert.match(route, /after\(\(\) => outcome\.completion\)/)
+  assert.match(route, /export const maxDuration = 60/)
+
+  const card = fs.readFileSync(path.join(root, "components/shopify/ShopifyTestMessageCard.tsx"), "utf8")
+  assert.match(card, /TEST_MESSAGE_REQUEST_TIMEOUT_MS = 30_000/)
+  assert.match(card, /timeoutMs: TEST_MESSAGE_REQUEST_TIMEOUT_MS/)
 })
 
 test("test-send code never touches carts, messages or analytics", () => {
