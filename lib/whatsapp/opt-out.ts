@@ -19,16 +19,21 @@ const OPT_OUT_KEYWORDS = new Set([
   'opt out',
   'opt-out',
   'optout',
+  // Meta's standard marketing opt-out quick-reply button.
+  'stop promotions',
   'रोको',
 ])
 
 const EDGE_PUNCTUATION = /^[\s.!?,;:'"।]+|[\s.!?,;:'"।]+$/g
+// Zero-width and BOM characters some keyboards insert around words.
+const INVISIBLE = /[\u200B-\u200D\u2060\uFEFF]/g
 
 /** True when the whole reply is an opt-out keyword ("Stop", " STOP! ", "रोको"). */
 export function isOptOutReply(text: unknown): boolean {
   if (typeof text !== 'string') return false
   const normalized = text
     .normalize('NFC')
+    .replace(INVISIBLE, '')
     .toLowerCase()
     .replace(/\s+/g, ' ')
     .replace(EDGE_PUNCTUATION, '')
@@ -63,24 +68,49 @@ function inboundText(message: Record<string, unknown>): unknown {
   }
 }
 
-/** E.164 senders of opt-out replies in entry[].changes[].value.messages[], deduplicated. */
-export function extractOptOutSenders(body: unknown): string[] {
-  const senders = new Set<string>()
-
+/** Inbound messages in entry[].changes[].value.messages[]. Replies to a template carry `context`. */
+function* inboundMessages(body: unknown): Generator<Record<string, unknown>> {
   for (const entry of asArray(asRecord(body)?.entry)) {
     for (const change of asArray(asRecord(entry)?.changes)) {
       const value = asRecord(asRecord(change)?.value)
       for (const raw of asArray(value?.messages)) {
         const message = asRecord(raw)
-        if (!message || typeof message.from !== 'string') continue
-        if (!isOptOutReply(inboundText(message))) continue
-        const phone = toE164(`+${message.from.replace(/\D/g, '')}`)
-        if (phone.ok) senders.add(phone.e164)
+        if (message) yield message
       }
     }
   }
+}
 
+/** E.164 senders of opt-out replies, deduplicated. */
+export function extractOptOutSenders(body: unknown): string[] {
+  const senders = new Set<string>()
+  for (const message of inboundMessages(body)) {
+    if (typeof message.from !== 'string') continue
+    if (!isOptOutReply(inboundText(message))) continue
+    const phone = toE164(`+${message.from.replace(/\D/g, '')}`)
+    if (phone.ok) senders.add(phone.e164)
+  }
   return [...senders]
+}
+
+export type InboundMessageSummary = {
+  /** Meta message type ("text", "button", ...), or "other" if not a plain identifier. */
+  type: string
+  /** The customer replied to a specific message (e.g. a template) */
+  isReply: boolean
+  optOutKeyword: boolean
+}
+
+/** PII-free view of the inbound messages, for logging. */
+export function summarizeInboundMessages(body: unknown): InboundMessageSummary[] {
+  return [...inboundMessages(body)].map((message) => ({
+    type:
+      typeof message.type === 'string' && /^[a-z_]{1,32}$/.test(message.type)
+        ? message.type
+        : 'other',
+    isReply: asRecord(message.context) !== null,
+    optOutKeyword: isOptOutReply(inboundText(message)),
+  }))
 }
 
 /** Suppression key for a WhatsApp number, or null without a secret or a valid number. */

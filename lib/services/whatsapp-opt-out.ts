@@ -25,7 +25,6 @@ export async function recordWhatsAppOptOut(phone: string): Promise<void> {
       { onConflict: 'email', ignoreDuplicates: true }
     )
   if (error) throw new Error(redactSecrets(error.message))
-  console.log('WhatsApp opt-out recorded', { phone: maskPhone(phone) })
 }
 
 async function suppressionExists(key: string): Promise<boolean> {

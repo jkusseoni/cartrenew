@@ -9,45 +9,65 @@
 
 import { after } from 'next/server'
 
-import { extractOptOutSenders } from '@/lib/whatsapp/opt-out'
+import { extractOptOutSenders, summarizeInboundMessages } from '@/lib/whatsapp/opt-out'
 
 export const OPT_OUT_FORWARD_TIMEOUT_MS = 5_000
 
 /** Set on forwarded requests; a request carrying it is never forwarded again. */
 export const OPT_OUT_FORWARDED_HEADER = 'x-cartrenew-forwarded'
 
-function forwardUrl(raw: string | undefined): string | null {
-  const value = raw?.trim()
-  if (!value) return null
+export const WEBHOOK_LOG_PREFIX = '[whatsapp-webhook]'
+
+export type ForwardSkipReason =
+  | 'not_cartrenew'
+  | 'already_forwarded'
+  | 'signature_unverified'
+  | 'signature_header_missing'
+  | 'no_opt_out_keyword'
+  | 'invalid_sender'
+  | 'env_unset'
+  | 'invalid_url'
+
+export type ForwardDecision = { forward: true; url: string } | { forward: false; reason: ForwardSkipReason }
+
+function forwardUrl(raw: string): string | null {
   try {
-    const url = new URL(value)
+    const url = new URL(raw)
     const local = url.hostname === 'localhost' || url.hostname === '127.0.0.1'
     if (url.protocol === 'https:' || (url.protocol === 'http:' && local)) return url.toString()
   } catch {
     // fall through
   }
-  console.error('PINGZA_WEBHOOK_FORWARD_URL is not a valid https URL; opt-out not forwarded')
   return null
 }
 
-/** URL to forward this webhook to, or null. Only CartRenew forwards. */
-export function optOutForwardTarget({
+/** Whether to forward this webhook, and where. Only CartRenew forwards. */
+export function optOutForwardDecision({
   isDefaultBrand,
   configuredUrl,
   signatureVerified,
+  signatureHeader,
   alreadyForwarded,
   body,
 }: {
   isDefaultBrand: boolean
   configuredUrl: string | undefined
   signatureVerified: boolean
+  signatureHeader: string | null
   alreadyForwarded: boolean
   body: unknown
-}): string | null {
-  if (!isDefaultBrand || alreadyForwarded || !signatureVerified) return null
-  if (!configuredUrl?.trim()) return null
-  if (extractOptOutSenders(body).length === 0) return null
-  return forwardUrl(configuredUrl)
+}): ForwardDecision {
+  const skip = (reason: ForwardSkipReason): ForwardDecision => ({ forward: false, reason })
+  if (!isDefaultBrand) return skip('not_cartrenew')
+  if (alreadyForwarded) return skip('already_forwarded')
+  if (!signatureVerified) return skip('signature_unverified')
+  if (!signatureHeader) return skip('signature_header_missing')
+  if (!summarizeInboundMessages(body).some((m) => m.optOutKeyword)) return skip('no_opt_out_keyword')
+  if (extractOptOutSenders(body).length === 0) return skip('invalid_sender')
+  const configured = configuredUrl?.trim()
+  if (!configured) return skip('env_unset')
+  const url = forwardUrl(configured)
+  return url ? { forward: true, url } : skip('invalid_url')
 }
 
 /** POST the original body and signature. Never throws; logs carry no phone numbers. */
@@ -64,6 +84,7 @@ export async function forwardOptOutWebhook({
   fetchImpl?: typeof fetch
   timeoutMs?: number
 }): Promise<void> {
+  const started = Date.now()
   try {
     const res = await fetchImpl(url, {
       method: 'POST',
@@ -75,23 +96,31 @@ export async function forwardOptOutWebhook({
       body: rawBody,
       signal: AbortSignal.timeout(timeoutMs),
     })
-    if (!res.ok) {
-      console.error('WhatsApp opt-out forward to Pingza failed', { status: res.status })
-      return
-    }
-    console.log('WhatsApp opt-out forwarded to Pingza', { status: res.status })
+    const line = `${WEBHOOK_LOG_PREFIX} forward attempted status=${res.status}${
+      res.redirected ? ' redirected=true' : ''
+    } duration_ms=${Date.now() - started}`
+    if (res.ok) console.log(line)
+    else console.error(line)
   } catch (error) {
-    console.error('WhatsApp opt-out forward to Pingza failed', {
-      error: error instanceof Error ? error.name : 'Error',
-    })
+    const name = error instanceof Error ? error.name : 'Error'
+    const code = (error as { cause?: { code?: unknown } } | null)?.cause?.code
+    const cause = typeof code === 'string' && /^[A-Z0-9_]{1,40}$/.test(code) ? ` cause=${code}` : ''
+    console.error(
+      `${WEBHOOK_LOG_PREFIX} forward attempted error=${name}${cause} duration_ms=${Date.now() - started}`
+    )
   }
 }
 
-/** Run after the response via next/server after(); outside a request scope, run detached. */
-export function runAfterResponse(task: () => Promise<void>): void {
+/**
+ * Run after the response via next/server after(). Outside a request scope it
+ * runs detached, which a serverless platform may cut short.
+ */
+export function runAfterResponse(task: () => Promise<void>): 'after' | 'detached' {
   try {
     after(task)
+    return 'after'
   } catch {
     void task()
+    return 'detached'
   }
 }

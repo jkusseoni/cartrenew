@@ -4,10 +4,11 @@ import path from "node:path"
 import test, { type TestContext } from "node:test"
 import { fileURLToPath } from "node:url"
 
+import { summarizeInboundMessages } from "../lib/whatsapp/opt-out"
 import {
   forwardOptOutWebhook,
   OPT_OUT_FORWARDED_HEADER,
-  optOutForwardTarget,
+  optOutForwardDecision,
 } from "../lib/whatsapp/opt-out-forward"
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
@@ -25,47 +26,102 @@ const STATUS_ONLY = {
   entry: [{ changes: [{ field: "messages", value: { statuses: [{ id: "wamid.1", status: "read", timestamp: "1" }] } }] }],
 }
 
-const target = (overrides: Partial<Parameters<typeof optOutForwardTarget>[0]> = {}) =>
-  optOutForwardTarget({
+/** Real Meta shape: a plain-text "STOP" typed as a reply to a template message (has `context`). */
+const TEMPLATE_REPLY_STOP = {
+  object: "whatsapp_business_account",
+  entry: [
+    {
+      id: "102290129340398",
+      changes: [
+        {
+          value: {
+            messaging_product: "whatsapp",
+            metadata: { display_phone_number: "15550783881", phone_number_id: "106540352242922" },
+            contacts: [{ profile: { name: "Test Shopper" }, wa_id: PHONE_DIGITS }],
+            messages: [
+              {
+                context: { from: "15550783881", id: "wamid.HBgLMTU1NTA3ODM4ODEVAgARGBI1RjQyNUE3NEYxMzAzMzQ5MkEA" },
+                from: PHONE_DIGITS,
+                id: "wamid.HBgLNDQ3NzAwOTAwMTIzFQIAEhgUM0E0QTY1OTlBRUUwMzgxMDE0NEYA",
+                timestamp: "1760534400",
+                text: { body: "STOP" },
+                type: "text",
+              },
+            ],
+          },
+          field: "messages",
+        },
+      ],
+    },
+  ],
+}
+
+/** Meta pretty-prints and \u-escapes non-ASCII; the signature covers these exact bytes. */
+const META_RAW_HINDI_STOP = `{"object":"whatsapp_business_account","entry":[{"id":"102290129340398","changes":[{"value":{"messaging_product":"whatsapp","messages":[{"context":{"from":"15550783881","id":"wamid.ctx"},"from":"${PHONE_DIGITS}","id":"wamid.in","timestamp":"1760534400","text":{"body":"\\u0930\\u094b\\u0915\\u094b"},"type":"text"}]},"field":"messages"}]}]}`
+
+const decide = (overrides: Partial<Parameters<typeof optOutForwardDecision>[0]> = {}) =>
+  optOutForwardDecision({
     isDefaultBrand: true,
     configuredUrl: FORWARD_URL,
     signatureVerified: true,
+    signatureHeader: "sha256=abc",
     alreadyForwarded: false,
     body: STOP,
     ...overrides,
   })
+const skipped = (reason: string) => ({ forward: false, reason })
 
-test("forwards only CartRenew payloads with an opt-out reply", () => {
-  assert.equal(target(), FORWARD_URL)
-  assert.equal(target({ body: BUTTON_STOP }), FORWARD_URL)
-  assert.equal(target({ body: NORMAL }), null, "normal message")
-  assert.equal(target({ body: STATUS_ONLY }), null, "status update")
-  assert.equal(target({ configuredUrl: undefined }), null, "env unset")
-  assert.equal(target({ configuredUrl: "  " }), null, "env blank")
-  assert.equal(target({ isDefaultBrand: false }), null, "Pingza never forwards")
-  assert.equal(target({ alreadyForwarded: true }), null, "no second hop")
-  assert.equal(target({ signatureVerified: false }), null, "unsigned body")
+test("forwards CartRenew payloads with an opt-out reply, with a reason for every skip", () => {
+  assert.deepEqual(decide(), { forward: true, url: FORWARD_URL })
+  assert.deepEqual(decide({ body: BUTTON_STOP }), { forward: true, url: FORWARD_URL })
+  assert.deepEqual(decide({ body: TEMPLATE_REPLY_STOP }), { forward: true, url: FORWARD_URL })
+  assert.deepEqual(decide({ body: JSON.parse(META_RAW_HINDI_STOP) }), { forward: true, url: FORWARD_URL })
+
+  assert.deepEqual(decide({ isDefaultBrand: false }), skipped("not_cartrenew"))
+  assert.deepEqual(decide({ alreadyForwarded: true }), skipped("already_forwarded"))
+  assert.deepEqual(decide({ signatureVerified: false }), skipped("signature_unverified"))
+  assert.deepEqual(decide({ signatureHeader: null }), skipped("signature_header_missing"))
+  assert.deepEqual(decide({ body: NORMAL }), skipped("no_opt_out_keyword"))
+  assert.deepEqual(decide({ body: STATUS_ONLY }), skipped("no_opt_out_keyword"))
+  assert.deepEqual(
+    decide({ body: messages([{ from: "12", type: "text", text: { body: "STOP" } }]) }),
+    skipped("invalid_sender")
+  )
+  assert.deepEqual(decide({ configuredUrl: undefined }), skipped("env_unset"))
+  assert.deepEqual(decide({ configuredUrl: "  " }), skipped("env_unset"))
+  assert.deepEqual(decide({ configuredUrl: "http://pingza.test/hook" }), skipped("invalid_url"))
+  assert.deepEqual(decide({ configuredUrl: "not a url" }), skipped("invalid_url"))
+  assert.deepEqual(decide({ configuredUrl: "http://localhost:3001/api/whatsapp/webhook" }), {
+    forward: true,
+    url: "http://localhost:3001/api/whatsapp/webhook",
+  })
 })
 
-test("forward URL must be https (http only for localhost)", (t) => {
-  t.mock.method(console, "error", () => undefined)
-  assert.equal(target({ configuredUrl: "http://pingza.test/hook" }), null)
-  assert.equal(target({ configuredUrl: "not a url" }), null)
-  assert.equal(target({ configuredUrl: "http://localhost:3001/api/whatsapp/webhook" }), "http://localhost:3001/api/whatsapp/webhook")
+test("inbound summary reports type, reply-to-template and keyword without PII", () => {
+  assert.deepEqual(summarizeInboundMessages(TEMPLATE_REPLY_STOP), [
+    { type: "text", isReply: true, optOutKeyword: true },
+  ])
+  assert.deepEqual(summarizeInboundMessages(BUTTON_STOP), [{ type: "button", isReply: false, optOutKeyword: true }])
+  assert.deepEqual(summarizeInboundMessages(NORMAL), [{ type: "text", isReply: false, optOutKeyword: false }])
+  assert.deepEqual(
+    summarizeInboundMessages(messages([{ from: PHONE_DIGITS, type: "Weird Type!", text: { body: "x" } }])),
+    [{ type: "other", isReply: false, optOutKeyword: false }]
+  )
+  assert.deepEqual(summarizeInboundMessages(STATUS_ONLY), [])
 })
 
 function captureLogs(t: TestContext) {
   const lines: string[] = []
   for (const level of ["log", "error"] as const) {
     t.mock.method(console, level, (...args: unknown[]) => {
-      lines.push(JSON.stringify(args))
+      lines.push(args.map(String).join(" "))
     })
   }
   return lines
 }
 
 test("forward sends the original raw body and Meta signature", async (t) => {
-  captureLogs(t)
+  const lines = captureLogs(t)
   const raw = JSON.stringify(STOP)
   const calls: { url: string; init: RequestInit }[] = []
   const fetchImpl = (async (url: string, init: RequestInit) => {
@@ -83,6 +139,7 @@ test("forward sends the original raw body and Meta signature", async (t) => {
   assert.equal(headers.get("x-hub-signature-256"), "sha256=abc")
   assert.equal(headers.get(OPT_OUT_FORWARDED_HEADER), "1")
   assert.ok(calls[0].init.signal, "request has a timeout signal")
+  assert.match(lines[0], /^\[whatsapp-webhook\] forward attempted status=200 duration_ms=\d+$/)
 })
 
 test("forward failures and timeouts are logged without phone numbers and never throw", async (t) => {
@@ -90,7 +147,7 @@ test("forward failures and timeouts are logged without phone numbers and never t
   const raw = JSON.stringify(STOP)
 
   const rejecting = (async () => {
-    throw new TypeError(`fetch failed for ${PHONE_DIGITS}`)
+    throw new TypeError(`fetch failed for ${PHONE_DIGITS}`, { cause: { code: "ENOTFOUND" } })
   }) as unknown as typeof fetch
   await forwardOptOutWebhook({ url: FORWARD_URL, rawBody: raw, signature: "sha256=abc", fetchImpl: rejecting })
 
@@ -105,18 +162,26 @@ test("forward failures and timeouts are logged without phone numbers and never t
   await forwardOptOutWebhook({ url: FORWARD_URL, rawBody: raw, signature: "sha256=abc", fetchImpl: hanging, timeoutMs: 30 })
   assert.ok(Date.now() - started < 2_000, "timeout cuts the request")
 
-  assert.match(lines[0], /"error":"TypeError"/)
-  assert.match(lines[1], /"status":401/)
-  assert.match(lines[2], /"error":"TimeoutError"/)
+  assert.match(lines[0], /forward attempted error=TypeError cause=ENOTFOUND duration_ms=/)
+  assert.match(lines[1], /forward attempted status=401 duration_ms=/)
+  assert.match(lines[2], /forward attempted error=TimeoutError duration_ms=/)
   assert.equal(lines.some((l) => l.includes(PHONE_DIGITS)), false)
 })
 
 // Route-level runs in child processes (brand is frozen at import). fetch is
 // stubbed before the route loads; the Pingza forward target can accept,
-// reject or hang.
+// reject or hang. Console output is captured per call.
 const CHILD = `
   const crypto = await import("node:crypto")
   const requests = []
+  const logs = []
+  for (const level of ["log", "warn", "error"]) {
+    const original = console[level].bind(console)
+    console[level] = (...args) => {
+      logs.push(args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" "))
+      original(...args)
+    }
+  }
   const json = (value, status = 200) =>
     new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } })
   globalThis.__forwardMode = "ok"
@@ -140,9 +205,9 @@ const CHILD = `
   const settle = () => new Promise((r) => setTimeout(r, 50))
   const sign = (raw, secret = "test-app-secret") =>
     "sha256=" + crypto.createHmac("sha256", secret).update(raw).digest("hex")
-  async function call(payload, { signature, headers = {} } = {}) {
-    const raw = JSON.stringify(payload)
+  async function callRaw(raw, { signature, headers = {} } = {}) {
     const sig = signature === undefined ? sign(raw) : signature
+    logs.splice(0)
     const started = Date.now()
     const res = await POST(new NextRequest("http://localhost/api/whatsapp/webhook", {
       method: "POST",
@@ -159,10 +224,12 @@ const CHILD = `
       ms,
       raw,
       sig,
+      logs: logs.splice(0),
       forwards: sent.filter((r) => r.url.startsWith("https://pingza.test")),
       suppressionWrites: sent.filter((r) => r.method === "POST" && r.url.includes("email_suppressions")).length,
     }
   }
+  const call = (payload, options) => callRaw(JSON.stringify(payload), options)
 `
 
 function runChild(appName: string, script: string, env: Record<string, string> = {}) {
@@ -183,14 +250,26 @@ function runChild(appName: string, script: string, env: Record<string, string> =
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
   const line = result.stdout.split(/\r?\n/).find((l) => l.startsWith("RESULT:"))
   assert.ok(line, `${result.stdout}\n${result.stderr}`)
-  return { out: JSON.parse(line.slice("RESULT:".length)), stdout: result.stdout, stderr: result.stderr }
+  return JSON.parse(line.slice("RESULT:".length))
 }
 
+type CallResult = { logs: string[] }
+
+function assertPiiFree(name: string, result: CallResult) {
+  for (const line of result.logs) {
+    assert.equal(line.includes(PHONE_DIGITS), false, `${name}: phone number in log: ${line}`)
+    assert.equal(/stop|रोको|where is my order/i.test(line), false, `${name}: message text in log: ${line}`)
+  }
+}
+
+const hasLog = (result: CallResult, pattern: RegExp) => result.logs.some((l) => pattern.test(l))
+
 test("CartRenew route: forwards STOP only, response identical with or without forwarding", () => {
-  const { out, stdout, stderr } = runChild(
+  const out = runChild(
     "CartRenew",
     `
       const stop = ${JSON.stringify(STOP)}
+      const templateReply = ${JSON.stringify(TEMPLATE_REPLY_STOP)}
       const normal = ${JSON.stringify(NORMAL)}
       const statusOnly = ${JSON.stringify(STATUS_ONLY)}
 
@@ -199,6 +278,8 @@ test("CartRenew route: forwards STOP only, response identical with or without fo
 
       process.env.PINGZA_WEBHOOK_FORWARD_URL = "${FORWARD_URL}"
       const forwarded = await call(stop)
+      const template = await call(templateReply)
+      const metaRaw = await callRaw(${JSON.stringify(META_RAW_HINDI_STOP)})
       const normalMsg = await call(normal)
       const statusMsg = await call(statusOnly)
       const again = await call(stop, { headers: { "${OPT_OUT_FORWARDED_HEADER}": "1" } })
@@ -209,52 +290,66 @@ test("CartRenew route: forwards STOP only, response identical with or without fo
       globalThis.__forwardMode = "hang"
       const hanging = await call(stop)
 
-      console.log("RESULT:" + JSON.stringify({ unset, forwarded, normalMsg, statusMsg, again, rejected, hanging }))
+      console.log("RESULT:" + JSON.stringify({ unset, forwarded, template, metaRaw, normalMsg, statusMsg, again, rejected, hanging }))
     `
   )
 
   assert.equal(out.unset.status, 200)
   assert.equal(out.unset.forwards.length, 0, "env unset: no forward")
+  assert.ok(hasLog(out.unset, /^\[whatsapp-webhook\] forward skipped reason=env_unset$/))
 
-  assert.equal(out.forwarded.forwards.length, 1)
-  const fwd = out.forwarded.forwards[0]
-  assert.equal(fwd.method, "POST")
-  assert.equal(fwd.body, out.forwarded.raw, "original raw body")
-  assert.equal(fwd.headers["x-hub-signature-256"], out.forwarded.sig, "original Meta signature")
-  assert.equal(fwd.headers[OPT_OUT_FORWARDED_HEADER], "1")
+  for (const name of ["forwarded", "template", "metaRaw"]) {
+    assert.equal(out[name].forwards.length, 1, name)
+    const fwd = out[name].forwards[0]
+    assert.equal(fwd.method, "POST")
+    assert.equal(fwd.body, out[name].raw, `${name}: original raw body`)
+    assert.equal(fwd.headers["x-hub-signature-256"], out[name].sig, `${name}: original Meta signature`)
+    assert.equal(fwd.headers[OPT_OUT_FORWARDED_HEADER], "1")
+    assert.ok(hasLog(out[name], /^\[whatsapp-webhook\] signature verified=true forwarded=false$/), name)
+    assert.ok(hasLog(out[name], /^\[whatsapp-webhook\] opt-out keyword detected=true$/), name)
+    assert.ok(hasLog(out[name], /^\[whatsapp-webhook\] forward scheduled via=(after|detached)$/), name)
+    assert.ok(hasLog(out[name], /^\[whatsapp-webhook\] forward attempted status=200 duration_ms=\d+$/), name)
+  }
+  assert.ok(hasLog(out.forwarded, /^\[whatsapp-webhook\] inbound message received \(type=text, reply=false\)$/))
+  assert.ok(hasLog(out.template, /^\[whatsapp-webhook\] inbound message received \(type=text, reply=true\)$/))
 
   assert.equal(out.normalMsg.forwards.length, 0, "normal message")
+  assert.ok(hasLog(out.normalMsg, /opt-out keyword detected=false$/))
+  assert.ok(hasLog(out.normalMsg, /forward skipped reason=no_opt_out_keyword$/))
   assert.equal(out.statusMsg.forwards.length, 0, "status update")
+  assert.equal(
+    hasLog(out.statusMsg, /inbound message|keyword detected|forward (scheduled|skipped|attempted)/),
+    false,
+    "status update stays quiet"
+  )
   assert.equal(out.again.forwards.length, 0, "already-forwarded request")
+  assert.ok(hasLog(out.again, /forward skipped reason=already_forwarded$/))
 
-  for (const name of ["forwarded", "rejected", "hanging"]) {
+  for (const name of ["forwarded", "template", "metaRaw", "rejected", "hanging"]) {
     assert.equal(out[name].status, out.unset.status, name)
     assert.deepEqual(out[name].body, out.unset.body, `${name}: response body unchanged`)
     assert.equal(out[name].suppressionWrites, 0, `${name}: CartRenew records nothing`)
   }
   assert.equal(out.rejected.forwards.length, 1)
+  assert.ok(hasLog(out.rejected, /^\[whatsapp-webhook\] forward attempted error=TypeError duration_ms=\d+$/))
   assert.equal(out.hanging.forwards.length, 1)
   assert.ok(out.hanging.ms < 1_000, "response does not wait for the forward")
 
-  const logs = (stdout + stderr)
-    .split(/\r?\n/)
-    .filter((l) => !l.startsWith("RESULT:"))
-    .join("\n")
-  assert.match(logs, /opt-out forward to Pingza failed/)
-  assert.equal(logs.includes(PHONE_DIGITS), false, "no phone numbers in logs")
+  for (const [name, result] of Object.entries(out)) assertPiiFree(name, result as CallResult)
 })
 
 test("Pingza route: verifies the Meta signature before recording, and never forwards", () => {
-  const { out } = runChild(
+  const out = runChild(
     "Pingza",
     `
-      const stop = ${JSON.stringify(STOP)}
+      const stop = ${JSON.stringify(TEMPLATE_REPLY_STOP)}
       const forwardedHeader = { "${OPT_OUT_FORWARDED_HEADER}": "1" }
       const bad = await call(stop, { signature: "sha256=" + "0".repeat(64), headers: forwardedHeader })
       const otherSecret = await call(stop, { signature: sign(JSON.stringify(stop), "another-secret"), headers: forwardedHeader })
       const missing = await call(stop, { signature: null, headers: forwardedHeader })
       const good = await call(stop, { headers: forwardedHeader })
-      console.log("RESULT:" + JSON.stringify({ bad, otherSecret, missing, good }))
+      const metaRaw = await callRaw(${JSON.stringify(META_RAW_HINDI_STOP)}, { headers: forwardedHeader })
+      console.log("RESULT:" + JSON.stringify({ bad, otherSecret, missing, good, metaRaw }))
     `,
     { PINGZA_WEBHOOK_FORWARD_URL: FORWARD_URL }
   )
@@ -263,17 +358,30 @@ test("Pingza route: verifies the Meta signature before recording, and never forw
     assert.equal(out[name].status, 401, name)
     assert.deepEqual(out[name].body, { error: "Invalid signature" }, name)
     assert.equal(out[name].suppressionWrites, 0, `${name}: nothing recorded`)
+    assert.ok(hasLog(out[name], /^\[whatsapp-webhook\] signature verified=false forwarded=true$/), name)
+    assert.equal(hasLog(out[name], /opt-out recorded/), false, name)
   }
-  assert.equal(out.good.status, 200)
-  assert.equal(out.good.body.opt_outs, 1)
-  assert.equal(out.good.suppressionWrites, 1)
-  for (const name of ["bad", "otherSecret", "missing", "good"]) {
-    assert.equal(out[name].forwards.length, 0, `${name}: Pingza never forwards`)
+  assert.ok(hasLog(out.bad, /^\[whatsapp-webhook\] rejected: signature \(header=invalid\) forwarded=true$/))
+  assert.ok(hasLog(out.missing, /^\[whatsapp-webhook\] rejected: signature \(header=missing\) forwarded=true$/))
+
+  for (const name of ["good", "metaRaw"]) {
+    assert.equal(out[name].status, 200, name)
+    assert.equal(out[name].body.opt_outs, 1, name)
+    assert.equal(out[name].suppressionWrites, 1, name)
+    assert.ok(hasLog(out[name], /^\[whatsapp-webhook\] signature verified=true forwarded=true$/), name)
+    assert.ok(hasLog(out[name], /^\[whatsapp-webhook\] inbound message received \(type=text, reply=true\)$/), name)
+    assert.ok(hasLog(out[name], /^\[whatsapp-webhook\] opt-out keyword detected=true$/), name)
+    assert.ok(hasLog(out[name], /^\[whatsapp-webhook\] opt-out recorded$/), name)
+  }
+  for (const [name, result] of Object.entries(out)) {
+    assert.equal((result as { forwards: unknown[] }).forwards.length, 0, `${name}: Pingza never forwards`)
+    assert.equal(hasLog(result as CallResult, /forward (scheduled|skipped|attempted)/), false, name)
+    assertPiiFree(name, result as CallResult)
   }
 })
 
 test("Pingza route: an unsigned body (no app secret, local dev) never records an opt-out", () => {
-  const { out } = runChild(
+  const out = runChild(
     "Pingza",
     `console.log("RESULT:" + JSON.stringify({ unsigned: await call(${JSON.stringify(STOP)}, { signature: null }) }))`,
     { WHATSAPP_APP_SECRET: "", NODE_ENV: "test" }
@@ -281,4 +389,6 @@ test("Pingza route: an unsigned body (no app secret, local dev) never records an
   assert.equal(out.unsigned.status, 200)
   assert.equal(out.unsigned.body.opt_outs, 0)
   assert.equal(out.unsigned.suppressionWrites, 0)
+  assert.ok(hasLog(out.unsigned, /opt-out not recorded reason=signature_unverified$/))
+  assertPiiFree("unsigned", out.unsigned)
 })
