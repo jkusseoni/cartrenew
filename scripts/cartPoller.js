@@ -10,6 +10,12 @@ if (!process.env.DATABASE_URL) {
   process.exit(1);
 }
 
+const ADMIN_PROCESS_SECRET = (process.env.ADMIN_PROCESS_SECRET || "").trim();
+if (!ADMIN_PROCESS_SECRET) {
+  console.error("[FATAL] ADMIN_PROCESS_SECRET is not set — /api/whatsapp/send requires it.");
+  process.exit(1);
+}
+
 // Prisma 7 requires adapter (or accelerateUrl); datasources override is no longer valid.
 const prisma = new PrismaClient({
   adapter: new PrismaPg({
@@ -54,12 +60,16 @@ const checkAbandonedCartsNow = async () => {
       console.log("TARGET: " + maskedPhone + " | AMOUNT: Rs. " + cart.totalAmount);
 
       try {
-        await axios.post("http://localhost:3000/api/whatsapp/send", {
-          customerName: cart.customerName || "Customer",
-          phoneNumber: targetPhone,
-          cartTotalAmount: cart.totalAmount,
-          abandonedCartUrl: cart.cartUrl,
-        });
+        await axios.post(
+          "http://localhost:3000/api/whatsapp/send",
+          {
+            customerName: cart.customerName || "Customer",
+            phoneNumber: targetPhone,
+            cartTotalAmount: cart.totalAmount,
+            abandonedCartUrl: cart.cartUrl,
+          },
+          { headers: { "x-admin-secret": ADMIN_PROCESS_SECRET } }
+        );
 
         console.log("WhatsApp successfully triggered to " + maskedPhone);
 
