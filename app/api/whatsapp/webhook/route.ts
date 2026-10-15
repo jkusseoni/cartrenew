@@ -4,6 +4,12 @@ import { maskPhone } from '@/lib/phone';
 import { recordWhatsAppOptOut } from '@/lib/services/whatsapp-opt-out';
 import { applyStatusEvent } from '@/lib/services/whatsapp-status-sync';
 import { extractOptOutSenders } from '@/lib/whatsapp/opt-out';
+import {
+  forwardOptOutWebhook,
+  OPT_OUT_FORWARDED_HEADER,
+  optOutForwardTarget,
+  runAfterResponse,
+} from '@/lib/whatsapp/opt-out-forward';
 import { extractStatusEvents, verifyMetaSignature } from '@/lib/whatsapp-status';
 
 export const dynamic = 'force-dynamic';
@@ -34,8 +40,9 @@ export async function GET(request: NextRequest) {
  * 2. Meta delivery-status events (POST). Signed with X-Hub-Signature-256
  * using the Meta app secret. Pingza also records inbound STOP-style replies
  * as opt-outs (no reply is sent); other incoming messages are acknowledged
- * and ignored. Returns 500 only on DB errors so Meta retries; applying an
- * event twice is a no-op.
+ * and ignored. CartRenew, which Meta calls for the shared number, forwards
+ * opt-out payloads to Pingza after responding. Returns 500 only on DB errors
+ * so Meta retries; applying an event twice is a no-op.
  */
 export async function POST(request: NextRequest) {
   const rawBody = await request.text();
@@ -50,6 +57,8 @@ export async function POST(request: NextRequest) {
     console.warn('⚠️ WhatsApp webhook rejected: invalid X-Hub-Signature-256');
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
   }
+  // Without a secret (local dev only) the body is unsigned: never trusted for opt-outs.
+  const signatureVerified = Boolean(appSecret);
 
   let body: unknown;
   try {
@@ -79,7 +88,7 @@ export async function POST(request: NextRequest) {
   }
 
   let optOuts = 0;
-  if (!brand.isDefault) {
+  if (!brand.isDefault && signatureVerified) {
     for (const phone of extractOptOutSenders(body)) {
       try {
         await recordWhatsAppOptOut(phone);
@@ -94,6 +103,18 @@ export async function POST(request: NextRequest) {
     }
   }
   const optOutCount = brand.isDefault ? {} : { opt_outs: optOuts };
+
+  const forwardTo = optOutForwardTarget({
+    isDefaultBrand: brand.isDefault,
+    configuredUrl: process.env.PINGZA_WEBHOOK_FORWARD_URL,
+    signatureVerified,
+    alreadyForwarded: request.headers.has(OPT_OUT_FORWARDED_HEADER),
+    body,
+  });
+  const signature = request.headers.get('x-hub-signature-256');
+  if (forwardTo && signature) {
+    runAfterResponse(() => forwardOptOutWebhook({ url: forwardTo, rawBody, signature }));
+  }
 
   if (counts.errors > 0) {
     return NextResponse.json({ success: false, ...counts, ...optOutCount }, { status: 500 });
