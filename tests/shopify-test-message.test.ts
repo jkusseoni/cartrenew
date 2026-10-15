@@ -13,6 +13,8 @@ import {
   sendShopifyTestMessage,
   TEST_MESSAGE_CUSTOMER_NAME,
   TEST_MESSAGE_DAILY_LIMIT,
+  TEST_MESSAGE_OPTED_OUT_CODE,
+  TEST_MESSAGE_OPTED_OUT_TEXT,
   TEST_MESSAGE_PENDING_TEXT,
   TEST_MESSAGE_SEND_TIMEOUT_MS,
   testMessageCheckoutUrl,
@@ -22,6 +24,7 @@ import {
   type SendTestTemplate,
   type TestMessageLog,
 } from "../lib/shopify/test-message"
+import { WHATSAPP_OPT_OUT_CHECK_FAILED, WHATSAPP_OPTED_OUT_ERROR } from "../lib/whatsapp/opt-out"
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const SHOP = "demo-store.myshopify.com"
@@ -307,6 +310,72 @@ test("HTTP mapping: timeout is 202 with the being-sent text", () => {
   assert.equal(testMessageHttpResult({ status: "log_unavailable" }).status, 503)
 })
 
+test("an opted-out number is its own outcome; other failures stay generic", async () => {
+  const clock = { now: new Date("2026-10-13T10:00:00Z") }
+  const { log, rows } = memoryLog(clock)
+  const run = (error: string) =>
+    sendShopifyTestMessage({
+      storeId: "s",
+      shop: SHOP,
+      e164: PHONE,
+      now: clock.now,
+      log,
+      send: recordingSend({ success: false, error, to: null }).send,
+    })
+
+  assert.deepEqual(await run(WHATSAPP_OPTED_OUT_ERROR), { status: "opted_out", remaining: 2 })
+  assert.equal(rows[0].error, WHATSAPP_OPTED_OUT_ERROR, "attempt is logged and counts toward the limit")
+  assert.deepEqual(await run(WHATSAPP_OPT_OUT_CHECK_FAILED), { status: "send_failed", remaining: 1 })
+  assert.deepEqual(await run(`Meta error: ${WHATSAPP_OPTED_OUT_ERROR}`), { status: "send_failed", remaining: 0 })
+})
+
+test("HTTP mapping: opted-out is a 409 with the STOP text and nothing else", () => {
+  assert.equal(TEST_MESSAGE_OPTED_OUT_CODE, WHATSAPP_OPTED_OUT_ERROR)
+  assert.equal(
+    TEST_MESSAGE_OPTED_OUT_TEXT,
+    "This number has opted out of messages (it replied STOP). Use a different number for testing."
+  )
+  assert.deepEqual(testMessageHttpResult({ status: "opted_out", remaining: 1 }), {
+    status: 409,
+    body: { error: TEST_MESSAGE_OPTED_OUT_TEXT, code: TEST_MESSAGE_OPTED_OUT_CODE, remaining: 1 },
+  })
+  const failed = testMessageHttpResult({ status: "send_failed", remaining: 1 })
+  assert.equal("code" in failed.body, false)
+  assert.notEqual(failed.body.error, TEST_MESSAGE_OPTED_OUT_TEXT)
+})
+
+test("card shows the opted-out text for the opted-out code and generic errors otherwise", async () => {
+  const { testMessageResult, TestMessageResultView } = await import(
+    "../components/shopify/ShopifyTestMessageCard.tsx"
+  )
+
+  const optedOut = testMessageResult(409, { code: TEST_MESSAGE_OPTED_OUT_CODE, error: "ignored", remaining: 1 }, PHONE)
+  assert.deepEqual(optedOut, { kind: "error", message: TEST_MESSAGE_OPTED_OUT_TEXT, warning: true })
+  const html = renderToStaticMarkup(React.createElement(TestMessageResultView, { result: optedOut }))
+  assert.match(html, /role="alert"/)
+  assert.ok(html.includes("This number has opted out of messages (it replied STOP). Use a different number for testing."))
+  assert.match(html, /amber/)
+
+  const metaError = "WhatsApp didn't accept the test message. Check that the number is on WhatsApp and try again."
+  assert.deepEqual(testMessageResult(502, { error: metaError, remaining: 1 }, PHONE), {
+    kind: "error",
+    message: metaError,
+    warning: false,
+  })
+  assert.deepEqual(testMessageResult(500, {}, PHONE), {
+    kind: "error",
+    message: "The test message couldn't be sent. Try again.",
+    warning: false,
+  })
+  assert.equal(testMessageResult(429, { error: "limit" }, PHONE).kind === "error", true)
+  assert.deepEqual(testMessageResult(200, { ok: true, remaining: 2 }, PHONE), {
+    kind: "sent",
+    phone: PHONE,
+    remaining: 2,
+    pendingMessage: null,
+  })
+})
+
 test("route keeps a pending send alive and the card waits 30s", () => {
   const route = fs.readFileSync(path.join(root, "app/api/shopify/test-message/route.ts"), "utf8")
   assert.match(route, /after\(\(\) => outcome\.completion\)/)
@@ -469,6 +538,107 @@ test("embedded App Home (app/app/page.tsx) has no card for CartRenew", () => {
   const html = renderAppHome("CartRenew")
   assert.match(html, /Shopify Billing/, "console rendered")
   assert.equal(html.includes("Send test message"), false)
+})
+
+test("Pingza route: an opted-out number gets the STOP message and nothing is sent; other numbers send", () => {
+  const OTHER = "+14158675309"
+  const script = `
+    import { SignJWT } from "jose"
+    const requests = []
+    const metrics = []
+    const json = (value, status = 200) =>
+      new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } })
+    globalThis.fetch = async (input, init = {}) => {
+      const url = typeof input === "string" ? input : input.url ?? String(input)
+      const method = (init.method || "GET").toUpperCase()
+      const accept = new Headers(init.headers).get("accept") || ""
+      requests.push({ url, method })
+      const one = (row) => (accept.includes("vnd.pgrst.object") ? json(row) : json([row]))
+      if (url.includes("graph.facebook.com")) return json({ messages: [{ id: "wamid.test" }], contacts: [{}] })
+      if (url.includes("/rest/v1/stores")) return one({ id: "store-1" })
+      if (url.includes("/rest/v1/email_suppressions")) {
+        const key = (new URL(url).searchParams.get("email") || "").replace(/^eq\\./, "")
+        return json(key === globalThis.__optedOutKey ? [{ id: "sup-1" }] : [])
+      }
+      if (url.includes("/rest/v1/cart_delivery_metrics")) {
+        if (method === "POST") {
+          const id = "row-" + (metrics.length + 1)
+          metrics.push(id)
+          return one({ id })
+        }
+        if (method === "GET") return json(metrics.map((id) => ({ id })))
+        return json([])
+      }
+      return json([])
+    }
+    const load = async (file) => {
+      const mod = await import(file)
+      return { ...(mod.default ?? {}), ...mod }
+    }
+    const { whatsappSuppressionKey } = await load("./lib/whatsapp/opt-out.ts")
+    globalThis.__optedOutKey = whatsappSuppressionKey("${PHONE}", "test-hash-secret")
+    const { POST } = await load("./app/api/shopify/test-message/route.ts")
+    const { NextRequest } = await import("next/server")
+    const token = await new SignJWT({ dest: "https://${SHOP}" })
+      .setProtectedHeader({ alg: "HS256" })
+      .setAudience("test-client-id")
+      .setIssuedAt()
+      .setExpirationTime("5m")
+      .sign(new TextEncoder().encode("test-secret"))
+    async function call(phone) {
+      requests.splice(0)
+      const res = await POST(new NextRequest("http://localhost/api/shopify/test-message", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: "Bearer " + token },
+        body: JSON.stringify({ phone, shop: "${SHOP}" }),
+      }))
+      const sent = requests.filter((r) => r.url.includes("graph.facebook.com")).length
+      return { status: res.status, body: await res.json(), metaSends: sent }
+    }
+    const optedOut = await call("${PHONE}")
+    const other = await call("${OTHER}")
+    console.log("RESULT:" + JSON.stringify({ optedOut, other }))
+  `
+  const result = spawnSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", script], {
+    cwd: root,
+    env: {
+      ...process.env,
+      NEXT_PUBLIC_APP_NAME: "Pingza",
+      SHOPIFY_API_KEY: "test-client-id",
+      NEXT_PUBLIC_SHOPIFY_API_KEY: "",
+      NEXT_PUBLIC_SHOPIFY_CLIENT_ID: "",
+      NEXT_PUBLIC_SHOPIFY_APP_API_KEY: "",
+      SHOPIFY_API_SECRET: "test-secret",
+      SHOPIFY_CLIENT_SECRET: "",
+      NEXT_PUBLIC_SUPABASE_URL: "http://supabase.test",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+      SUPPRESSION_HASH_SECRET: "test-hash-secret",
+      WHATSAPP_ACCESS_TOKEN: "test-access-token",
+      WHATSAPP_PHONE_NUMBER_ID: "1234567890",
+    },
+    encoding: "utf8",
+  })
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+  const line = result.stdout.split(/\r?\n/).find((l) => l.startsWith("RESULT:"))
+  assert.ok(line, `${result.stdout}\n${result.stderr}`)
+  const out = JSON.parse(line.slice("RESULT:".length))
+
+  assert.deepEqual(out.optedOut, {
+    status: 409,
+    body: { error: TEST_MESSAGE_OPTED_OUT_TEXT, code: TEST_MESSAGE_OPTED_OUT_CODE, remaining: 2 },
+    metaSends: 0,
+  })
+  assert.equal(JSON.stringify(out.optedOut.body).includes("7700900123"), false, "number is not echoed")
+
+  assert.equal(out.other.status, 200)
+  assert.deepEqual(out.other.body, { ok: true, remaining: 1 }, "no opt-out info about other numbers")
+  assert.equal(out.other.metaSends, 1)
+
+  const logs = result.stdout
+    .split(/\r?\n/)
+    .filter((l) => !l.startsWith("RESULT:"))
+    .join("\n") + result.stderr
+  assert.equal(/7700900123|8675309/.test(logs), false, "no clear-text phone in logs")
 })
 
 test("legacy /shopify dashboard renders the card only for non-default brands", () => {

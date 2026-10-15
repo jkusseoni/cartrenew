@@ -10,9 +10,14 @@
 import { maskPhone } from '@/lib/phone'
 import { storedCustomerError } from '@/lib/privacy/sanitize-customer-text'
 import { resolveWhatsAppRecipient, type WhatsAppSendResult } from '@/lib/services/whatsapp-meta'
-import { TEST_MESSAGE_DAILY_LIMIT } from '@/lib/shopify/test-message-config'
+import {
+  TEST_MESSAGE_DAILY_LIMIT,
+  TEST_MESSAGE_OPTED_OUT_CODE,
+  TEST_MESSAGE_OPTED_OUT_TEXT,
+} from '@/lib/shopify/test-message-config'
+import { WHATSAPP_OPTED_OUT_ERROR } from '@/lib/whatsapp/opt-out'
 
-export { TEST_MESSAGE_DAILY_LIMIT }
+export { TEST_MESSAGE_DAILY_LIMIT, TEST_MESSAGE_OPTED_OUT_CODE, TEST_MESSAGE_OPTED_OUT_TEXT }
 
 /** cart_delivery_metrics.cart_id marker. Not a real cart id. */
 export const TEST_MESSAGE_LOG_CART_ID = 'shopify-test-message'
@@ -69,6 +74,8 @@ export const TEST_MESSAGE_SEND_TIMEOUT_MS = 20_000
 export type TestMessageOutcome =
   | { status: 'sent'; remaining: number }
   | { status: 'send_failed'; remaining: number }
+  /** The typed number replied STOP; nothing was sent. */
+  | { status: 'opted_out'; remaining: number }
   /** Meta hasn't answered in time. `completion` settles when the send and its log row finish. */
   | { status: 'pending'; remaining: number; completion: Promise<void> }
   | { status: 'rate_limited' }
@@ -138,7 +145,7 @@ export async function sendShopifyTestMessage({
   const remaining = TEST_MESSAGE_DAILY_LIMIT - (slot + 1)
   const startedAt = Date.now()
 
-  const delivery = (async (): Promise<boolean> => {
+  const delivery = (async (): Promise<'sent' | 'opted_out' | 'send_failed'> => {
     let result: WhatsAppSendResult
     try {
       result = await send({
@@ -171,7 +178,8 @@ export async function sendShopifyTestMessage({
     } else {
       console.warn(`${LOG_TAG} send failed`, { shop, error, duration_ms: durationMs })
     }
-    return result.success
+    if (result.success) return 'sent'
+    return result.error === WHATSAPP_OPTED_OUT_ERROR ? 'opted_out' : 'send_failed'
   })()
 
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -189,7 +197,7 @@ export async function sendShopifyTestMessage({
     return { status: 'pending', remaining, completion: delivery.then(() => undefined) }
   }
 
-  return first ? { status: 'sent', remaining } : { status: 'send_failed', remaining }
+  return { status: first, remaining }
 }
 
 export const TEST_MESSAGE_PENDING_TEXT =
@@ -214,6 +222,15 @@ export function testMessageHttpResult(outcome: TestMessageOutcome): {
         body: {
           error:
             "WhatsApp didn't accept the test message. Check that the number is on WhatsApp and try again.",
+          remaining: outcome.remaining,
+        },
+      }
+    case 'opted_out':
+      return {
+        status: 409,
+        body: {
+          error: TEST_MESSAGE_OPTED_OUT_TEXT,
+          code: TEST_MESSAGE_OPTED_OUT_CODE,
           remaining: outcome.remaining,
         },
       }

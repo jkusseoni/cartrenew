@@ -4,6 +4,10 @@ import { useState, type FormEvent } from "react";
 
 import { maskPhone } from "@/lib/phone";
 import { authFetch } from "@/lib/shopify/authFetch";
+import {
+  TEST_MESSAGE_OPTED_OUT_CODE,
+  TEST_MESSAGE_OPTED_OUT_TEXT,
+} from "@/lib/shopify/test-message-config";
 
 type Props = {
   shop: string;
@@ -13,19 +17,82 @@ type Props = {
 /** Longer than the route's 20s wait on Meta, so its 202 reply arrives. */
 const TEST_MESSAGE_REQUEST_TIMEOUT_MS = 30_000;
 
-type Result =
+const GENERIC_ERROR = "The test message couldn't be sent. Try again.";
+
+export type TestMessageResult =
   | { kind: "sent"; phone: string; remaining: number; pendingMessage: string | null }
-  | { kind: "error"; message: string; limitReached: boolean };
+  /** `warning` (amber) for the daily limit and an opted-out number; otherwise red. */
+  | { kind: "error"; message: string; warning: boolean };
+
+export type TestMessageResponse = {
+  ok?: boolean;
+  pending?: boolean;
+  message?: string;
+  remaining?: number;
+  error?: string;
+  code?: string;
+};
+
+/** What the card shows for a response from POST /api/shopify/test-message. */
+export function testMessageResult(
+  status: number,
+  data: TestMessageResponse,
+  phone: string
+): TestMessageResult {
+  if (data.code === TEST_MESSAGE_OPTED_OUT_CODE) {
+    return { kind: "error", message: TEST_MESSAGE_OPTED_OUT_TEXT, warning: true };
+  }
+  if (status < 200 || status >= 300 || !data.ok) {
+    return { kind: "error", message: data.error || GENERIC_ERROR, warning: status === 429 };
+  }
+  return {
+    kind: "sent",
+    phone,
+    remaining: data.remaining ?? 0,
+    pendingMessage: status === 202 || data.pending ? data.message || null : null,
+  };
+}
 
 function remainingText(remaining: number): string {
   if (remaining <= 0) return "No test messages left today.";
   return `${remaining} test message${remaining === 1 ? "" : "s"} left today.`;
 }
 
+export function TestMessageResultView({ result }: { result: TestMessageResult | null }) {
+  return (
+    <div aria-live="polite">
+      {result?.kind === "sent" ? (
+        <div className="mt-4 rounded-xl border border-emerald-900/40 bg-emerald-950/20 px-4 py-3 text-xs text-emerald-300">
+          <p className="font-black">
+            {result.pendingMessage ?? `Test message sent to ${maskPhone(result.phone)}.`}
+          </p>
+          <p className="mt-1 text-emerald-200/80">
+            {result.pendingMessage ? "" : "It can take a minute to arrive. "}
+            {remainingText(result.remaining)}
+          </p>
+        </div>
+      ) : null}
+
+      {result?.kind === "error" ? (
+        <div
+          role="alert"
+          className={`mt-4 rounded-xl px-4 py-3 text-xs ${
+            result.warning
+              ? "border border-amber-900/40 bg-amber-950/20 text-amber-300"
+              : "border border-rose-900/40 bg-rose-950/30 text-rose-300"
+          }`}
+        >
+          {result.message}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function ShopifyTestMessageCard({ shop, dailyLimit }: Props) {
   const [phone, setPhone] = useState("");
   const [sending, setSending] = useState(false);
-  const [result, setResult] = useState<Result | null>(null);
+  const [result, setResult] = useState<TestMessageResult | null>(null);
 
   const sendTest = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -42,34 +109,13 @@ export default function ShopifyTestMessageCard({ shop, dailyLimit }: Props) {
         body: JSON.stringify({ phone: target, shop }),
         timeoutMs: TEST_MESSAGE_REQUEST_TIMEOUT_MS,
       });
-      const data = (await res.json().catch(() => ({}))) as {
-        ok?: boolean;
-        pending?: boolean;
-        message?: string;
-        remaining?: number;
-        error?: string;
-      };
-
-      if (!res.ok || !data.ok) {
-        setResult({
-          kind: "error",
-          message: data.error || "The test message couldn't be sent. Try again.",
-          limitReached: res.status === 429,
-        });
-        return;
-      }
-
-      setResult({
-        kind: "sent",
-        phone: target,
-        remaining: data.remaining ?? 0,
-        pendingMessage: res.status === 202 || data.pending ? data.message || null : null,
-      });
+      const data = (await res.json().catch(() => ({}))) as TestMessageResponse;
+      setResult(testMessageResult(res.status, data, target));
     } catch (err) {
       setResult({
         kind: "error",
-        message: err instanceof Error ? err.message : "The test message couldn't be sent. Try again.",
-        limitReached: false,
+        message: err instanceof Error ? err.message : GENERIC_ERROR,
+        warning: false,
       });
     } finally {
       setSending(false);
@@ -113,32 +159,7 @@ export default function ShopifyTestMessageCard({ shop, dailyLimit }: Props) {
         International format: + then country code and number.
       </p>
 
-      <div aria-live="polite">
-        {result?.kind === "sent" ? (
-          <div className="mt-4 rounded-xl border border-emerald-900/40 bg-emerald-950/20 px-4 py-3 text-xs text-emerald-300">
-            <p className="font-black">
-              {result.pendingMessage ?? `Test message sent to ${maskPhone(result.phone)}.`}
-            </p>
-            <p className="mt-1 text-emerald-200/80">
-              {result.pendingMessage ? "" : "It can take a minute to arrive. "}
-              {remainingText(result.remaining)}
-            </p>
-          </div>
-        ) : null}
-
-        {result?.kind === "error" ? (
-          <div
-            role="alert"
-            className={`mt-4 rounded-xl px-4 py-3 text-xs ${
-              result.limitReached
-                ? "border border-amber-900/40 bg-amber-950/20 text-amber-300"
-                : "border border-rose-900/40 bg-rose-950/30 text-rose-300"
-            }`}
-          >
-            {result.message}
-          </div>
-        ) : null}
-      </div>
+      <TestMessageResultView result={result} />
     </section>
   );
 }
