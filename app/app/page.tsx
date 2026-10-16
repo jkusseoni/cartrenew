@@ -331,9 +331,15 @@ export default function EmbeddedAppHomePage() {
       try {
         const params = new URLSearchParams(window.location.search);
         const shopParam = params.get("shop");
-        const url = shopParam
-          ? `/api/app/dashboard?shop=${encodeURIComponent(shopParam)}`
-          : "/api/app/dashboard";
+        // Forward billing return params so Pingza can sync activeSubscriptions
+        // when the charge approval callback did not persist (or DB still says NONE).
+        const dashboardParams = new URLSearchParams();
+        if (shopParam) dashboardParams.set("shop", shopParam);
+        if (params.get("billing") === "ok") dashboardParams.set("billing", "ok");
+        const planParam = params.get("plan");
+        if (planParam) dashboardParams.set("plan", planParam);
+        const qs = dashboardParams.toString();
+        const url = qs ? `/api/app/dashboard?${qs}` : "/api/app/dashboard";
 
         setStatusMessage("Loading your store…");
         let { res, json } = await fetchDashboard(url);

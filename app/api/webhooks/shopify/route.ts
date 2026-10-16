@@ -17,6 +17,7 @@ import {
   inferPlanIdFromSubscriptionName,
   toDbBillingStatus,
 } from '@/lib/shopify/billing'
+import { shouldApplySubscriptionWebhook } from '@/lib/shopify/billing-sync'
 
 const SHOPIFY_WEBHOOK_VERIFY = process.env.SHOPIFY_WEBHOOK_VERIFY !== 'false'
 const SHOPIFY_WEBHOOK_BYPASS = process.env.SHOPIFY_WEBHOOK_BYPASS === 'true'
@@ -824,6 +825,36 @@ async function handleAppSubscriptionUpdate(
   const name = typeof payload.name === 'string' ? payload.name : null
   const billingStatus = toDbBillingStatus(rawStatus)
   const planId = inferPlanIdFromSubscriptionName(name)
+
+  // Pingza only: after uninstall+reinstall a delayed CANCELLED/NONE webhook for
+  // the *old* subscription must not overwrite the new plan. CartRenew (default
+  // brand) keeps main's path — always apply the payload.
+  if (!brand.isDefault) {
+    const { data: current } = await supabaseAdmin
+      .from('stores')
+      .select('shopify_subscription_id')
+      .eq('id', storeId)
+      .maybeSingle()
+    const currentId =
+      current &&
+      typeof (current as { shopify_subscription_id?: unknown }).shopify_subscription_id ===
+        'string'
+        ? (current as { shopify_subscription_id: string }).shopify_subscription_id
+        : null
+
+    if (
+      !shouldApplySubscriptionWebhook({
+        billingStatus,
+        webhookSubscriptionId: adminGraphqlId,
+        currentSubscriptionId: currentId,
+      })
+    ) {
+      console.info(
+        `[app_subscriptions/update] shop=${shopDomain} source=ignored_stale status=${billingStatus} activeSubscriptions=n/a`
+      )
+      return
+    }
+  }
 
   const updates: Record<string, unknown> = {
     billing_status: billingStatus,
