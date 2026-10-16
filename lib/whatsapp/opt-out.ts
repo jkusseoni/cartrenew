@@ -132,18 +132,22 @@ export async function whatsappOptOutGate({
   phone,
   secret,
   lookup,
+  onLookupError,
 }: {
   isDefaultBrand: boolean
   phone: string
   secret: string | undefined
   lookup: (key: string) => Promise<boolean>
+  /** Called with the thrown value when lookup fails (before returning 'error'). */
+  onLookupError?: (error: unknown) => void
 }): Promise<OptOutGateResult> {
   if (isDefaultBrand) return 'clear'
   const key = whatsappSuppressionKey(phone, secret)
   if (!key) return 'clear'
   try {
     return (await lookup(key)) ? 'opted_out' : 'clear'
-  } catch {
+  } catch (error) {
+    onLookupError?.(error)
     return 'error'
   }
 }

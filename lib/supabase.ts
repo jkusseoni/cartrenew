@@ -59,7 +59,16 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
 }
 
 const finalUrl = SUPABASE_URL || 'https://placeholder-project.supabase.co';
-const finalKey = SUPABASE_SERVICE_ROLE_KEY || 'placeholder-fallback-secret-token-key';
+// JWTs must not contain whitespace (common when a key is pasted into Vercel with a newline).
+const finalKey = (SUPABASE_SERVICE_ROLE_KEY || 'placeholder-fallback-secret-token-key').replace(
+  /\s+/g,
+  ''
+);
+
+/** False when queries would hit the placeholder client and fail confusingly. */
+export function isSupabaseAdminConfigured(): boolean {
+  return Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY);
+}
 
 // 🟢 1. Direct Export Instance: Yeh aapke saare webhooks aur admin files ke imports ko instant fix kar dega
 export const supabaseAdmin = createClient(finalUrl, finalKey, {
