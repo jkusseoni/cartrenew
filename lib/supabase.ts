@@ -1,5 +1,8 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
+import { brand } from '@/lib/brand';
+import { assertPingzaPreviewNotOnProductionSupabase } from '@/lib/supabase-env-guard';
+
 // 🎯 Helper 1: Cleans trailing spaces and accidental quotes from environment variables
 function normalizeEnvVar(value?: string): string {
   if (!value) return '';
@@ -44,10 +47,23 @@ function deriveSupabaseUrlFromDatabaseUrl(databaseUrl?: string): string {
   return '';
 }
 
-const SUPABASE_URL =
+let SUPABASE_URL =
   normalizeSupabaseUrl(process.env.NEXT_PUBLIC_SUPABASE_URL) ||
   deriveSupabaseUrlFromDatabaseUrl(process.env.DATABASE_URL);
 const SUPABASE_SERVICE_ROLE_KEY = normalizeEnvVar(process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+// Pingza Preview/staging must not use the production Supabase project (PCD).
+const previewGuard = assertPingzaPreviewNotOnProductionSupabase({
+  isDefaultBrand: brand.isDefault,
+  vercelEnv: process.env.VERCEL_ENV,
+  configuredUrl: SUPABASE_URL,
+  productionUrl: process.env.PINGZA_PRODUCTION_SUPABASE_URL,
+});
+if (!previewGuard.ok) {
+  console.error('[supabase]', previewGuard.reason);
+  // Fail closed: do not attach the production client on Preview.
+  SUPABASE_URL = '';
+}
 
 // Placeholders keep the module importable at build time, but a misconfigured
 // runtime should be loud — every query would fail with confusing errors otherwise.

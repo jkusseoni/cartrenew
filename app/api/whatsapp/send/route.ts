@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireServerSecret } from '@/lib/api-auth'
+import { recordAccessAudit } from '@/lib/privacy/access-audit'
 import { maskPhone } from '@/lib/phone'
 import { checkoutUrlForLog } from '@/lib/log-safe'
 import {
@@ -96,6 +97,13 @@ export async function POST(request: Request) {
       messageId: sendResult.messageId,
       status: sendResult.status,
       templateName: sendResult.templateName ?? 'abandoned_cart_reminder',
+    })
+
+    await recordAccessAudit({
+      shop: typeof body.shop === 'string' ? body.shop : null,
+      action: 'send',
+      actor: 'POST /api/whatsapp/send',
+      count: 1,
     })
 
     return NextResponse.json({

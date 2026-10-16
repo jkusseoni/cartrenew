@@ -366,3 +366,17 @@ grant all on all tables in schema public to service_role;
 grant all on all sequences in schema public to service_role;
 alter default privileges in schema public grant all on tables to service_role;
 alter default privileges in schema public grant all on sequences to service_role;
+
+-- ----------------------------------------------------------------------------
+-- access_audit_logs  (Pingza PCD — see db/migrations/2026-10-17-access-audit-logs.sql)
+-- shop, action, actor, count, timestamp — no PII values. Retain 90 days.
+-- ----------------------------------------------------------------------------
+create table if not exists public.access_audit_logs (
+  id            uuid primary key default gen_random_uuid(),
+  shop_domain   text,
+  action        text not null,
+  actor         text not null,
+  record_count  integer not null default 0,
+  created_at    timestamptz not null default now()
+);
+create index if not exists idx_access_audit_logs_created_at on public.access_audit_logs (created_at);

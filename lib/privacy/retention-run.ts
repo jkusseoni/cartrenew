@@ -1,5 +1,9 @@
 import { brand } from "@/lib/brand"
 import {
+  purgeExpiredAccessAuditLogs,
+  recordAccessAudit,
+} from "@/lib/privacy/access-audit"
+import {
   anonymizedRetentionCart,
   applyRetention,
   isRetentionDryRun,
@@ -154,12 +158,12 @@ async function clearMessages(cart: RetentionCart, includeEmail: boolean): Promis
   throwIf(first.error)
 }
 
-export async function runDataRetention(now = Date.now()): Promise<RetentionCounts> {
+export async function runDataRetention(now = Date.now()): Promise<RetentionCounts & { auditPurged: number }> {
   const dryRun = isRetentionDryRun(process.env.RETENTION_DRY_RUN)
   const limit = retentionBatchSize(process.env.RETENTION_BATCH_SIZE)
   const carts = await loadRetentionCarts(now, limit)
   const includeEmail = !brand.isDefault
-  return applyRetention({
+  const counts = await applyRetention({
     carts,
     now,
     dryRun,
@@ -177,4 +181,16 @@ export async function runDataRetention(now = Date.now()): Promise<RetentionCount
       await clearMessages(cart, includeEmail)
     },
   })
+
+  if (counts.anonymized > 0) {
+    void recordAccessAudit({
+      shop: null,
+      action: "retention_anonymize",
+      actor: "GET /api/cron/data-retention",
+      count: counts.anonymized,
+    })
+  }
+
+  const audit = await purgeExpiredAccessAuditLogs({ now, dryRun })
+  return { ...counts, auditPurged: audit.deleted }
 }

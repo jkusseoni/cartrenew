@@ -15,6 +15,7 @@
 import { supabaseAdmin } from '@/lib/supabase'
 import { maskPhone } from '@/lib/phone'
 import { getTrackedRecoveryUrl } from '@/lib/recovery-link'
+import { recordAccessAudit } from '@/lib/privacy/access-audit'
 import { storedCustomerError } from '@/lib/privacy/sanitize-customer-text'
 import { redactSecrets } from '@/lib/services/redact-secrets'
 import { brand } from '@/lib/brand'
@@ -192,6 +193,12 @@ export async function recordAttemptOutcome({
       console.warn(`Graph accepted message for cart ${cartId} without a message id — delivery status can't be tracked`)
     }
     await markCartMessaged(cartId, at)
+    void recordAccessAudit({
+      shop: null,
+      action: 'send',
+      actor: 'recovery-dispatch',
+      count: 1,
+    })
   } else {
     await recordCartSendFailure(cartId, safeError || 'send_failed', { final: decision.kind === 'failed' })
   }
