@@ -17,6 +17,7 @@ import {
   inferPlanIdFromSubscriptionName,
   toDbBillingStatus,
 } from '@/lib/shopify/billing'
+import { shouldApplySubscriptionWebhook } from '@/lib/shopify/billing-sync'
 
 const SHOPIFY_WEBHOOK_VERIFY = process.env.SHOPIFY_WEBHOOK_VERIFY !== 'false'
 const SHOPIFY_WEBHOOK_BYPASS = process.env.SHOPIFY_WEBHOOK_BYPASS === 'true'
@@ -825,29 +826,32 @@ async function handleAppSubscriptionUpdate(
   const billingStatus = toDbBillingStatus(rawStatus)
   const planId = inferPlanIdFromSubscriptionName(name)
 
-  // After uninstall+reinstall a delayed CANCELLED webhook for the *old*
-  // subscription must not overwrite the new ACTIVE plan on the same store row.
-  const inactive =
-    billingStatus === 'cancelled' ||
-    billingStatus === 'declined' ||
-    billingStatus === 'expired' ||
-    billingStatus === 'none'
-  if (inactive && adminGraphqlId) {
-    const { data: current } = await supabaseAdmin
-      .from('stores')
-      .select('shopify_subscription_id')
-      .eq('id', storeId)
-      .maybeSingle()
-    const currentId =
-      current && typeof (current as { shopify_subscription_id?: unknown }).shopify_subscription_id === 'string'
-        ? (current as { shopify_subscription_id: string }).shopify_subscription_id
-        : null
-    if (currentId && currentId !== adminGraphqlId) {
-      console.info(
-        `[app_subscriptions/update] shop=${shopDomain} source=ignored_stale status=${billingStatus} activeSubscriptions=n/a`
-      )
-      return
-    }
+  // After uninstall+reinstall a delayed CANCELLED/NONE webhook for the *old*
+  // subscription must not overwrite the new plan. Ignore inactive updates
+  // unless they target the store's current shopify_subscription_id.
+  const { data: current } = await supabaseAdmin
+    .from('stores')
+    .select('shopify_subscription_id')
+    .eq('id', storeId)
+    .maybeSingle()
+  const currentId =
+    current &&
+    typeof (current as { shopify_subscription_id?: unknown }).shopify_subscription_id ===
+      'string'
+      ? (current as { shopify_subscription_id: string }).shopify_subscription_id
+      : null
+
+  if (
+    !shouldApplySubscriptionWebhook({
+      billingStatus,
+      webhookSubscriptionId: adminGraphqlId,
+      currentSubscriptionId: currentId,
+    })
+  ) {
+    console.info(
+      `[app_subscriptions/update] shop=${shopDomain} source=ignored_stale status=${billingStatus} activeSubscriptions=n/a`
+    )
+    return
   }
 
   const updates: Record<string, unknown> = {

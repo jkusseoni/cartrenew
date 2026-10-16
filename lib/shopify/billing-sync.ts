@@ -14,6 +14,10 @@ import {
 
 const LOG = '[billing-sync]'
 
+/** Retries when Shopify has not yet listed the just-approved subscription. */
+const SYNC_EMPTY_RETRIES = 3
+const SYNC_EMPTY_RETRY_MS = 400
+
 /** DB / UI values that mean "no live plan" (schema default is uppercase NONE). */
 export function isInactiveBillingStatus(status: string | null | undefined): boolean {
   if (status == null || status === '') return true
@@ -27,7 +31,13 @@ export function isInactiveBillingStatus(status: string | null | undefined): bool
   )
 }
 
-/** Prefer ACTIVE (includes trial); accept common casings. */
+function isLiveSubscriptionStatus(status: string): boolean {
+  const normalized = status.toUpperCase()
+  // ACTIVE covers free trial; ACCEPTED is defensive for older Admin API quirks.
+  return normalized === 'ACTIVE' || normalized === 'ACCEPTED'
+}
+
+/** Prefer a live ACTIVE (trial) subscription; never prefer a stale cancelled id. */
 export function pickActiveSubscription<
   T extends { id: string; name: string; status: string; currentPeriodEnd: string | null },
 >(
@@ -35,14 +45,12 @@ export function pickActiveSubscription<
   preferredSubscriptionId?: string | null
 ): T | null {
   if (preferredSubscriptionId) {
-    const byId = active.find((sub) => sub.id === preferredSubscriptionId)
+    const byId = active.find(
+      (sub) => sub.id === preferredSubscriptionId && isLiveSubscriptionStatus(sub.status)
+    )
     if (byId) return byId
   }
-  const live = active.find((sub) => {
-    const status = sub.status.toUpperCase()
-    return status === 'ACTIVE' || status === 'ACCEPTED'
-  })
-  return live ?? active[0] ?? null
+  return active.find((sub) => isLiveSubscriptionStatus(sub.status)) ?? null
 }
 
 export function resolveBillingPlanId(options: {
@@ -67,9 +75,16 @@ export type BillingSyncResult = {
   activeCount: number
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 /**
  * Re-query Shopify and write billing_plan / billing_status onto the store row.
  * Never throws — callers keep serving the dashboard on failure.
+ *
+ * On billing_ok / callback, retries a few times when activeSubscriptions is still
+ * empty (Shopify can lag right after charge approval).
  */
 export async function syncStoreBillingFromShopify(options: {
   storeId: string
@@ -82,16 +97,38 @@ export async function syncStoreBillingFromShopify(options: {
   /** Why this sync ran — logged only */
   reason: 'billing_ok' | 'db_none' | 'callback'
 }): Promise<BillingSyncResult> {
-  try {
-    const active = await getActiveAppSubscriptions(options.shop, options.accessToken)
-    const match = pickActiveSubscription(active, options.preferredSubscriptionId)
+  const retryEmpty =
+    options.reason === 'billing_ok' || options.reason === 'callback'
+      ? SYNC_EMPTY_RETRIES
+      : 1
 
-    if (!match) {
-      console.info(`${LOG} shop=${options.shop} source=no_subscription reason=${options.reason} activeSubscriptions=0 status=none`)
-      return { synced: false, source: 'no_subscription', status: null, plan: null, activeCount: 0 }
+  try {
+    let active: Awaited<ReturnType<typeof getActiveAppSubscriptions>> = []
+    let match: ReturnType<typeof pickActiveSubscription<(typeof active)[number]>> = null
+
+    for (let attempt = 0; attempt < retryEmpty; attempt++) {
+      active = await getActiveAppSubscriptions(options.shop, options.accessToken)
+      match = pickActiveSubscription(active, options.preferredSubscriptionId)
+      if (match) break
+      if (attempt + 1 < retryEmpty) await sleep(SYNC_EMPTY_RETRY_MS * (attempt + 1))
     }
 
-    const status = toDbBillingStatus(match.status)
+    if (!match) {
+      console.info(
+        `${LOG} shop=${options.shop} source=no_subscription reason=${options.reason} activeSubscriptions=${active.length} status=none`
+      )
+      return {
+        synced: false,
+        source: 'no_subscription',
+        status: null,
+        plan: null,
+        activeCount: active.length,
+      }
+    }
+
+    // ACCEPTED → treat as active for the DB badge / Current Plan checks.
+    const rawStatus = match.status.toUpperCase() === 'ACCEPTED' ? 'ACTIVE' : match.status
+    const status = toDbBillingStatus(rawStatus)
     const plan = resolveBillingPlanId({
       preferredPlan: options.preferredPlan,
       subscriptionName: match.name,
@@ -110,7 +147,9 @@ export async function syncStoreBillingFromShopify(options: {
       .eq('id', options.storeId)
 
     if (error) {
-      console.error(`${LOG} shop=${options.shop} source=error reason=${options.reason} activeSubscriptions=${active.length} status=${status}`)
+      console.error(
+        `${LOG} shop=${options.shop} source=error reason=${options.reason} activeSubscriptions=${active.length} status=${status} code=${error.code ?? 'unknown'}`
+      )
       return { synced: false, source: 'error', status, plan, activeCount: active.length }
     }
 
@@ -136,4 +175,20 @@ export function shouldSyncBillingOnDashboard(options: {
   if (options.isDefaultBrand) return false
   if (options.billingOk) return true
   return isInactiveBillingStatus(options.billingStatus)
+}
+
+/**
+ * Stale CANCELLED/EXPIRED webhooks for a previous install must not overwrite a
+ * new subscription. Only apply an inactive update when it targets the store's
+ * current shopify_subscription_id.
+ */
+export function shouldApplySubscriptionWebhook(options: {
+  billingStatus: string
+  webhookSubscriptionId: string | null
+  currentSubscriptionId: string | null
+}): boolean {
+  const inactive = isInactiveBillingStatus(options.billingStatus)
+  if (!inactive) return true
+  if (!options.webhookSubscriptionId || !options.currentSubscriptionId) return false
+  return options.webhookSubscriptionId === options.currentSubscriptionId
 }

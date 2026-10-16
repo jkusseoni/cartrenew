@@ -9,6 +9,7 @@ import {
   isInactiveBillingStatus,
   pickActiveSubscription,
   resolveBillingPlanId,
+  shouldApplySubscriptionWebhook,
   shouldSyncBillingOnDashboard,
 } from "../lib/shopify/billing-sync"
 
@@ -29,9 +30,48 @@ test("pickActiveSubscription prefers ACTIVE (trial) over stale ids", () => {
     { id: "gid://old", name: "Pingza Starter", status: "CANCELLED", currentPeriodEnd: null },
     { id: "gid://new", name: "Pingza Starter", status: "ACTIVE", currentPeriodEnd: null },
   ]
-  assert.equal(pickActiveSubscription(subs, "gid://old")?.id, "gid://old")
+  // Never prefer a cancelled preferred id over a live ACTIVE subscription.
+  assert.equal(pickActiveSubscription(subs, "gid://old")?.id, "gid://new")
+  assert.equal(pickActiveSubscription(subs, "gid://new")?.id, "gid://new")
   assert.equal(pickActiveSubscription(subs, null)?.id, "gid://new")
   assert.equal(pickActiveSubscription([], null), null)
+})
+
+test("stale inactive subscription webhooks are ignored unless they match current id", () => {
+  assert.equal(
+    shouldApplySubscriptionWebhook({
+      billingStatus: "cancelled",
+      webhookSubscriptionId: "gid://old",
+      currentSubscriptionId: "gid://new",
+    }),
+    false
+  )
+  assert.equal(
+    shouldApplySubscriptionWebhook({
+      billingStatus: "none",
+      webhookSubscriptionId: "gid://old",
+      currentSubscriptionId: null,
+    }),
+    false,
+    "after reinstall current id is null — do not write NONE from a stale webhook"
+  )
+  assert.equal(
+    shouldApplySubscriptionWebhook({
+      billingStatus: "cancelled",
+      webhookSubscriptionId: "gid://cur",
+      currentSubscriptionId: "gid://cur",
+    }),
+    true
+  )
+  assert.equal(
+    shouldApplySubscriptionWebhook({
+      billingStatus: "active",
+      webhookSubscriptionId: "gid://new",
+      currentSubscriptionId: "gid://old",
+    }),
+    true,
+    "ACTIVE updates always apply"
+  )
 })
 
 test("resolveBillingPlanId prefers return-URL plan then subscription name", () => {
@@ -254,36 +294,70 @@ test("CartRenew: dashboard does not sync billing from Shopify when status is NON
   assert.equal(logs.includes("[billing-sync]"), false)
 })
 
-test("Pingza: stale CANCELLED webhook for an old subscription id is ignored", () => {
-  const { out } = runChild(
+test("Pingza: billing=ok retries when activeSubscriptions is empty then ACTIVE", () => {
+  const { out, logs } = runChild(
     "Pingza",
     `
       const shop = "${SHOP}"
       putStore({
         id: "store-1",
         shopify_domain: shop,
-        billing_status: "active",
-        billing_plan: "starter",
-        shopify_subscription_id: "gid://shopify/AppSubscription/new",
+        billing_status: "NONE",
+        billing_plan: null,
+        shopify_subscription_id: null,
+        shopify_access_token: "shpat_live",
+        shopify_access_token_expires_at: new Date(Date.now() + 3600_000).toISOString(),
+        shopify_refresh_token: "shprt_live",
+        shopify_refresh_token_expires_at: new Date(Date.now() + 86400_000).toISOString(),
       })
-      const { isInactiveBillingStatus } = await load("./lib/shopify/billing-sync.ts")
-      const { toDbBillingStatus } = await load("./lib/shopify/billing.ts")
-      const adminGraphqlId = "gid://shopify/AppSubscription/old"
-      const billingStatus = toDbBillingStatus("CANCELLED")
-      const currentId = storesByDomain.get(shop).shopify_subscription_id
-      let ignored = false
-      if (isInactiveBillingStatus(billingStatus) && currentId && currentId !== adminGraphqlId) {
-        ignored = true
-      } else {
-        Object.assign(storesByDomain.get(shop), { billing_status: billingStatus, shopify_subscription_id: adminGraphqlId })
+      let polls = 0
+      // Override fetch wrapper: first GraphQL poll empty, then ACTIVE (Shopify lag after approve).
+      const inner = globalThis.fetch
+      globalThis.fetch = async (input, init = {}) => {
+        const url = typeof input === "string" ? input : input.url ?? String(input)
+        const body = typeof init.body === "string" ? init.body : null
+        if (url.includes("graphql") && String(body || "").includes("activeSubscriptions")) {
+          polls += 1
+          activeSubscriptions = polls < 2
+            ? []
+            : [{
+                id: "gid://shopify/AppSubscription/55",
+                name: "Pingza Starter",
+                status: "ACTIVE",
+                currentPeriodEnd: null,
+                trialDays: 7,
+              }]
+        }
+        return inner(input, init)
       }
-      console.log("RESULT:" + JSON.stringify({ ignored, row: storesByDomain.get(shop) }))
+      const { GET } = await load("./app/api/app/dashboard/route.ts")
+      const { NextRequest } = await import("next/server")
+      const { SignJWT } = await import("jose")
+      const token = await new SignJWT({ dest: "https://" + shop })
+        .setProtectedHeader({ alg: "HS256" })
+        .setAudience("test-client-id")
+        .setIssuedAt()
+        .setExpirationTime("5m")
+        .sign(new TextEncoder().encode("test-secret"))
+      const res = await GET(new NextRequest(
+        "http://localhost/api/app/dashboard?shop=" + shop + "&billing=ok&plan=starter",
+        { headers: { authorization: "Bearer " + token } }
+      ))
+      const body = await res.json()
+      console.log("RESULT:" + JSON.stringify({
+        status: res.status,
+        billing_status: body.store?.billing_status,
+        billing_plan: body.store?.billing_plan,
+        polls,
+      }))
     `
   )
 
-  assert.equal(out.ignored, true)
-  assert.equal(out.row.billing_status, "active")
-  assert.equal(out.row.shopify_subscription_id, "gid://shopify/AppSubscription/new")
+  assert.equal(out.status, 200)
+  assert.equal(out.billing_status, "active")
+  assert.equal(out.billing_plan, "starter")
+  assert.ok(out.polls >= 2, "retried after empty activeSubscriptions")
+  assert.match(logs, /source=shopify/)
 })
 
 test("App Home forwards billing=ok and plan to the dashboard request", () => {

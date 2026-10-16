@@ -64,6 +64,7 @@ export async function GET(req: NextRequest) {
   const returnParams = new URLSearchParams({ shop, billing: "ok" });
   if (host) returnParams.set("host", host);
   if (plan) returnParams.set("plan", plan);
+  if (chargeId) returnParams.set("charge_id", chargeId);
 
   return NextResponse.redirect(`${getShopifyAppUrl()}/app?${returnParams.toString()}`);
 }

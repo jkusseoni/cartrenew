@@ -107,6 +107,7 @@ export async function GET(request: NextRequest) {
           shop,
           accessToken: access.accessToken,
           preferredPlan,
+          preferredSubscriptionId: dashboard.store.shopify_subscription_id,
           existingPlan: dashboard.store.billing_plan,
           reason: billingOk ? "billing_ok" : "db_none",
         });
