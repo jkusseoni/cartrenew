@@ -365,3 +365,60 @@ test("App Home forwards billing=ok and plan to the dashboard request", () => {
   assert.match(page, /billing"\) === "ok"/)
   assert.match(page, /dashboardParams\.set\("plan"/)
 })
+
+const SUBSCRIPTION_WEBHOOK_SCRIPT = `
+  const shop = "${SHOP}"
+  putStore({
+    id: "store-1",
+    shopify_domain: shop,
+    billing_status: "active",
+    billing_plan: "starter",
+    shopify_subscription_id: null,
+    shopify_access_token: "shpat_live",
+  })
+  const { POST } = await load("./app/api/webhooks/shopify/route.ts")
+  const { NextRequest } = await import("next/server")
+  const payload = JSON.stringify({
+    admin_graphql_api_id: "gid://shopify/AppSubscription/old",
+    name: "Starter",
+    status: "CANCELLED",
+  })
+  const res = await POST(new NextRequest("http://localhost/api/webhooks/shopify", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-shopify-topic": "app_subscriptions/update",
+      "x-shopify-shop-domain": shop,
+      "x-shopify-hmac-sha256": "unused-when-verify-off",
+    },
+    body: payload,
+  }))
+  const row = storesByDomain.get(shop)
+  console.log("RESULT:" + JSON.stringify({
+    status: res.status,
+    billing_status: row.billing_status,
+    shopify_subscription_id: row.shopify_subscription_id,
+  }))
+`
+
+test("CartRenew: CANCELLED subscription webhook with null shopify_subscription_id is applied (main behaviour)", () => {
+  const { out, logs } = runChild("CartRenew", SUBSCRIPTION_WEBHOOK_SCRIPT, {
+    SHOPIFY_WEBHOOK_VERIFY: "false",
+  })
+
+  assert.equal(out.status, 200)
+  assert.equal(out.billing_status, "cancelled", "CartRenew applies inactive update when current id is null")
+  assert.equal(out.shopify_subscription_id, "gid://shopify/AppSubscription/old")
+  assert.equal(logs.includes("ignored_stale"), false)
+})
+
+test("Pingza: CANCELLED subscription webhook with null shopify_subscription_id is ignored", () => {
+  const { out, logs } = runChild("Pingza", SUBSCRIPTION_WEBHOOK_SCRIPT, {
+    SHOPIFY_WEBHOOK_VERIFY: "false",
+  })
+
+  assert.equal(out.status, 200)
+  assert.equal(out.billing_status, "active", "Pingza keeps existing plan when current id is null")
+  assert.equal(out.shopify_subscription_id, null)
+  assert.match(logs, /ignored_stale/)
+})

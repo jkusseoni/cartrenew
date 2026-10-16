@@ -1,3 +1,4 @@
+import { brand } from "@/lib/brand";
 import { supabaseAdmin } from "@/lib/supabase";
 import { hasUsableShopifyToken } from "@/lib/shopify/access-token";
 
@@ -15,7 +16,7 @@ export type ShopifyStoreRow = {
   shopify_domain: string;
   billing_plan?: string | null;
   billing_status?: string | null;
-  /** Current AppSubscription GID — not secret; used to ignore stale webhooks. */
+  /** Pingza only — current AppSubscription GID for billing sync / stale webhooks. */
   shopify_subscription_id?: string | null;
 };
 
@@ -40,8 +41,10 @@ type ShopifyStoreRowWithToken = ShopifyStoreRow & {
   shopify_refresh_token_expires_at?: string | null;
 };
 
-const STORE_COLUMNS =
-  "id, shopify_domain, billing_plan, billing_status, shopify_subscription_id, shopify_access_token, shopify_access_token_expires_at, shopify_refresh_token, shopify_refresh_token_expires_at";
+/** Pingza selects shopify_subscription_id for billing sync; CartRenew matches main. */
+const STORE_COLUMNS = brand.isDefault
+  ? "id, shopify_domain, billing_plan, billing_status, shopify_access_token, shopify_access_token_expires_at, shopify_refresh_token, shopify_refresh_token_expires_at"
+  : "id, shopify_domain, billing_plan, billing_status, shopify_subscription_id, shopify_access_token, shopify_access_token_expires_at, shopify_refresh_token, shopify_refresh_token_expires_at";
 
 /** Never let tokens leave the server — callers only get `connected`. */
 function withoutAccessToken(row: ShopifyStoreRowWithToken): {

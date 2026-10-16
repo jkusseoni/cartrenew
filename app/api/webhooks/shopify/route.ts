@@ -826,32 +826,34 @@ async function handleAppSubscriptionUpdate(
   const billingStatus = toDbBillingStatus(rawStatus)
   const planId = inferPlanIdFromSubscriptionName(name)
 
-  // After uninstall+reinstall a delayed CANCELLED/NONE webhook for the *old*
-  // subscription must not overwrite the new plan. Ignore inactive updates
-  // unless they target the store's current shopify_subscription_id.
-  const { data: current } = await supabaseAdmin
-    .from('stores')
-    .select('shopify_subscription_id')
-    .eq('id', storeId)
-    .maybeSingle()
-  const currentId =
-    current &&
-    typeof (current as { shopify_subscription_id?: unknown }).shopify_subscription_id ===
-      'string'
-      ? (current as { shopify_subscription_id: string }).shopify_subscription_id
-      : null
+  // Pingza only: after uninstall+reinstall a delayed CANCELLED/NONE webhook for
+  // the *old* subscription must not overwrite the new plan. CartRenew (default
+  // brand) keeps main's path — always apply the payload.
+  if (!brand.isDefault) {
+    const { data: current } = await supabaseAdmin
+      .from('stores')
+      .select('shopify_subscription_id')
+      .eq('id', storeId)
+      .maybeSingle()
+    const currentId =
+      current &&
+      typeof (current as { shopify_subscription_id?: unknown }).shopify_subscription_id ===
+        'string'
+        ? (current as { shopify_subscription_id: string }).shopify_subscription_id
+        : null
 
-  if (
-    !shouldApplySubscriptionWebhook({
-      billingStatus,
-      webhookSubscriptionId: adminGraphqlId,
-      currentSubscriptionId: currentId,
-    })
-  ) {
-    console.info(
-      `[app_subscriptions/update] shop=${shopDomain} source=ignored_stale status=${billingStatus} activeSubscriptions=n/a`
-    )
-    return
+    if (
+      !shouldApplySubscriptionWebhook({
+        billingStatus,
+        webhookSubscriptionId: adminGraphqlId,
+        currentSubscriptionId: currentId,
+      })
+    ) {
+      console.info(
+        `[app_subscriptions/update] shop=${shopDomain} source=ignored_stale status=${billingStatus} activeSubscriptions=n/a`
+      )
+      return
+    }
   }
 
   const updates: Record<string, unknown> = {
@@ -889,8 +891,8 @@ async function handleAppSubscriptionUpdate(
     throw error
   }
 
-  console.info(
-    `[app_subscriptions/update] shop=${shopDomain} source=webhook status=${billingStatus}` +
-      (planId ? ` plan=${planId}` : '')
+  console.log(
+    `✅ Billing status for ${shopDomain} → ${billingStatus}` +
+      (planId ? ` (plan=${planId})` : '')
   )
 }

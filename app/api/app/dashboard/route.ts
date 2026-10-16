@@ -90,12 +90,13 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Pingza: after charge approval (or DB still NONE) sync from Shopify once.
+    // Pingza only — CartRenew never touches billing-sync (same as main).
     if (
+      !brand.isDefault &&
       dashboard.store &&
       dashboard.connected &&
       shouldSyncBillingOnDashboard({
-        isDefaultBrand: brand.isDefault,
+        isDefaultBrand: false,
         billingOk,
         billingStatus: dashboard.store.billing_status,
       })
