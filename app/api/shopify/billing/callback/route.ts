@@ -6,10 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getValidShopifyAccessToken } from "@/lib/shopify/access-token";
 import { getShopifyAppUrl, isValidShopDomain } from "@/lib/shopify/config";
-import {
-  getActiveAppSubscriptions,
-  toDbBillingStatus,
-} from "@/lib/shopify/billing";
+import { syncStoreBillingFromShopify } from "@/lib/shopify/billing-sync";
 
 /**
  * GET /api/shopify/billing/callback
@@ -41,29 +38,23 @@ export async function GET(req: NextRequest) {
     }
 
     if (store && token?.ok) {
-      const active = await getActiveAppSubscriptions(shop, token.accessToken);
-      const match =
-        active.find((sub) => sub.id === store.shopify_subscription_id) ||
-        active.find((sub) => sub.status === "ACTIVE") ||
-        active[0];
+      const result = await syncStoreBillingFromShopify({
+        storeId: store.id,
+        shop,
+        accessToken: token.accessToken,
+        preferredPlan: plan,
+        preferredSubscriptionId: store.shopify_subscription_id,
+        existingPlan: store.billing_plan,
+        reason: "callback",
+      });
 
-      if (match) {
-        await supabaseAdmin
-          .from("stores")
-          .update({
-            billing_status: toDbBillingStatus(match.status),
-            shopify_subscription_id: match.id,
-            billing_plan: plan || store.billing_plan || null,
-            billing_current_period_end: match.currentPeriodEnd,
-          })
-          .eq("id", store.id);
-      } else if (chargeId) {
+      if (!result.synced && chargeId) {
         // Merchant may have declined — mark pending as declined when no active sub.
         await supabaseAdmin
           .from("stores")
           .update({ billing_status: "declined" })
           .eq("id", store.id)
-          .in("billing_status", ["pending", "PENDING"]);
+          .in("billing_status", ["pending", "PENDING", "none", "NONE"]);
       }
     }
   } catch (error) {

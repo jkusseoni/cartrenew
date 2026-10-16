@@ -825,6 +825,31 @@ async function handleAppSubscriptionUpdate(
   const billingStatus = toDbBillingStatus(rawStatus)
   const planId = inferPlanIdFromSubscriptionName(name)
 
+  // After uninstall+reinstall a delayed CANCELLED webhook for the *old*
+  // subscription must not overwrite the new ACTIVE plan on the same store row.
+  const inactive =
+    billingStatus === 'cancelled' ||
+    billingStatus === 'declined' ||
+    billingStatus === 'expired' ||
+    billingStatus === 'none'
+  if (inactive && adminGraphqlId) {
+    const { data: current } = await supabaseAdmin
+      .from('stores')
+      .select('shopify_subscription_id')
+      .eq('id', storeId)
+      .maybeSingle()
+    const currentId =
+      current && typeof (current as { shopify_subscription_id?: unknown }).shopify_subscription_id === 'string'
+        ? (current as { shopify_subscription_id: string }).shopify_subscription_id
+        : null
+    if (currentId && currentId !== adminGraphqlId) {
+      console.info(
+        `[app_subscriptions/update] shop=${shopDomain} source=ignored_stale status=${billingStatus} activeSubscriptions=n/a`
+      )
+      return
+    }
+  }
+
   const updates: Record<string, unknown> = {
     billing_status: billingStatus,
     updated_at: new Date().toISOString(),
@@ -860,8 +885,8 @@ async function handleAppSubscriptionUpdate(
     throw error
   }
 
-  console.log(
-    `✅ Billing status for ${shopDomain} → ${billingStatus}` +
-      (planId ? ` (plan=${planId})` : '')
+  console.info(
+    `[app_subscriptions/update] shop=${shopDomain} source=webhook status=${billingStatus}` +
+      (planId ? ` plan=${planId}` : '')
   )
 }

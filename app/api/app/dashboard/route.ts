@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { brand } from "@/lib/brand";
+import { getValidShopifyAccessToken } from "@/lib/shopify/access-token";
+import {
+  shouldSyncBillingOnDashboard,
+  syncStoreBillingFromShopify,
+} from "@/lib/shopify/billing-sync";
 import { loadShopifyStoreDashboard } from "@/lib/shopify/dashboard";
 import { findOrCreateMerchantByShopDomain } from "@/lib/shopify/merchant";
 import { isValidShopDomain } from "@/lib/shopify/config";
@@ -23,10 +29,15 @@ const EMPTY_METRICS = {
  *
  * Must never 500 on an empty/new store — reviewers install on zero-data shops.
  * Auth failures → 401; data/load issues → 200 with empty carts + metrics.
+ *
+ * Pingza only: when ?billing=ok or DB billing_status is NONE, re-query Shopify
+ * activeSubscriptions once and sync before responding.
  */
 export async function GET(request: NextRequest) {
   const isDev = process.env.NODE_ENV !== "production";
   const token = getBearerToken(request.headers.get("authorization"));
+  const billingOk = request.nextUrl.searchParams.get("billing") === "ok";
+  const preferredPlan = request.nextUrl.searchParams.get("plan");
 
   let shop: string;
 
@@ -56,7 +67,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const dashboard = await loadShopifyStoreDashboard(shop, {
+    let dashboard = await loadShopifyStoreDashboard(shop, {
       autoProvision: isDev,
     });
 
@@ -79,13 +90,43 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Pingza: after charge approval (or DB still NONE) sync from Shopify once.
+    if (
+      dashboard.store &&
+      dashboard.connected &&
+      shouldSyncBillingOnDashboard({
+        isDefaultBrand: brand.isDefault,
+        billingOk,
+        billingStatus: dashboard.store.billing_status,
+      })
+    ) {
+      const access = await getValidShopifyAccessToken(dashboard.store.id);
+      if (access.ok) {
+        await syncStoreBillingFromShopify({
+          storeId: dashboard.store.id,
+          shop,
+          accessToken: access.accessToken,
+          preferredPlan,
+          existingPlan: dashboard.store.billing_plan,
+          reason: billingOk ? "billing_ok" : "db_none",
+        });
+        dashboard = await loadShopifyStoreDashboard(shop, {
+          autoProvision: isDev,
+        });
+      } else {
+        console.info(
+          `[billing-sync] shop=${shop} source=db_unchanged reason=${billingOk ? "billing_ok" : "db_none"} activeSubscriptions=-1 status=${dashboard.store.billing_status ?? "none"}`
+        );
+      }
+    }
+
     return NextResponse.json({
       shop,
       merchantId,
       needsInstall: false,
       store: dashboard.store,
-      metrics,
-      carts,
+      metrics: dashboard.metrics ?? metrics,
+      carts: Array.isArray(dashboard.carts) ? dashboard.carts : carts,
     });
   } catch (loadError) {
     // Never surface a 500/HTML error page to the embedded iframe for empty stores.
