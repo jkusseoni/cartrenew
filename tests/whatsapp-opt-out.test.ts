@@ -105,7 +105,38 @@ test("gate: CartRenew never looks up; Pingza blocks opted-out numbers", async ()
   const failing = async () => {
     throw new Error("db down")
   }
-  assert.equal(await whatsappOptOutGate({ isDefaultBrand: false, phone: "+447700900123", secret: SECRET, lookup: failing }), "error")
+  const seen: unknown[] = []
+  assert.equal(
+    await whatsappOptOutGate({
+      isDefaultBrand: false,
+      phone: "+447700900123",
+      secret: SECRET,
+      lookup: failing,
+      onLookupError: (error) => seen.push(error),
+    }),
+    "error"
+  )
+  assert.equal(seen.length, 1)
+  assert.equal((seen[0] as Error).message, "db down")
+})
+
+test("describeSupabaseError logs code/message/hint without hashes or phones", async () => {
+  const { describeSupabaseError, sanitizeSupabaseLogText } = await import(
+    "../lib/services/whatsapp-opt-out"
+  )
+  const hash = "hmac1:" + "ab".repeat(32)
+  const described = describeSupabaseError({
+    code: "PGRST205",
+    message: `table not found filter ${hash} phone +447700900123`,
+    hint: `Check ${hash}`,
+  })
+  assert.equal(described.code, "PGRST205")
+  assert.equal(described.missingTable, true)
+  assert.equal(described.message.includes("hmac1:[redacted]"), true)
+  assert.equal(described.message.includes("+447700900123"), false)
+  assert.equal(described.message.includes("ab".repeat(32)), false)
+  assert.equal(described.hint?.includes("hmac1:[redacted]"), true)
+  assert.equal(sanitizeSupabaseLogText(`Bearer ${"x".repeat(20)}`).includes("Bearer"), true)
 })
 
 test("opted-out is a permanent send error; a failed lookup is retried", () => {
@@ -264,6 +295,134 @@ test("CartRenew: inbound STOP is ignored and sends never touch the suppression l
   assert.equal(out.after.success, true)
   assert.equal(dbCalls(out.afterRequests).length, 0)
   assert.equal(graphCalls(out.afterRequests).length, 1)
+})
+
+test("Pingza: missing email_suppressions logs PostgREST code/message/hint and holds the send", () => {
+  const script = `
+    let suppressionGets = 0
+    const requests = []
+    const json = (value, status = 200) =>
+      new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } })
+    globalThis.fetch = async (input, init = {}) => {
+      const url = typeof input === "string" ? input : input.url ?? String(input)
+      const method = (init.method || "GET").toUpperCase()
+      requests.push({ url, method })
+      if (url.includes("graph.facebook.com")) {
+        return json({ messages: [{ id: "wamid.test" }], contacts: [{}] })
+      }
+      if (url.includes("/rest/v1/email_suppressions") && method === "GET") {
+        suppressionGets += 1
+        // PostgREST error body shape that @supabase/supabase-js surfaces as error.
+        return new Response(
+          JSON.stringify({
+            code: "PGRST205",
+            message: "Could not find the table public.email_suppressions in the schema cache hmac1:${"ab".repeat(32)}",
+            hint: "Perhaps you meant the table public.email_suppressions",
+          }),
+          { status: 404, headers: { "content-type": "application/json" } }
+        )
+      }
+      return json([])
+    }
+    const load = async (file) => {
+      const mod = await import(file)
+      return { ...(mod.default ?? {}), ...mod }
+    }
+    const { sendWhatsAppMessage } = await load("./lib/services/whatsapp-meta.ts")
+    const result = await sendWhatsAppMessage("+447700900123", {
+      templateName: "abandoned_cart_reminder",
+      languageCode: "en",
+      bodyVariables: ["Asha", "https://shop.test/cart"],
+    })
+    console.log("RESULT:" + JSON.stringify({
+      result,
+      suppressionGets,
+      graphCalls: requests.filter((r) => r.url.includes("graph.facebook.com")).length,
+    }))
+  `
+  const result = spawnSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", script], {
+    cwd: root,
+    env: {
+      ...process.env,
+      NEXT_PUBLIC_APP_NAME: "Pingza",
+      NEXT_PUBLIC_SUPABASE_URL: "http://supabase.test",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+      SUPPRESSION_HASH_SECRET: SECRET,
+      WHATSAPP_ACCESS_TOKEN: "test-access-token",
+      WHATSAPP_PHONE_NUMBER_ID: "1234567890",
+    },
+    encoding: "utf8",
+  })
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+  const line = result.stdout.split(/\r?\n/).find((l) => l.startsWith("RESULT:"))
+  assert.ok(line, `${result.stdout}\n${result.stderr}`)
+  const out = JSON.parse(line.slice("RESULT:".length))
+
+  assert.deepEqual(out.result, { success: false, error: WHATSAPP_OPT_OUT_CHECK_FAILED, to: null })
+  assert.equal(out.graphCalls, 0, "send is held")
+  // Missing-table is not retried (permanent schema error).
+  assert.equal(out.suppressionGets, 1)
+
+  const logs = result.stdout + result.stderr
+  assert.match(logs, /\[whatsapp-opt-out\] lookup failed/)
+  assert.match(logs, /PGRST205/)
+  assert.match(logs, /schema cache|email_suppressions/)
+  assert.match(logs, /pingza-email-migration/)
+  assert.equal(logs.includes("7700900123"), false)
+  assert.equal(logs.includes("ab".repeat(32)), false, "hash not logged")
+})
+
+test("Pingza: transient lookup failure is retried once then held", () => {
+  const script = `
+    let suppressionGets = 0
+    globalThis.fetch = async (input) => {
+      const url = typeof input === "string" ? input : input.url ?? String(input)
+      const json = (value, status = 200) =>
+        new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } })
+      if (url.includes("graph.facebook.com")) {
+        return json({ messages: [{ id: "wamid.test" }], contacts: [{}] })
+      }
+      if (url.includes("/rest/v1/email_suppressions")) {
+        suppressionGets += 1
+        return new Response(
+          JSON.stringify({ code: "PGRST301", message: "JWT expired / connection timed out" }),
+          { status: 500, headers: { "content-type": "application/json" } }
+        )
+      }
+      return json([])
+    }
+    const load = async (file) => {
+      const mod = await import(file)
+      return { ...(mod.default ?? {}), ...mod }
+    }
+    const { sendWhatsAppMessage } = await load("./lib/services/whatsapp-meta.ts")
+    const result = await sendWhatsAppMessage("+447700900123", {
+      templateName: "abandoned_cart_reminder",
+      languageCode: "en",
+      bodyVariables: ["Asha", "https://shop.test/cart"],
+    })
+    console.log("RESULT:" + JSON.stringify({ result, suppressionGets }))
+  `
+  const result = spawnSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", script], {
+    cwd: root,
+    env: {
+      ...process.env,
+      NEXT_PUBLIC_APP_NAME: "Pingza",
+      NEXT_PUBLIC_SUPABASE_URL: "http://supabase.test",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+      SUPPRESSION_HASH_SECRET: SECRET,
+      WHATSAPP_ACCESS_TOKEN: "test-access-token",
+      WHATSAPP_PHONE_NUMBER_ID: "1234567890",
+    },
+    encoding: "utf8",
+  })
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+  const line = result.stdout.split(/\r?\n/).find((l) => l.startsWith("RESULT:"))
+  assert.ok(line, result.stdout)
+  const out = JSON.parse(line.slice("RESULT:".length))
+  assert.deepEqual(out.result, { success: false, error: WHATSAPP_OPT_OUT_CHECK_FAILED, to: null })
+  assert.equal(out.suppressionGets, 2, "one retry after transient failure")
+  assert.match(result.stdout + result.stderr, /PGRST301|timed out|lookup failed/)
 })
 
 test("Pingza: without SUPPRESSION_HASH_SECRET the webhook returns 500 so Meta retries", () => {
