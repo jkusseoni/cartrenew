@@ -1,9 +1,15 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import createIntlMiddleware from "next-intl/middleware";
 import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
+import type { NextFetchEvent, NextRequest } from "next/server";
 
+import { brand } from "@/lib/brand";
 import { locales, routing } from "@/i18n/routing";
+import {
+  isPingzaShopifyPath,
+  isShopifyEntryPath,
+  isShopifySessionApiPath,
+} from "@/lib/shopify/embed-routes";
 import {
   isMerchantRole,
   MERCHANT_DASHBOARD_PATH,
@@ -59,10 +65,8 @@ const isPublicRoute = createRouteMatcher([
   "/api/auth/2fa(.*)",
   "/api/auth/token-exchange(.*)",
   "/api/orders/webhook(.*)",
-  "/api/shopify/callback(.*)",
-  "/api/shopify/webhook(.*)",
-  "/api/shopify/billing/callback(.*)",
-  "/api/shopify/dashboard(.*)",
+  // All /api/shopify/* use session-token or HMAC auth in the route — never Clerk.
+  "/api/shopify(.*)",
   "/api/app(.*)",
   "/api/cron(.*)",
   "/app(.*)",
@@ -71,14 +75,8 @@ const isPublicRoute = createRouteMatcher([
   "/unsubscribe(.*)",
 ]);
 
-// Embedded Shopify App Home (+ legacy /shopify): bypass next-intl + Clerk.
-const isShopifyEntry = (pathname: string) =>
-  pathname === "/app" ||
-  pathname.startsWith("/app/") ||
-  pathname === "/shopify" ||
-  pathname.startsWith("/shopify/");
-
-const isShopifyApi = (pathname: string) => pathname.startsWith("/api/app");
+const isShopifyEntry = isShopifyEntryPath;
+const isShopifyApi = isShopifySessionApiPath;
 
 const isRecoveryRedirect = (pathname: string) =>
   pathname === "/r" || pathname.startsWith("/r/");
@@ -408,78 +406,99 @@ async function handlePageRequest(request: NextRequest) {
   return applySecurityHeaders(intlResponse);
 }
 
-export default skipClerk
-  ? async (request: NextRequest) => {
-      if (request.nextUrl.pathname.startsWith("/api")) {
-        if (isShopifyApi(request.nextUrl.pathname)) {
-          return handleApiRequest(request);
-        }
-        return applySecurityHeaders(handleApiRequest(request));
-      }
-
-      const shopifyResponse = handleShopifyRequest(request);
-      if (shopifyResponse) return shopifyResponse;
-
-      const recoveryResponse = handleRecoveryRedirectRequest(request);
-      if (recoveryResponse) return recoveryResponse;
-
-      const leakedPath = resolveClerkPathLeak(request.nextUrl.pathname);
-      if (leakedPath) {
-        return applySecurityHeaders(
-          NextResponse.redirect(new URL(leakedPath, request.url))
-        );
-      }
-
-      return handlePageRequest(request);
+/** No Clerk: Shopify embed + session-token APIs (and the local skipClerk path). */
+async function handleWithoutClerk(request: NextRequest): Promise<NextResponse> {
+  if (request.nextUrl.pathname.startsWith("/api")) {
+    if (isShopifyApi(request.nextUrl.pathname)) {
+      return handleApiRequest(request);
     }
-  : clerkMiddleware(async (auth, request: NextRequest) => {
-      if (request.nextUrl.pathname.startsWith("/api")) {
-        if (isShopifyApi(request.nextUrl.pathname)) {
-          return handleApiRequest(request);
-        }
-        return applySecurityHeaders(handleApiRequest(request));
-      }
+    return applySecurityHeaders(handleApiRequest(request));
+  }
 
-      const shopifyResponse = handleShopifyRequest(request);
-      if (shopifyResponse) return shopifyResponse;
+  const shopifyResponse = handleShopifyRequest(request);
+  if (shopifyResponse) return shopifyResponse;
 
-      const recoveryResponse = handleRecoveryRedirectRequest(request);
-      if (recoveryResponse) return recoveryResponse;
+  const recoveryResponse = handleRecoveryRedirectRequest(request);
+  if (recoveryResponse) return recoveryResponse;
 
-      const leakedPath = resolveClerkPathLeak(request.nextUrl.pathname);
-      if (leakedPath) {
-        return applySecurityHeaders(
-          NextResponse.redirect(new URL(leakedPath, request.url))
-        );
-      }
+  const leakedPath = resolveClerkPathLeak(request.nextUrl.pathname);
+  if (leakedPath) {
+    return applySecurityHeaders(
+      NextResponse.redirect(new URL(leakedPath, request.url))
+    );
+  }
 
-      const intlResponse = runIntlMiddleware(request);
+  return handlePageRequest(request);
+}
 
-      if (isIntlRedirect(intlResponse)) {
-        return applySecurityHeaders(intlResponse);
-      }
+const clerkProxy = clerkMiddleware(async (auth, request: NextRequest) => {
+  if (request.nextUrl.pathname.startsWith("/api")) {
+    if (isShopifyApi(request.nextUrl.pathname)) {
+      return handleApiRequest(request);
+    }
+    return applySecurityHeaders(handleApiRequest(request));
+  }
 
-      // Never run Clerk session gates on Shopify embed launches — they break
-      // App Bridge session tokens inside the Admin iframe.
-      if (shouldBypassAuthForShopify(request)) {
-        return applyShopifyEmbedHeaders(intlResponse, request);
-      }
+  const shopifyResponse = handleShopifyRequest(request);
+  if (shopifyResponse) return shopifyResponse;
 
-      const { sessionClaims, userId } = await auth();
-      const roleRedirect = resolveRoleBasedRedirect(request, sessionClaims, userId);
+  const recoveryResponse = handleRecoveryRedirectRequest(request);
+  if (recoveryResponse) return recoveryResponse;
 
-      if (roleRedirect) {
-        return applySecurityHeaders(roleRedirect);
-      }
+  const leakedPath = resolveClerkPathLeak(request.nextUrl.pathname);
+  if (leakedPath) {
+    return applySecurityHeaders(
+      NextResponse.redirect(new URL(leakedPath, request.url))
+    );
+  }
 
-      if (!isPublicRoute(request)) {
-        const locale = getLocaleFromPath(request.nextUrl.pathname);
-        const signInUrl = new URL(localizedPath(locale, "/sign-in"), request.url).toString();
-        await auth.protect({ unauthenticatedUrl: signInUrl });
-      }
+  const intlResponse = runIntlMiddleware(request);
 
-      return applySecurityHeaders(intlResponse);
-    });
+  if (isIntlRedirect(intlResponse)) {
+    return applySecurityHeaders(intlResponse);
+  }
+
+  // Never run Clerk session gates on Shopify embed launches — they break
+  // App Bridge session tokens inside the Admin iframe.
+  if (shouldBypassAuthForShopify(request)) {
+    return applyShopifyEmbedHeaders(intlResponse, request);
+  }
+
+  const { sessionClaims, userId } = await auth();
+  const roleRedirect = resolveRoleBasedRedirect(request, sessionClaims, userId);
+
+  if (roleRedirect) {
+    return applySecurityHeaders(roleRedirect);
+  }
+
+  if (!isPublicRoute(request)) {
+    const locale = getLocaleFromPath(request.nextUrl.pathname);
+    const signInUrl = new URL(localizedPath(locale, "/sign-in"), request.url).toString();
+    await auth.protect({ unauthenticatedUrl: signInUrl });
+  }
+
+  return applySecurityHeaders(intlResponse);
+});
+
+/**
+ * Pingza Shopify paths skip clerkMiddleware entirely (handshake redirect loop).
+ * CartRenew and all other Pingza routes keep the previous Clerk path.
+ */
+export default async function proxy(request: NextRequest, event: NextFetchEvent) {
+  if (skipClerk) {
+    return handleWithoutClerk(request);
+  }
+
+  const { pathname } = request.nextUrl;
+  if (
+    isPingzaShopifyPath(pathname, brand.isDefault) ||
+    (!brand.isDefault && pathname === "/" && isShopifyLaunchRequest(request))
+  ) {
+    return handleWithoutClerk(request);
+  }
+
+  return clerkProxy(request, event);
+}
 
 export const config = {
   matcher: [
