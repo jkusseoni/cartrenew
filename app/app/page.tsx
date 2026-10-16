@@ -7,6 +7,7 @@ import ShopifyTestMessageCard from "@/components/shopify/ShopifyTestMessageCard"
 import EmailRecoveryNotice from "@/components/shopify/EmailRecoveryNotice";
 import { brand } from "@/lib/brand";
 import { authFetch } from "@/lib/shopify/authFetch";
+import { isSetupPendingDashboard } from "@/lib/shopify/embed-routes";
 import { TEST_MESSAGE_DAILY_LIMIT } from "@/lib/shopify/test-message-config";
 import type {
   ShopifyCartRow,
@@ -123,17 +124,21 @@ function reloadEmbeddedApp(shop?: string | null): boolean {
 }
 
 function emptyDashboard(shop: string, storeId?: string | null): DashboardResponse {
+  const id = storeId || "pending";
+  // A real store id from token-exchange means install finished — do not leave
+  // the billing card stuck on "Finishing setup" until the merchant clicks Try again.
+  const confirmed = Boolean(storeId && storeId !== "pending");
   return normalizeDashboard(
     {
       shop,
       store: {
-        id: storeId || "pending",
+        id,
         shopify_domain: shop,
       },
       metrics: EMPTY_METRICS,
       carts: [],
       needsInstall: false,
-      degraded: true,
+      degraded: !confirmed,
     },
     shop
   );
@@ -281,19 +286,29 @@ async function completeInstallAndLoadDashboard(
   return null;
 }
 
+const MAX_SETUP_AUTO_RETRIES = 3;
+
 export default function EmbeddedAppHomePage() {
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [statusMessage, setStatusMessage] = useState("Connecting to Shopify…");
   const [loading, setLoading] = useState(true);
   const [setupError, setSetupError] = useState(false);
   const [loadNonce, setLoadNonce] = useState(0);
+  const [setupRetryCount, setSetupRetryCount] = useState(0);
   const [, startTransition] = useTransition();
 
   useEffect(() => {
     let cancelled = false;
 
     const applyData = (next: DashboardResponse) => {
-      clearRemountCount();
+      const confirmed =
+        Boolean(next.store?.id) &&
+        next.store!.id !== "pending" &&
+        !next.degraded;
+      if (confirmed) {
+        clearRemountCount();
+        setSetupRetryCount(0);
+      }
       startTransition(() => {
         setSetupError(false);
         setData(next);
@@ -451,12 +466,31 @@ export default function EmbeddedAppHomePage() {
 
   const retrySetup = () => {
     clearRemountCount();
+    setSetupRetryCount(0);
     setSetupError(false);
     setData(null);
     setLoading(true);
     setStatusMessage("Connecting to Shopify…");
     setLoadNonce((value) => value + 1);
   };
+
+  // Synthetic fallback dashboards mean the install/token is not confirmed yet.
+  const setupPending = Boolean(data && isSetupPendingDashboard(data));
+
+  // Pingza only: after a fresh install the first dashboard/token-exchange can
+  // race; auto-retry a few times so merchants never need "Try again" for that.
+  useEffect(() => {
+    if (brand.isDefault || loading || setupError || !setupPending) return;
+    if (setupRetryCount >= MAX_SETUP_AUTO_RETRIES) return;
+    const timer = window.setTimeout(() => {
+      setSetupRetryCount((count) => count + 1);
+      setData(null);
+      setLoading(true);
+      setStatusMessage("Finishing install…");
+      setLoadNonce((value) => value + 1);
+    }, 900 * (setupRetryCount + 1));
+    return () => window.clearTimeout(timer);
+  }, [setupPending, loading, setupError, setupRetryCount]);
 
   if (setupError) {
     return (
@@ -495,8 +529,6 @@ export default function EmbeddedAppHomePage() {
     typeof window !== "undefined"
       ? new URLSearchParams(window.location.search).get("host") ?? undefined
       : undefined;
-  // Synthetic fallback dashboards mean the install/token is not confirmed yet.
-  const setupPending = Boolean(data.degraded) || !data.store || store.id === "pending";
 
   return (
     <Shell>
