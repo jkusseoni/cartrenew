@@ -24,6 +24,11 @@ const SHOPIFY_WEBHOOK_VERIFY = process.env.SHOPIFY_WEBHOOK_VERIFY !== 'false'
 const SHOPIFY_WEBHOOK_BYPASS = process.env.SHOPIFY_WEBHOOK_BYPASS === 'true'
 
 function shouldSkipVerification(req: NextRequest): boolean {
+  // Pingza production always verifies HMAC, even with SHOPIFY_WEBHOOK_VERIFY=false.
+  if (!brand.isDefault && process.env.NODE_ENV === 'production') {
+    return false
+  }
+
   if (!SHOPIFY_WEBHOOK_VERIFY) {
     return true
   }

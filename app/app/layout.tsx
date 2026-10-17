@@ -15,14 +15,24 @@ export default function EmbeddedAppLayout({
 }) {
   return (
     <>
-      <GlobalApiStatusBar />
+      {brand.isDefault ? <GlobalApiStatusBar /> : null}
       {children}
       {brand.isDefault ? null : (
         <nav className="flex gap-4 px-4 py-3 text-xs font-bold text-neutral-500">
-          <a href={PINGZA_PRIVACY_PATH} className="hover:text-neutral-800">
+          <a
+            href={PINGZA_PRIVACY_PATH}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-neutral-800"
+          >
             Privacy Policy
           </a>
-          <a href={PINGZA_TERMS_PATH} className="hover:text-neutral-800">
+          <a
+            href={PINGZA_TERMS_PATH}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-neutral-800"
+          >
             Terms of Service
           </a>
         </nav>

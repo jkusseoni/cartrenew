@@ -31,7 +31,7 @@ export async function GET() {
     shopifyWebhooks: {
       ok: shopifyWebhooksOk,
       label: shopifyWebhooksOk ? 'Listening' : 'Offline',
-      bypass: webhookBypass,
+      ...(brand.isDefault ? { bypass: webhookBypass } : {}),
     },
     whatsApp: whatsAppEngineStatus(brand.isDefault),
     checkedAt: new Date().toISOString(),
