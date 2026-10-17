@@ -3,6 +3,7 @@ import createIntlMiddleware from "next-intl/middleware";
 import { NextResponse } from "next/server";
 import type { NextFetchEvent, NextRequest } from "next/server";
 
+import { buildAppCsp } from "@/lib/app-csp";
 import { brand } from "@/lib/brand";
 import { locales, routing } from "@/i18n/routing";
 import {
@@ -198,26 +199,7 @@ function applySecurityHeaders(response: NextResponse) {
 
   if (!isDev) {
     response.headers.set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
-
-    const clerkSources = [
-      "https://clerk.cartrenew.com",
-      "https://*.clerk.accounts.dev",
-      "https://*.clerk.com",
-    ].join(" ");
-
-    const cspHeader = [
-      "default-src 'self';",
-      `script-src 'self' 'unsafe-eval' 'unsafe-inline' https://va.vercel-scripts.com https://challenges.cloudflare.com ${clerkSources};`,
-      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;",
-      "font-src 'self' https://fonts.gstatic.com data:;",
-      `img-src 'self' data: blob: https://images.unsplash.com https://img.clerk.com https://graph.facebook.com https://api.producthunt.com https://peerpush.com ${clerkSources};`,
-      `connect-src 'self' https://generativelanguage.googleapis.com https://graph.facebook.com ${clerkSources};`,
-      `frame-src 'self' https://challenges.cloudflare.com ${clerkSources};`,
-      "worker-src 'self' blob:;",
-      "child-src 'self' blob:;",
-    ].join(" ");
-
-    response.headers.set("Content-Security-Policy", cspHeader);
+    response.headers.set("Content-Security-Policy", buildAppCsp(brand.isDefault));
   }
 
   return response;
