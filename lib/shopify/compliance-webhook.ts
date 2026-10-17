@@ -3,6 +3,10 @@ import { randomUUID } from 'crypto'
 import { NextRequest } from 'next/server'
 
 import { brand } from '@/lib/brand'
+import {
+  auditActionForComplianceTopic,
+  recordAccessAudit,
+} from '@/lib/privacy/access-audit'
 import { complianceErrorCode, runCompliance } from '@/lib/privacy/compliance'
 import { createSupabasePrivacyDb } from '@/lib/privacy/compliance-db'
 import { deliverPrivacyExportEmail, privacyExportRecipient } from '@/lib/privacy/export-mail'
@@ -74,6 +78,15 @@ export async function handleShopifyComplianceWebhook(
       db: createSupabasePrivacyDb(),
       log: (entry) => {
         console.info('[compliance-webhook]', entry)
+        const action = auditActionForComplianceTopic(entry.topic)
+        if (action) {
+          void recordAccessAudit({
+            shop: entry.shopDomain,
+            action,
+            actor: `POST ${req.nextUrl.pathname}`,
+            count: entry.carts + entry.messages + entry.suppressions,
+          })
+        }
       },
       deliverExport: async ({ requestId: exportId, body }) => {
         const recipient = privacyExportRecipient(brand.isDefault, brand.supportEmail)

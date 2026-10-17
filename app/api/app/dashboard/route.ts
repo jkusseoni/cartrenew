@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { brand } from "@/lib/brand";
+import { recordAccessAudit } from "@/lib/privacy/access-audit";
 import { getValidShopifyAccessToken } from "@/lib/shopify/access-token";
 import {
   shouldSyncBillingOnDashboard,
@@ -122,13 +123,23 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    const responseCarts = Array.isArray(dashboard.carts) ? dashboard.carts : carts;
+    if (!brand.isDefault && responseCarts.length > 0) {
+      void recordAccessAudit({
+        shop,
+        action: "read_dashboard",
+        actor: "GET /api/app/dashboard",
+        count: responseCarts.length,
+      });
+    }
+
     return NextResponse.json({
       shop,
       merchantId,
       needsInstall: false,
       store: dashboard.store,
       metrics: dashboard.metrics ?? metrics,
-      carts: Array.isArray(dashboard.carts) ? dashboard.carts : carts,
+      carts: responseCarts,
     });
   } catch (loadError) {
     // Never surface a 500/HTML error page to the embedded iframe for empty stores.
