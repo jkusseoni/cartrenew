@@ -10,6 +10,7 @@ function snapshot(overrides: Partial<RecoveryEmailSnapshot> = {}): RecoveryEmail
     enabled: true,
     platform: "shopify",
     phone: null,
+    whatsappConsent: false,
     buyerAcceptsMarketing: true,
     email: "shopper@allow.test",
     suppressed: false,
@@ -27,7 +28,7 @@ function snapshot(overrides: Partial<RecoveryEmailSnapshot> = {}): RecoveryEmail
   }
 }
 
-test("cron first attempt emails once without a phone, uses WhatsApp when a phone exists, and sends nothing without consent", async () => {
+test("cron first attempt emails once without a phone, uses WhatsApp for an opted-in phone, and sends nothing without consent", async () => {
   const previousKey = process.env.RESEND_API_KEY
   process.env.RESEND_API_KEY = "fixture-api-key"
   let fetches = 0
@@ -57,7 +58,7 @@ test("cron first attempt emails once without a phone, uses WhatsApp when a phone
     const messaged = await runCronFirstCandidate({
       isDefaultBrand: false,
       platform: "shopify",
-      snapshot: snapshot({ phone: "+919876543210" }),
+      snapshot: snapshot({ phone: "+919876543210", whatsappConsent: true }),
       fetchImpl,
       sendWhatsApp,
     })
@@ -74,7 +75,7 @@ test("cron first attempt emails once without a phone, uses WhatsApp when a phone
       fetchImpl,
       sendWhatsApp,
     })
-    assert.deepEqual(skipped, { channel: "none", reason: "no_consent" })
+    assert.deepEqual(skipped, { channel: "none", reason: "no_marketing_consent" })
     assert.equal(fetches, 0)
     assert.equal(whatsapp, 0)
   } finally {

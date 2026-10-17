@@ -6,22 +6,34 @@ import {
 import type { ResendFetch } from "@/lib/email/resend"
 import { resolveWhatsAppRecipient } from "@/lib/services/whatsapp-meta"
 
+/** Stored as last_send_error on a cart skipped for having neither consent. */
+export const NO_MARKETING_CONSENT = "no_marketing_consent"
+
 /**
  * Same branch the recovery cron uses for a pending cart with no message row.
- * Email only when the brand is not CartRenew, the cart is not WooCommerce,
- * and WhatsApp has no sendable phone.
+ *
+ * CartRenew and WooCommerce carts: WhatsApp whenever there is a phone.
+ * Pingza Shopify carts: WhatsApp only with checkout SMS/WhatsApp consent and
+ * a sendable phone. Otherwise email when the checkout accepted email
+ * marketing, and nothing at all when neither consent was given.
  */
 export function cronFirstChannel(input: {
   isDefaultBrand: boolean
   platform: string | null
   phone: string | null
-}): "email" | "whatsapp" | "skip_missing_phone" {
+  whatsappConsent: boolean
+  emailConsent: boolean
+}): "email" | "whatsapp" | "skip_missing_phone" | "skip_no_consent" {
   const phoneText = input.phone?.trim() ?? ""
-  const whatsappSendable = Boolean(phoneText) && resolveWhatsAppRecipient(phoneText).ok
   const woo = (input.platform ?? "").toLowerCase() === "woocommerce"
-  if (!input.isDefaultBrand && !woo && !whatsappSendable) return "email"
-  if (!phoneText) return "skip_missing_phone"
-  return "whatsapp"
+  if (input.isDefaultBrand || woo) {
+    return phoneText ? "whatsapp" : "skip_missing_phone"
+  }
+
+  if (!input.whatsappConsent && !input.emailConsent) return "skip_no_consent"
+  const whatsappSendable = Boolean(phoneText) && resolveWhatsAppRecipient(phoneText).ok
+  if (whatsappSendable && input.whatsappConsent) return "whatsapp"
+  return "email"
 }
 
 export async function runCronFirstCandidate(input: {
@@ -35,6 +47,8 @@ export async function runCronFirstCandidate(input: {
     isDefaultBrand: input.isDefaultBrand,
     platform: input.platform,
     phone: input.snapshot.phone,
+    whatsappConsent: input.snapshot.whatsappConsent,
+    emailConsent: input.snapshot.buyerAcceptsMarketing,
   })
   if (channel === "whatsapp") {
     await input.sendWhatsApp()
@@ -42,6 +56,9 @@ export async function runCronFirstCandidate(input: {
   }
   if (channel === "skip_missing_phone") {
     return { channel: "none", reason: "missing_phone" }
+  }
+  if (channel === "skip_no_consent") {
+    return { channel: "none", reason: NO_MARKETING_CONSENT }
   }
 
   const prepared = composeRecoveryEmail(input.snapshot)

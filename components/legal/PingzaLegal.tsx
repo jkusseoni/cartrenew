@@ -10,7 +10,7 @@ import {
   PINGZA_TRADE_NAME,
 } from "@/lib/legal/pingza"
 
-const EFFECTIVE = "13 October 2026"
+const EFFECTIVE = "17 October 2026"
 
 function Shell({
   title,
@@ -75,7 +75,11 @@ export function PingzaPrivacyPolicy() {
           <li>The customer&apos;s name, email address, and phone number, when Shopify includes them.</li>
           <li>The cart contents (product title, quantity, price, product and variant ids, and an image when Shopify sends one).</li>
           <li>The checkout URL.</li>
-          <li>Whether the checkout says the customer accepts marketing. If Shopify does not send a yes or no, we do not invent one.</li>
+          <li>Whether the checkout says the customer accepts email marketing. If Shopify does not send a yes or no, we do not invent one.</li>
+          <li>
+            Whether the customer ticked Shopify checkout&apos;s &quot;Text me with news and offers&quot; box, and the
+            phone number entered for it. If Shopify does not send a yes or no, we treat it as no.
+          </li>
         </ul>
         <p>We do not ask Shopify for a customer id, and we do not store a Shopify customer id.</p>
       </section>
@@ -85,15 +89,20 @@ export function PingzaPrivacyPolicy() {
         <p>We use this data only to send an abandoned-cart reminder and to show the merchant what happened to it.</p>
         <ul className="list-disc space-y-1 pl-5 text-neutral-400">
           <li>
-            WhatsApp is used when the phone number can be sent. The first reminder waits until the checkout has
-            been idle for 60 minutes. We stop trying 72 hours after the cart was created, and we try at most 3
-            times.
+            WhatsApp is used only when the customer opted in at checkout by ticking &quot;Text me with news and
+            offers&quot;, and the phone number can be sent. Shopify has no separate WhatsApp box, so we treat that
+            text-message opt-in as consent to one WhatsApp reminder about the abandoned cart. We message the
+            phone number entered for the opt-in, or the checkout contact phone; the shipping address phone is
+            used only when no other number was given. Without the opt-in we send no WhatsApp message, whatever
+            phone the checkout contains. The first reminder waits until the checkout has been idle for 60
+            minutes. We stop trying 72 hours after the cart was created, and we try at most 3 times.
           </li>
           <li>
-            Email is used only when there is no sendable phone, the marketing-consent flag is yes, the address
-            is not on the suppression list, and email recovery is turned on for that deployment. The email
-            includes an unsubscribe link.
+            Email is used only when WhatsApp cannot be used (no text-message opt-in, or no sendable phone), the
+            email marketing-consent flag is yes, the address is not on the suppression list, and email recovery
+            is turned on for that deployment. The email includes an unsubscribe link.
           </li>
+          <li>If the customer gave neither opt-in, we send nothing and mark the cart as skipped.</li>
         </ul>
       </section>
 
@@ -145,8 +154,9 @@ export function PingzaPrivacyPolicy() {
         <p>
           To stop WhatsApp reminders, reply STOP to the reminder. We also accept UNSUBSCRIBE, CANCEL, OPT OUT,
           the &quot;Stop promotions&quot; button, and रोको. The reply must be only that word; it is not
-          case-sensitive. We then send no further WhatsApp reminders to that number. The number is kept on
-          the suppression list only as an HMAC-SHA256 hash, not in clear text. You can also email{" "}
+          case-sensitive. We then send no further WhatsApp reminders to that number, even if a later checkout
+          ticks the opt-in box again. The number is kept on the suppression list only as an HMAC-SHA256 hash,
+          not in clear text. You can also email{" "}
           {PINGZA_SUPPORT_EMAIL} with the phone number the reminder used, or ask the store.
         </p>
       </section>
@@ -240,7 +250,8 @@ export function PingzaTerms() {
         <p>The merchant is responsible for:</p>
         <ul className="list-disc space-y-1 pl-5 text-neutral-400">
           <li>Having a lawful basis to message the customer on WhatsApp and by email.</li>
-          <li>Email recovery is only sent for customers whose Shopify checkout says they accepted marketing.</li>
+          <li>WhatsApp recovery is only sent for customers who ticked the text-message marketing box at Shopify checkout. The merchant must keep that box enabled and its wording accurate.</li>
+          <li>Email recovery is only sent for customers whose Shopify checkout says they accepted email marketing.</li>
           <li>Honoring opt-outs. Email unsubscribe is handled by the link in the message, and a STOP reply to a WhatsApp reminder is handled automatically. Other opt-outs must be passed to {PINGZA_SUPPORT_EMAIL}.</li>
           <li>Following WhatsApp&apos;s and Shopify&apos;s rules.</li>
         </ul>
