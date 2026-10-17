@@ -814,8 +814,14 @@ async function handleAppUninstalled(storeId: string, shopDomain: string) {
 async function handleAppSubscriptionUpdate(
   storeId: string,
   shopDomain: string,
-  payload: Record<string, unknown>
+  rawPayload: Record<string, unknown>
 ) {
+  // Shopify nests the fields under `app_subscription`. CartRenew keeps reading the top level.
+  const nested = rawPayload.app_subscription
+  const payload: Record<string, unknown> =
+    !brand.isDefault && nested && typeof nested === 'object' && !Array.isArray(nested)
+      ? (nested as Record<string, unknown>)
+      : rawPayload
   const adminGraphqlId =
     typeof payload.admin_graphql_api_id === 'string'
       ? payload.admin_graphql_api_id
