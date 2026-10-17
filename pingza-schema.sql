@@ -173,6 +173,7 @@ create table public.abandoned_carts (
   customer_phone        text,
   customer_email        text,
   email_marketing_consent boolean not null default false,
+  sms_marketing_consent boolean not null default false,
   customer_name         text,
   cart_value            numeric not null default 0,
   items                 jsonb not null default '[]'::jsonb,

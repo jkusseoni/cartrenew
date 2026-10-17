@@ -1,8 +1,10 @@
 /**
  * Pure rules for Pingza recovery email. No I/O.
  *
- * Email runs only when WhatsApp cannot: there is no sendable phone.
- * A sendable phone stays on WhatsApp, including after a later send failure.
+ * Email runs only when WhatsApp cannot: there is no sendable phone, or the
+ * shopper did not opt in to SMS/WhatsApp marketing at checkout.
+ * A sendable, opted-in phone stays on WhatsApp, including after a later send
+ * failure.
  */
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
@@ -36,7 +38,7 @@ export type EmailGateInput = {
   isDefaultBrand: boolean
   enabled: boolean
   platform: string | null
-  /** True when the phone can be sent on WhatsApp. Invalid or missing phones are false. */
+  /** True when the phone can be sent on WhatsApp and the shopper opted in. Invalid or missing phones are false. */
   whatsappSendable: boolean
   buyerAcceptsMarketing: boolean
   email: string | null

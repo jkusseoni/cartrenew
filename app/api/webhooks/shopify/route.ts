@@ -7,6 +7,7 @@ import { readBuyerAcceptsMarketing, readCheckoutMarketingConsent } from '@/lib/e
 import { summarizeCheckoutConsent } from '@/lib/email/checkout-consent-log'
 import { brand } from '@/lib/brand'
 import { shopifyCheckoutLog, tokenSuffix } from '@/lib/log-safe'
+import { extractCheckoutPhone, readCheckoutSmsMarketingConsent } from '@/lib/whatsapp/checkout-consent'
 import { supabaseAdmin } from '@/lib/supabase'
 import {
   getShopifyWebhookSecret,
@@ -249,36 +250,8 @@ async function getOrCreateStore(shopDomain: string) {
   return insertedStore
 }
 
-function asPhoneString(value: unknown): string | null {
-  if (typeof value === 'string' && value.trim()) return value.trim()
-  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
-  return null
-}
-
 function extractCustomerPhone(payload: Record<string, unknown>, customer: Record<string, unknown>) {
-  const billing = payload.billing_address as Record<string, unknown> | undefined
-  const shipping = payload.shipping_address as Record<string, unknown> | undefined
-
-  // Prefer shipping_address.phone, then customer.phone.
-  const fromShipping = asPhoneString(shipping?.phone)
-  if (fromShipping) return fromShipping
-
-  const fromCustomer = asPhoneString(customer.phone)
-  if (fromCustomer) return fromCustomer
-
-  const candidates = [
-    payload.phone,
-    billing?.phone,
-    // Some Shopify payloads nest contact phone under default_address.
-    (customer.default_address as Record<string, unknown> | undefined)?.phone,
-  ]
-
-  for (const value of candidates) {
-    const phone = asPhoneString(value)
-    if (phone) return phone
-  }
-
-  return null
+  return extractCheckoutPhone(payload, customer, { isDefaultBrand: brand.isDefault })
 }
 
 function extractCustomerEmail(payload: Record<string, unknown>, customer: Record<string, unknown>) {
@@ -399,6 +372,7 @@ async function upsertAbandonedCartRecord({
   items,
   checkoutUrl,
   emailMarketingConsent,
+  smsMarketingConsent,
 }: {
   storeId: string
   token: string
@@ -409,6 +383,7 @@ async function upsertAbandonedCartRecord({
   items: unknown[]
   checkoutUrl: string | null
   emailMarketingConsent?: boolean
+  smsMarketingConsent?: boolean
 }): Promise<{ cart: AbandonedCartRow | null; error: unknown | null; created: boolean }> {
   const safeItems = Array.isArray(items) ? items : []
   const safeValue = Number.isFinite(cartValue) ? cartValue : 0
@@ -433,6 +408,9 @@ async function upsertAbandonedCartRecord({
     updated_at: new Date().toISOString(),
     ...(typeof emailMarketingConsent === 'boolean'
       ? { email_marketing_consent: emailMarketingConsent }
+      : {}),
+    ...(typeof smsMarketingConsent === 'boolean'
+      ? { sms_marketing_consent: smsMarketingConsent }
       : {}),
   }
 
@@ -536,6 +514,7 @@ async function handleCartWebhook(storeId: string, payload: any) {
     items,
     checkoutUrl,
     emailMarketingConsent: brand.isDefault ? undefined : readBuyerAcceptsMarketing(payload),
+    smsMarketingConsent: brand.isDefault ? undefined : readCheckoutSmsMarketingConsent(payload),
   })
 
   if (error && !cart) {
@@ -585,6 +564,7 @@ async function handleCheckoutWebhook(storeId: string, payload: any) {
     items,
     checkoutUrl,
     emailMarketingConsent: brand.isDefault ? undefined : readBuyerAcceptsMarketing(payload),
+    smsMarketingConsent: brand.isDefault ? undefined : readCheckoutSmsMarketingConsent(payload),
   })
 
   if (error) {

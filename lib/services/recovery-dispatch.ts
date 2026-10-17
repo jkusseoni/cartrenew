@@ -19,7 +19,7 @@ import { recordAccessAudit } from '@/lib/privacy/access-audit'
 import { storedCustomerError } from '@/lib/privacy/sanitize-customer-text'
 import { redactSecrets } from '@/lib/services/redact-secrets'
 import { brand } from '@/lib/brand'
-import { cronFirstChannel } from '@/lib/email/cron-candidate'
+import { cronFirstChannel, NO_MARKETING_CONSENT } from '@/lib/email/cron-candidate'
 import { permanentEmailSkipError } from '@/lib/email/email-skip'
 import { deliverPreparedEmail, prepareRecoveryEmail } from '@/lib/email/prepare-recovery-email'
 import {
@@ -212,7 +212,13 @@ type CartRow = {
   customer_phone: string | null
   customer_name: string | null
   checkout_url: string | null
+  sms_marketing_consent?: boolean | null
+  email_marketing_consent?: boolean | null
 }
+
+const FIRST_ATTEMPT_CART_COLUMNS = 'id, store_id, customer_phone, customer_name, checkout_url'
+/** CartRenew's schema has no consent columns, so only Pingza selects them. */
+const CART_CONSENT_COLUMNS = brand.isDefault ? '' : ', sms_marketing_consent, email_marketing_consent'
 
 async function loadCartPlatform(cartId: string): Promise<string | null> {
   const { data, error } = await supabaseAdmin
@@ -366,7 +372,7 @@ export async function processFirstAttempts({ limit = 25 } = {}): Promise<Recover
   const since = new Date(Date.now() - RECOVERY_SEND_MAX_AGE_MS).toISOString()
   const { data: carts, error } = await supabaseAdmin
     .from('abandoned_carts')
-    .select('id, store_id, customer_phone, customer_name, checkout_url')
+    .select(FIRST_ATTEMPT_CART_COLUMNS + CART_CONSENT_COLUMNS)
     .eq('status', 'pending')
     .gte('created_at', since)
     .or(dueRecoveryScheduleFilter())
@@ -375,7 +381,7 @@ export async function processFirstAttempts({ limit = 25 } = {}): Promise<Recover
 
   if (error) throw new Error(`pending cart query failed: ${error.message}`)
 
-  const pending = (carts ?? []) as CartRow[]
+  const pending = (carts ?? []) as unknown as CartRow[]
   if (pending.length === 0) return []
 
   const attempted = new Set<string>()
@@ -393,13 +399,19 @@ export async function processFirstAttempts({ limit = 25 } = {}): Promise<Recover
   for (const cart of pending.filter((row) => !attempted.has(row.id)).slice(0, limit)) {
     try {
       const phoneText = cart.customer_phone?.trim() ?? ''
-      const whatsappSendable = Boolean(phoneText) && resolveWhatsAppRecipient(phoneText).ok
+      const whatsappConsent = cart.sms_marketing_consent === true
+      const whatsappSendable =
+        Boolean(phoneText) &&
+        resolveWhatsAppRecipient(phoneText).ok &&
+        (brand.isDefault || whatsappConsent)
       const platform =
         !brand.isDefault && !whatsappSendable ? await loadCartPlatform(cart.id) : null
       const channel = cronFirstChannel({
         isDefaultBrand: brand.isDefault,
         platform,
         phone: cart.customer_phone,
+        whatsappConsent,
+        emailConsent: cart.email_marketing_consent === true,
       })
       if (channel === 'email') {
         results.push(await attemptEmailFirst(cart))
@@ -407,6 +419,11 @@ export async function processFirstAttempts({ limit = 25 } = {}): Promise<Recover
       }
       if (channel === 'skip_missing_phone') {
         results.push({ id: cart.id, cartId: cart.id, outcome: 'skipped', reason: 'missing_phone' })
+        continue
+      }
+      if (channel === 'skip_no_consent') {
+        await markCartEmailSkipped(cart.id, NO_MARKETING_CONSENT)
+        results.push({ id: cart.id, cartId: cart.id, outcome: 'skipped', reason: NO_MARKETING_CONSENT })
         continue
       }
 
@@ -497,6 +514,18 @@ type PendingMessageRow = {
   attempt_count: number | null
 }
 
+type RetryCartRow = {
+  id: string
+  status: string
+  customer_name: string | null
+  checkout_url: string | null
+  platform?: string | null
+  sms_marketing_consent?: boolean | null
+}
+
+const NO_WHATSAPP_CONSENT = 'no_whatsapp_consent'
+const RETRY_CART_CONSENT_COLUMNS = brand.isDefault ? '' : ', platform, sms_marketing_consent'
+
 async function failMessage(messageId: string, reason: string, fromStatus: 'pending' | 'queued') {
   const safeReason = storedCustomerError(reason)
   const { error } = await supabaseAdmin
@@ -570,15 +599,28 @@ export async function processDueRetries({ limit = 25 } = {}): Promise<{
 
       const { data: cart, error: cartError } = await supabaseAdmin
         .from('abandoned_carts')
-        .select('id, status, customer_name, checkout_url')
+        .select('id, status, customer_name, checkout_url' + RETRY_CART_CONSENT_COLUMNS)
         .eq('id', message.cart_id)
-        .maybeSingle()
+        .maybeSingle<RetryCartRow>()
       if (cartError) throw new Error(cartError.message)
 
       if (!cart || cart.status !== 'pending') {
         const reason = `cart_${cart?.status ?? 'missing'}`
         await failMessage(message.id, reason, 'queued')
         results.push({ id: message.id, cartId: message.cart_id, outcome: 'skipped', reason })
+        continue
+      }
+
+      if (
+        message.phone &&
+        !brand.isDefault &&
+        (cart.platform ?? '').toLowerCase() !== 'woocommerce' &&
+        cart.sms_marketing_consent !== true
+      ) {
+        await failMessage(message.id, NO_WHATSAPP_CONSENT, 'queued')
+        claimedForSend = false
+        await markCartEmailSkipped(cart.id, NO_WHATSAPP_CONSENT)
+        results.push({ id: message.id, cartId: cart.id, outcome: 'skipped', reason: NO_WHATSAPP_CONSENT })
         continue
       }
 

@@ -48,6 +48,8 @@ export type RecoveryEmailSnapshot = {
   enabled: boolean
   platform: string | null
   phone: string | null
+  /** Checkout SMS/WhatsApp marketing opt-in. Without it the phone is not used. */
+  whatsappConsent: boolean
   buyerAcceptsMarketing: boolean
   email: string | null
   suppressed: boolean
@@ -66,7 +68,8 @@ export type RecoveryEmailSnapshot = {
 /** Gate, render, and address the message. No database access. */
 export function composeRecoveryEmail(snapshot: RecoveryEmailSnapshot): PreparedRecoveryEmail {
   const phone = snapshot.phone ?? ""
-  const whatsappSendable = Boolean(phone.trim()) && resolveWhatsAppRecipient(phone).ok
+  const whatsappSendable =
+    snapshot.whatsappConsent && Boolean(phone.trim()) && resolveWhatsAppRecipient(phone).ok
   const decision = decideRecoveryEmail({
     isDefaultBrand: snapshot.isDefaultBrand,
     enabled: snapshot.enabled,
@@ -187,7 +190,7 @@ export async function prepareRecoveryEmail(cartId: string): Promise<PreparedReco
   const { data: cart, error } = await supabaseAdmin
     .from("abandoned_carts")
     .select(
-      "id, store_id, status, platform, customer_phone, customer_email, customer_name, checkout_url, items, email_marketing_consent"
+      "id, store_id, status, platform, customer_phone, customer_email, customer_name, checkout_url, items, email_marketing_consent, sms_marketing_consent"
     )
     .eq("id", cartId)
     .maybeSingle()
@@ -225,6 +228,7 @@ export async function prepareRecoveryEmail(cartId: string): Promise<PreparedReco
     enabled,
     platform: typeof cart.platform === "string" ? cart.platform : null,
     phone,
+    whatsappConsent: cart.sms_marketing_consent === true,
     buyerAcceptsMarketing: cart.email_marketing_consent === true,
     email,
     suppressed,
