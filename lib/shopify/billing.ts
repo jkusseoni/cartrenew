@@ -23,6 +23,25 @@ export type ShopifyBillingPlan = {
   description: string;
 };
 
+const CARTRENEW_PLAN_DESCRIPTIONS: Record<ShopifyBillingPlanId, string> = {
+  starter: "1 store · 200 cart recoveries / month · WhatsApp + Email",
+  growth: `3 stores · 1,000 recoveries / month · ${growthChannelsLabel}`,
+  scale: "Unlimited stores · Unlimited recoveries · Priority support",
+};
+
+/**
+ * Non-default brands bill per Shopify store and do not cap recoveries,
+ * so their copy claims neither store counts nor monthly limits.
+ */
+const PINGZA_PLAN_FEATURES = "WhatsApp cart reminders · email fallback · recovery dashboard";
+const PINGZA_PLAN_DESCRIPTIONS: Record<ShopifyBillingPlanId, string> = {
+  starter: PINGZA_PLAN_FEATURES,
+  growth: PINGZA_PLAN_FEATURES,
+  scale: `${PINGZA_PLAN_FEATURES} · priority support`,
+};
+
+const PLAN_DESCRIPTIONS = brand.isDefault ? CARTRENEW_PLAN_DESCRIPTIONS : PINGZA_PLAN_DESCRIPTIONS;
+
 /** Monthly USD plans charged through Shopify Billing (App Store compliant). */
 export const SHOPIFY_BILLING_PLANS: Record<ShopifyBillingPlanId, ShopifyBillingPlan> = {
   starter: {
@@ -33,7 +52,7 @@ export const SHOPIFY_BILLING_PLANS: Record<ShopifyBillingPlanId, ShopifyBillingP
     currencyCode: "USD",
     interval: "EVERY_30_DAYS",
     trialDays: TRIAL_DURATION_DAYS,
-    description: "1 store · 200 cart recoveries / month · WhatsApp + Email",
+    description: PLAN_DESCRIPTIONS.starter,
   },
   growth: {
     id: "growth",
@@ -43,7 +62,7 @@ export const SHOPIFY_BILLING_PLANS: Record<ShopifyBillingPlanId, ShopifyBillingP
     currencyCode: "USD",
     interval: "EVERY_30_DAYS",
     trialDays: TRIAL_DURATION_DAYS,
-    description: `3 stores · 1,000 recoveries / month · ${growthChannelsLabel}`,
+    description: PLAN_DESCRIPTIONS.growth,
   },
   scale: {
     id: "scale",
@@ -53,7 +72,7 @@ export const SHOPIFY_BILLING_PLANS: Record<ShopifyBillingPlanId, ShopifyBillingP
     currencyCode: "USD",
     interval: "EVERY_30_DAYS",
     trialDays: TRIAL_DURATION_DAYS,
-    description: "Unlimited stores · Unlimited recoveries · Priority support",
+    description: PLAN_DESCRIPTIONS.scale,
   },
 };
 

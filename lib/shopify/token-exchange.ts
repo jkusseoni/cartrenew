@@ -1,5 +1,6 @@
 import * as Sentry from "@sentry/nextjs";
 
+import { brand } from "@/lib/brand";
 import { supabaseAdmin } from "@/lib/supabase";
 import {
   getShopifyApiSecret,
@@ -174,6 +175,18 @@ export async function installShopifyStoreFromSessionToken(
   }
 
   const committedStoreId = storeId;
+
+  // Pingza's webhooks are app-specific subscriptions in shopify.app.pingza.toml.
+  // Registering them again per shop (REST Admin API) would double every delivery.
+  if (!brand.isDefault) {
+    return {
+      ok: true,
+      shop,
+      storeId: committedStoreId,
+      accessToken,
+      reinstalled,
+    };
+  }
 
   // Best-effort webhooks — do not hold the install response open.
   void registerShopifyWebhooks(shop, accessToken)

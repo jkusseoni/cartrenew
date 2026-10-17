@@ -14,8 +14,6 @@ scopes = "read_checkouts,read_orders"
 
 [auth]
 redirect_urls = [
-  "https://app.pingza.app/api/auth/shopify/callback",
-  "https://app.pingza.app/api/shopify/callback",
   "https://app.pingza.app/api/shopify/billing/callback"
 ]
 

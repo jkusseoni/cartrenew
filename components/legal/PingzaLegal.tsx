@@ -143,8 +143,11 @@ export function PingzaPrivacyPolicy() {
           spam complaint from the email provider does the same.
         </p>
         <p>
-          To stop WhatsApp reminders, email {PINGZA_SUPPORT_EMAIL} with the phone number the reminder used, or
-          ask the store. We do not provide a separate WhatsApp keyword in the app.
+          To stop WhatsApp reminders, reply STOP to the reminder. We also accept UNSUBSCRIBE, CANCEL, OPT OUT,
+          the &quot;Stop promotions&quot; button, and रोको. The reply must be only that word; it is not
+          case-sensitive. We then send no further WhatsApp reminders to that number. The number is kept on
+          the suppression list only as an HMAC-SHA256 hash, not in clear text. You can also email{" "}
+          {PINGZA_SUPPORT_EMAIL} with the phone number the reminder used, or ask the store.
         </p>
       </section>
 
@@ -238,7 +241,7 @@ export function PingzaTerms() {
         <ul className="list-disc space-y-1 pl-5 text-neutral-400">
           <li>Having a lawful basis to message the customer on WhatsApp and by email.</li>
           <li>Email recovery is only sent for customers whose Shopify checkout says they accepted marketing.</li>
-          <li>Honoring opt-outs. Email unsubscribe is handled by the link in the message. Other opt-outs must be passed to {PINGZA_SUPPORT_EMAIL}.</li>
+          <li>Honoring opt-outs. Email unsubscribe is handled by the link in the message, and a STOP reply to a WhatsApp reminder is handled automatically. Other opt-outs must be passed to {PINGZA_SUPPORT_EMAIL}.</li>
           <li>Following WhatsApp&apos;s and Shopify&apos;s rules.</li>
         </ul>
       </section>

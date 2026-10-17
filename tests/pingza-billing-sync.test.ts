@@ -366,23 +366,38 @@ test("App Home forwards billing=ok and plan to the dashboard request", () => {
   assert.match(page, /dashboardParams\.set\("plan"/)
 })
 
-const SUBSCRIPTION_WEBHOOK_SCRIPT = `
+/** Shopify's real app_subscriptions/update body: fields nested under `app_subscription`. */
+function nestedSubscriptionPayload(fields: Record<string, unknown>) {
+  return {
+    app_subscription: {
+      admin_graphql_api_shop_id: "gid://shopify/Shop/1",
+      created_at: "2026-10-01T00:00:00Z",
+      updated_at: "2026-10-01T00:00:00Z",
+      currency: "USD",
+      ...fields,
+    },
+  }
+}
+
+function subscriptionWebhookScript(options: {
+  payload: Record<string, unknown>
+  currentSubscriptionId?: string | null
+  billingStatus?: string
+  billingPlan?: string | null
+}) {
+  return `
   const shop = "${SHOP}"
   putStore({
     id: "store-1",
     shopify_domain: shop,
-    billing_status: "active",
-    billing_plan: "starter",
-    shopify_subscription_id: null,
+    billing_status: ${JSON.stringify(options.billingStatus ?? "active")},
+    billing_plan: ${JSON.stringify(options.billingPlan === undefined ? "starter" : options.billingPlan)},
+    shopify_subscription_id: ${JSON.stringify(options.currentSubscriptionId ?? null)},
     shopify_access_token: "shpat_live",
   })
   const { POST } = await load("./app/api/webhooks/shopify/route.ts")
   const { NextRequest } = await import("next/server")
-  const payload = JSON.stringify({
-    admin_graphql_api_id: "gid://shopify/AppSubscription/old",
-    name: "Starter",
-    status: "CANCELLED",
-  })
+  const payload = ${JSON.stringify(JSON.stringify(options.payload))}
   const res = await POST(new NextRequest("http://localhost/api/webhooks/shopify", {
     method: "POST",
     headers: {
@@ -397,14 +412,22 @@ const SUBSCRIPTION_WEBHOOK_SCRIPT = `
   console.log("RESULT:" + JSON.stringify({
     status: res.status,
     billing_status: row.billing_status,
+    billing_plan: row.billing_plan,
     shopify_subscription_id: row.shopify_subscription_id,
   }))
 `
+}
 
 test("CartRenew: CANCELLED subscription webhook with null shopify_subscription_id is applied (main behaviour)", () => {
-  const { out, logs } = runChild("CartRenew", SUBSCRIPTION_WEBHOOK_SCRIPT, {
-    SHOPIFY_WEBHOOK_VERIFY: "false",
+  // CartRenew still reads the top-level fields; its payload handling is unchanged.
+  const script = subscriptionWebhookScript({
+    payload: {
+      admin_graphql_api_id: "gid://shopify/AppSubscription/old",
+      name: "Starter",
+      status: "CANCELLED",
+    },
   })
+  const { out, logs } = runChild("CartRenew", script, { SHOPIFY_WEBHOOK_VERIFY: "false" })
 
   assert.equal(out.status, 200)
   assert.equal(out.billing_status, "cancelled", "CartRenew applies inactive update when current id is null")
@@ -413,12 +436,52 @@ test("CartRenew: CANCELLED subscription webhook with null shopify_subscription_i
 })
 
 test("Pingza: CANCELLED subscription webhook with null shopify_subscription_id is ignored", () => {
-  const { out, logs } = runChild("Pingza", SUBSCRIPTION_WEBHOOK_SCRIPT, {
-    SHOPIFY_WEBHOOK_VERIFY: "false",
+  const script = subscriptionWebhookScript({
+    payload: nestedSubscriptionPayload({
+      admin_graphql_api_id: "gid://shopify/AppSubscription/old",
+      name: "Pingza Starter",
+      status: "CANCELLED",
+    }),
   })
+  const { out, logs } = runChild("Pingza", script, { SHOPIFY_WEBHOOK_VERIFY: "false" })
 
   assert.equal(out.status, 200)
   assert.equal(out.billing_status, "active", "Pingza keeps existing plan when current id is null")
   assert.equal(out.shopify_subscription_id, null)
   assert.match(logs, /ignored_stale/)
+})
+
+test("Pingza: nested CANCELLED webhook for the current subscription is applied", () => {
+  const script = subscriptionWebhookScript({
+    currentSubscriptionId: "gid://shopify/AppSubscription/cur",
+    payload: nestedSubscriptionPayload({
+      admin_graphql_api_id: "gid://shopify/AppSubscription/cur",
+      name: "Pingza Starter",
+      status: "CANCELLED",
+    }),
+  })
+  const { out, logs } = runChild("Pingza", script, { SHOPIFY_WEBHOOK_VERIFY: "false" })
+
+  assert.equal(out.status, 200)
+  assert.equal(out.billing_status, "cancelled")
+  assert.equal(out.shopify_subscription_id, "gid://shopify/AppSubscription/cur")
+  assert.equal(logs.includes("ignored_stale"), false)
+})
+
+test("Pingza: nested ACTIVE webhook sets status, plan and subscription id", () => {
+  const script = subscriptionWebhookScript({
+    billingStatus: "pending",
+    billingPlan: null,
+    payload: nestedSubscriptionPayload({
+      admin_graphql_api_id: "gid://shopify/AppSubscription/new",
+      name: "Pingza Growth",
+      status: "ACTIVE",
+    }),
+  })
+  const { out } = runChild("Pingza", script, { SHOPIFY_WEBHOOK_VERIFY: "false" })
+
+  assert.equal(out.status, 200)
+  assert.equal(out.billing_status, "active")
+  assert.equal(out.billing_plan, "growth")
+  assert.equal(out.shopify_subscription_id, "gid://shopify/AppSubscription/new")
 })
