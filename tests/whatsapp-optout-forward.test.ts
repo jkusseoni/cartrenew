@@ -142,25 +142,41 @@ test("forward sends the original raw body and Meta signature", async (t) => {
   assert.match(lines[0], /^\[whatsapp-webhook\] forward attempted status=200 duration_ms=\d+$/)
 })
 
-test("forward failures and timeouts are logged without phone numbers and never throw", async (t) => {
+test("forward failures and timeouts are logged without phone numbers and reject", async (t) => {
   const lines = captureLogs(t)
   const raw = JSON.stringify(STOP)
 
   const rejecting = (async () => {
     throw new TypeError(`fetch failed for ${PHONE_DIGITS}`, { cause: { code: "ENOTFOUND" } })
   }) as unknown as typeof fetch
-  await forwardOptOutWebhook({ url: FORWARD_URL, rawBody: raw, signature: "sha256=abc", fetchImpl: rejecting })
+  await assert.rejects(
+    forwardOptOutWebhook({ url: FORWARD_URL, rawBody: raw, signature: "sha256=abc", fetchImpl: rejecting }),
+    { name: "TypeError" }
+  )
 
   const non2xx = (async () => new Response("no", { status: 401 })) as unknown as typeof fetch
-  await forwardOptOutWebhook({ url: FORWARD_URL, rawBody: raw, signature: "sha256=abc", fetchImpl: non2xx })
+  await assert.rejects(
+    forwardOptOutWebhook({ url: FORWARD_URL, rawBody: raw, signature: "sha256=abc", fetchImpl: non2xx }),
+    /failed with status 401/
+  )
 
   const hanging = ((_: string, init: RequestInit) =>
     new Promise((_, reject) => {
       init.signal?.addEventListener("abort", () => reject(init.signal?.reason))
     })) as unknown as typeof fetch
-  const started = Date.now()
-  await forwardOptOutWebhook({ url: FORWARD_URL, rawBody: raw, signature: "sha256=abc", fetchImpl: hanging, timeoutMs: 30 })
-  assert.ok(Date.now() - started < 2_000, "timeout cuts the request")
+  // AbortSignal.timeout() uses an unref'ed timer in Node 22, so keep the test
+  // process alive while the otherwise-hanging mock waits for the abort event.
+  const keepAlive = setInterval(() => undefined, 1_000)
+  try {
+    const started = Date.now()
+    await assert.rejects(
+      forwardOptOutWebhook({ url: FORWARD_URL, rawBody: raw, signature: "sha256=abc", fetchImpl: hanging, timeoutMs: 30 }),
+      { name: "TimeoutError" }
+    )
+    assert.ok(Date.now() - started < 2_000, "timeout cuts the request")
+  } finally {
+    clearInterval(keepAlive)
+  }
 
   assert.match(lines[0], /forward attempted error=TypeError cause=ENOTFOUND duration_ms=/)
   assert.match(lines[1], /forward attempted status=401 duration_ms=/)
@@ -192,6 +208,7 @@ const CHILD = `
     requests.push({ url, method, body: typeof init.body === "string" ? init.body : null, headers })
     if (url.startsWith("https://pingza.test")) {
       if (globalThis.__forwardMode === "reject") throw new TypeError("fetch failed")
+      if (globalThis.__forwardMode === "non2xx") return json({ success: false }, 503)
       if (globalThis.__forwardMode === "hang") {
         return new Promise((_, reject) => init.signal?.addEventListener("abort", () => reject(init.signal.reason)))
       }
@@ -264,7 +281,7 @@ function assertPiiFree(name: string, result: CallResult) {
 
 const hasLog = (result: CallResult, pattern: RegExp) => result.logs.some((l) => pattern.test(l))
 
-test("CartRenew route: forwards STOP only, response identical with or without forwarding", () => {
+test("CartRenew route: forwards STOP only and returns 500 when Pingza forwarding fails", () => {
   const out = runChild(
     "CartRenew",
     `
@@ -287,10 +304,10 @@ test("CartRenew route: forwards STOP only, response identical with or without fo
       globalThis.__forwardMode = "reject"
       const rejected = await call(stop)
 
-      globalThis.__forwardMode = "hang"
-      const hanging = await call(stop)
+      globalThis.__forwardMode = "non2xx"
+      const non2xx = await call(stop)
 
-      console.log("RESULT:" + JSON.stringify({ unset, forwarded, template, metaRaw, normalMsg, statusMsg, again, rejected, hanging }))
+      console.log("RESULT:" + JSON.stringify({ unset, forwarded, template, metaRaw, normalMsg, statusMsg, again, rejected, non2xx }))
     `
   )
 
@@ -307,7 +324,7 @@ test("CartRenew route: forwards STOP only, response identical with or without fo
     assert.equal(fwd.headers[OPT_OUT_FORWARDED_HEADER], "1")
     assert.ok(hasLog(out[name], /^\[whatsapp-webhook\] signature verified=true forwarded=false$/), name)
     assert.ok(hasLog(out[name], /^\[whatsapp-webhook\] opt-out keyword detected=true$/), name)
-    assert.ok(hasLog(out[name], /^\[whatsapp-webhook\] forward scheduled via=(after|detached)$/), name)
+    assert.ok(hasLog(out[name], /^\[whatsapp-webhook\] forward completed$/), name)
     assert.ok(hasLog(out[name], /^\[whatsapp-webhook\] forward attempted status=200 duration_ms=\d+$/), name)
   }
   assert.ok(hasLog(out.forwarded, /^\[whatsapp-webhook\] inbound message received \(type=text, reply=false\)$/))
@@ -325,15 +342,20 @@ test("CartRenew route: forwards STOP only, response identical with or without fo
   assert.equal(out.again.forwards.length, 0, "already-forwarded request")
   assert.ok(hasLog(out.again, /forward skipped reason=already_forwarded$/))
 
-  for (const name of ["forwarded", "template", "metaRaw", "rejected", "hanging"]) {
+  for (const name of ["forwarded", "template", "metaRaw"]) {
     assert.equal(out[name].status, out.unset.status, name)
     assert.deepEqual(out[name].body, out.unset.body, `${name}: response body unchanged`)
     assert.equal(out[name].suppressionWrites, 0, `${name}: CartRenew records nothing`)
   }
-  assert.equal(out.rejected.forwards.length, 1)
+  for (const name of ["rejected", "non2xx"]) {
+    assert.equal(out[name].status, 500, name)
+    assert.equal(out[name].body.success, false, name)
+    assert.equal(out[name].body.errors, 1, name)
+    assert.equal(out[name].forwards.length, 1, name)
+    assert.equal(out[name].suppressionWrites, 0, `${name}: CartRenew records nothing`)
+  }
   assert.ok(hasLog(out.rejected, /^\[whatsapp-webhook\] forward attempted error=TypeError duration_ms=\d+$/))
-  assert.equal(out.hanging.forwards.length, 1)
-  assert.ok(out.hanging.ms < 1_000, "response does not wait for the forward")
+  assert.ok(hasLog(out.non2xx, /^\[whatsapp-webhook\] forward attempted status=503 duration_ms=\d+$/))
 
   for (const [name, result] of Object.entries(out)) assertPiiFree(name, result as CallResult)
 })
