@@ -7,7 +7,6 @@ import {
   forwardOptOutWebhook,
   OPT_OUT_FORWARDED_HEADER,
   optOutForwardDecision,
-  runAfterResponse,
   WEBHOOK_LOG_PREFIX as LOG,
 } from '@/lib/whatsapp/opt-out-forward';
 import { extractStatusEvents, verifyMetaSignature } from '@/lib/whatsapp-status';
@@ -41,8 +40,8 @@ export async function GET(request: NextRequest) {
  * using the Meta app secret. Pingza also records inbound STOP-style replies
  * as opt-outs (no reply is sent); other incoming messages are acknowledged
  * and ignored. CartRenew, which Meta calls for the shared number, forwards
- * opt-out payloads to Pingza after responding. Returns 500 only on DB errors
- * so Meta retries; applying an event twice is a no-op.
+ * opt-out payloads to Pingza before acknowledging. Returns 500 on DB or
+ * forwarding errors so Meta retries; applying an event twice is a no-op.
  *
  * Logs at each decision point carry no phone numbers, message text or body.
  */
@@ -141,10 +140,12 @@ export async function POST(request: NextRequest) {
     });
     if (decision.forward && signatureHeader) {
       const { url } = decision;
-      const via = runAfterResponse(() =>
-        forwardOptOutWebhook({ url, rawBody, signature: signatureHeader })
-      );
-      console.log(`${LOG} forward scheduled via=${via}`);
+      const forwarded = await forwardOptOutWebhook({
+        url,
+        rawBody,
+        signature: signatureHeader,
+      });
+      if (!forwarded) counts.errors += 1;
     } else if (!decision.forward && inbound.length) {
       console.log(`${LOG} forward skipped reason=${decision.reason}`);
     }

@@ -7,8 +7,6 @@
  * Pingza verifies the Meta signature again and records the opt-out.
  */
 
-import { after } from 'next/server'
-
 import { extractOptOutSenders, summarizeInboundMessages } from '@/lib/whatsapp/opt-out'
 
 export const OPT_OUT_FORWARD_TIMEOUT_MS = 5_000
@@ -70,7 +68,7 @@ export function optOutForwardDecision({
   return url ? { forward: true, url } : skip('invalid_url')
 }
 
-/** POST the original body and signature. Never throws; logs carry no phone numbers. */
+/** POST the original body and signature. Returns whether Pingza accepted it. */
 export async function forwardOptOutWebhook({
   url,
   rawBody,
@@ -83,7 +81,7 @@ export async function forwardOptOutWebhook({
   signature: string
   fetchImpl?: typeof fetch
   timeoutMs?: number
-}): Promise<void> {
+}): Promise<boolean> {
   const started = Date.now()
   try {
     const res = await fetchImpl(url, {
@@ -101,6 +99,7 @@ export async function forwardOptOutWebhook({
     } duration_ms=${Date.now() - started}`
     if (res.ok) console.log(line)
     else console.error(line)
+    return res.ok
   } catch (error) {
     const name = error instanceof Error ? error.name : 'Error'
     const code = (error as { cause?: { code?: unknown } } | null)?.cause?.code
@@ -108,19 +107,6 @@ export async function forwardOptOutWebhook({
     console.error(
       `${WEBHOOK_LOG_PREFIX} forward attempted error=${name}${cause} duration_ms=${Date.now() - started}`
     )
-  }
-}
-
-/**
- * Run after the response via next/server after(). Outside a request scope it
- * runs detached, which a serverless platform may cut short.
- */
-export function runAfterResponse(task: () => Promise<void>): 'after' | 'detached' {
-  try {
-    after(task)
-    return 'after'
-  } catch {
-    void task()
-    return 'detached'
+    return false
   }
 }
