@@ -7,8 +7,6 @@
  * Pingza verifies the Meta signature again and records the opt-out.
  */
 
-import { after } from 'next/server'
-
 import { extractOptOutSenders, summarizeInboundMessages } from '@/lib/whatsapp/opt-out'
 
 export const OPT_OUT_FORWARD_TIMEOUT_MS = 5_000
@@ -70,7 +68,7 @@ export function optOutForwardDecision({
   return url ? { forward: true, url } : skip('invalid_url')
 }
 
-/** POST the original body and signature. Never throws; logs carry no phone numbers. */
+/** POST the original body and signature. Throws on failure; logs carry no phone numbers. */
 export async function forwardOptOutWebhook({
   url,
   rawBody,
@@ -85,8 +83,9 @@ export async function forwardOptOutWebhook({
   timeoutMs?: number
 }): Promise<void> {
   const started = Date.now()
+  let res: Response
   try {
-    const res = await fetchImpl(url, {
+    res = await fetchImpl(url, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -96,11 +95,6 @@ export async function forwardOptOutWebhook({
       body: rawBody,
       signal: AbortSignal.timeout(timeoutMs),
     })
-    const line = `${WEBHOOK_LOG_PREFIX} forward attempted status=${res.status}${
-      res.redirected ? ' redirected=true' : ''
-    } duration_ms=${Date.now() - started}`
-    if (res.ok) console.log(line)
-    else console.error(line)
   } catch (error) {
     const name = error instanceof Error ? error.name : 'Error'
     const code = (error as { cause?: { code?: unknown } } | null)?.cause?.code
@@ -108,19 +102,14 @@ export async function forwardOptOutWebhook({
     console.error(
       `${WEBHOOK_LOG_PREFIX} forward attempted error=${name}${cause} duration_ms=${Date.now() - started}`
     )
+    throw error
   }
-}
-
-/**
- * Run after the response via next/server after(). Outside a request scope it
- * runs detached, which a serverless platform may cut short.
- */
-export function runAfterResponse(task: () => Promise<void>): 'after' | 'detached' {
-  try {
-    after(task)
-    return 'after'
-  } catch {
-    void task()
-    return 'detached'
+  const line = `${WEBHOOK_LOG_PREFIX} forward attempted status=${res.status}${
+    res.redirected ? ' redirected=true' : ''
+  } duration_ms=${Date.now() - started}`
+  if (!res.ok) {
+    console.error(line)
+    throw new Error(`Pingza opt-out forward failed with status ${res.status}`)
   }
+  console.log(line)
 }
