@@ -44,6 +44,62 @@ where lower(coalesce(cart.platform, 'shopify')) <> 'woocommerce'
     or cart.shopify_email_consent_updated_at is null
   );
 
+-- Protect rolling deploys where an old application instance still writes the
+-- boolean columns directly. Timestamp-less positive changes are discarded;
+-- timestamp-less revocations remain fail-closed and establish a new barrier.
+create or replace function public.guard_shopify_checkout_marketing_consent()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  v_received_at timestamptz := clock_timestamp();
+begin
+  if new.sms_marketing_consent is distinct from old.sms_marketing_consent
+    and new.shopify_sms_consent_updated_at is not distinct from old.shopify_sms_consent_updated_at
+  then
+    if new.sms_marketing_consent = false then
+      new.shopify_sms_consent_updated_at := greatest(
+        coalesce(old.shopify_sms_consent_updated_at, '-infinity'::timestamptz),
+        v_received_at
+      );
+    else
+      new.sms_marketing_consent := old.sms_marketing_consent;
+      new.shopify_sms_consent_updated_at := old.shopify_sms_consent_updated_at;
+    end if;
+  end if;
+
+  if new.email_marketing_consent is distinct from old.email_marketing_consent
+    and new.shopify_email_consent_updated_at is not distinct from old.shopify_email_consent_updated_at
+  then
+    if new.email_marketing_consent = false then
+      new.shopify_email_consent_updated_at := greatest(
+        coalesce(old.shopify_email_consent_updated_at, '-infinity'::timestamptz),
+        v_received_at
+      );
+    else
+      new.email_marketing_consent := old.email_marketing_consent;
+      new.shopify_email_consent_updated_at := old.shopify_email_consent_updated_at;
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_abandoned_carts_consent_ordering on public.abandoned_carts;
+create trigger trg_abandoned_carts_consent_ordering
+  before update of
+    sms_marketing_consent,
+    email_marketing_consent,
+    shopify_sms_consent_updated_at,
+    shopify_email_consent_updated_at
+  on public.abandoned_carts
+  for each row execute function public.guard_shopify_checkout_marketing_consent();
+
+revoke all on function public.guard_shopify_checkout_marketing_consent() from public;
+
 create or replace function public.apply_shopify_checkout_marketing_consent(
   p_cart_id uuid,
   p_event_at timestamptz,
