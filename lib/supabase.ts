@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { appendFileSync } from 'node:fs';
 
 import { brand } from '@/lib/brand';
 import { assertPingzaPreviewNotOnProductionSupabase } from '@/lib/supabase-env-guard';
@@ -53,17 +54,26 @@ let SUPABASE_URL =
 const SUPABASE_SERVICE_ROLE_KEY = normalizeEnvVar(process.env.SUPABASE_SERVICE_ROLE_KEY);
 
 // Pingza Preview/staging must not use the production Supabase project (PCD).
+// #region agent log
+if (process.env.CURSOR_DEBUG_SUPABASE_GUARD === '1') appendFileSync('/opt/cursor/logs/debug.log', JSON.stringify({ hypothesisId: 'B,C,D', location: 'lib/supabase.ts:57', message: 'before preview guard', data: { brandIsDefault: brand.isDefault, vercelEnv: ['production', 'preview', 'development'].includes((process.env.VERCEL_ENV ?? '').trim().toLowerCase()) ? (process.env.VERCEL_ENV ?? '').trim().toLowerCase() : 'other', nextPublicUrlPresent: Boolean(normalizeSupabaseUrl(process.env.NEXT_PUBLIC_SUPABASE_URL)), databaseUrlPresent: Boolean(normalizeEnvVar(process.env.DATABASE_URL)), configuredUrlPresent: Boolean(SUPABASE_URL), serviceKeyPresent: Boolean(SUPABASE_SERVICE_ROLE_KEY) }, timestamp: Date.now() }) + '\n');
+// #endregion
 const previewGuard = assertPingzaPreviewNotOnProductionSupabase({
   isDefaultBrand: brand.isDefault,
   vercelEnv: process.env.VERCEL_ENV,
   configuredUrl: SUPABASE_URL,
   productionUrl: process.env.PINGZA_PRODUCTION_SUPABASE_URL,
 });
+// #region agent log
+if (process.env.CURSOR_DEBUG_SUPABASE_GUARD === '1') appendFileSync('/opt/cursor/logs/debug.log', JSON.stringify({ hypothesisId: 'A,B', location: 'lib/supabase.ts:68', message: 'after preview guard', data: { ok: previewGuard.ok, skipped: 'skipped' in previewGuard ? previewGuard.skipped : null }, timestamp: Date.now() }) + '\n');
+// #endregion
 if (!previewGuard.ok) {
   console.error('[supabase]', previewGuard.reason);
   // Fail closed: do not attach the production client on Preview.
   SUPABASE_URL = '';
 }
+// #region agent log
+if (process.env.CURSOR_DEBUG_SUPABASE_GUARD === '1') appendFileSync('/opt/cursor/logs/debug.log', JSON.stringify({ hypothesisId: 'B', location: 'lib/supabase.ts:77', message: 'after guard mutation', data: { guardBlocked: !previewGuard.ok, configuredAfterGuard: Boolean(SUPABASE_URL), usingPlaceholder: !SUPABASE_URL }, timestamp: Date.now() }) + '\n');
+// #endregion
 
 // Placeholders keep the module importable at build time, but a misconfigured
 // runtime should be loud — every query would fail with confusing errors otherwise.
