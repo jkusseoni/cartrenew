@@ -19,6 +19,7 @@ import {
   toDbBillingStatus,
 } from '@/lib/shopify/billing'
 import { shouldApplySubscriptionWebhook } from '@/lib/shopify/billing-sync'
+import { applyShopifyCheckoutMarketingConsent } from '@/lib/shopify/checkout-consent-ordering'
 
 const SHOPIFY_WEBHOOK_VERIFY = process.env.SHOPIFY_WEBHOOK_VERIFY !== 'false'
 const SHOPIFY_WEBHOOK_BYPASS = process.env.SHOPIFY_WEBHOOK_BYPASS === 'true'
@@ -376,8 +377,6 @@ async function upsertAbandonedCartRecord({
   cartValue,
   items,
   checkoutUrl,
-  emailMarketingConsent,
-  smsMarketingConsent,
 }: {
   storeId: string
   token: string
@@ -387,8 +386,6 @@ async function upsertAbandonedCartRecord({
   cartValue: number
   items: unknown[]
   checkoutUrl: string | null
-  emailMarketingConsent?: boolean
-  smsMarketingConsent?: boolean
 }): Promise<{ cart: AbandonedCartRow | null; error: unknown | null; created: boolean }> {
   const safeItems = Array.isArray(items) ? items : []
   const safeValue = Number.isFinite(cartValue) ? cartValue : 0
@@ -411,12 +408,6 @@ async function upsertAbandonedCartRecord({
     checkout_url: checkoutUrl,
     scheduled_message_at: nextRecoveryAt(),
     updated_at: new Date().toISOString(),
-    ...(typeof emailMarketingConsent === 'boolean'
-      ? { email_marketing_consent: emailMarketingConsent }
-      : {}),
-    ...(typeof smsMarketingConsent === 'boolean'
-      ? { sms_marketing_consent: smsMarketingConsent }
-      : {}),
   }
 
   if (existing?.id) {
@@ -518,9 +509,16 @@ async function handleCartWebhook(storeId: string, payload: any) {
     cartValue,
     items,
     checkoutUrl,
-    emailMarketingConsent: brand.isDefault ? undefined : readBuyerAcceptsMarketing(payload),
-    smsMarketingConsent: brand.isDefault ? undefined : readCheckoutSmsMarketingConsent(payload),
   })
+
+  if (!brand.isDefault && cart?.id) {
+    await applyShopifyCheckoutMarketingConsent({
+      cartId: cart.id,
+      payloadUpdatedAt: payload.updated_at,
+      emailConsent: readBuyerAcceptsMarketing(payload),
+      smsConsent: readCheckoutSmsMarketingConsent(payload),
+    })
+  }
 
   if (error && !cart) {
     console.error('Abandoned cart upsert failed — recovery will not be scheduled', {
@@ -528,6 +526,7 @@ async function handleCartWebhook(storeId: string, payload: any) {
       code: (error as { code?: string })?.code ?? null,
       token,
     })
+    throw error
   }
 
   if (created && cart?.id) {
@@ -568,12 +567,20 @@ async function handleCheckoutWebhook(storeId: string, payload: any) {
     cartValue,
     items,
     checkoutUrl,
-    emailMarketingConsent: brand.isDefault ? undefined : readBuyerAcceptsMarketing(payload),
-    smsMarketingConsent: brand.isDefault ? undefined : readCheckoutSmsMarketingConsent(payload),
   })
+
+  if (!brand.isDefault && cart?.id) {
+    await applyShopifyCheckoutMarketingConsent({
+      cartId: cart.id,
+      payloadUpdatedAt: payload.updated_at,
+      emailConsent: readBuyerAcceptsMarketing(payload),
+      smsConsent: readCheckoutSmsMarketingConsent(payload),
+    })
+  }
 
   if (error) {
     logSupabaseError('Failed to insert abandoned checkout', error)
+    if (!cart) throw error
   } else {
     console.log('Abandoned checkout upserted', {
       cartId: cart?.id ?? null,
