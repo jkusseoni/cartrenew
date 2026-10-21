@@ -215,13 +215,11 @@ test("CartRenew and WooCommerce channel choice ignores checkout consent", () => 
   }
 })
 
-test("CartRenew does not write or select the SMS consent column", () => {
+test("CartRenew does not apply or select checkout consent", () => {
   const route = fs.readFileSync(path.join(root, "app/api/webhooks/shopify/route.ts"), "utf8")
-  const writes = route.match(/smsMarketingConsent: [^\r\n]+/g) ?? []
-  assert.equal(writes.length, 2)
-  for (const line of writes) {
-    assert.match(line, /^smsMarketingConsent: brand\.isDefault \? undefined : readCheckoutSmsMarketingConsent\(payload\),$/)
-  }
+  assert.doesNotMatch(route, /smsMarketingConsent:/)
+  assert.equal((route.match(/if \(!brand\.isDefault && cart\?\.id\)/g) ?? []).length, 2)
+  assert.equal((route.match(/applyShopifyCheckoutMarketingConsent\(\{/g) ?? []).length, 2)
 
   const dispatch = fs.readFileSync(path.join(root, "lib/services/recovery-dispatch.ts"), "utf8")
   assert.match(dispatch, /const CART_CONSENT_COLUMNS = brand\.isDefault \? '' :/)
