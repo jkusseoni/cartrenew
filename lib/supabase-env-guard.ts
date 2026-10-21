@@ -28,8 +28,9 @@ function normalizeHost(url: string): string {
 }
 
 /**
- * Block when a non-default brand runs on Vercel preview/development with the
- * production Supabase hostname. Production and unset VERCEL_ENV (local) pass.
+ * Block when a non-default brand runs on Vercel preview/development without a
+ * canonical production host or with that host configured. Production and
+ * unset VERCEL_ENV (local) pass.
  */
 export function assertPingzaPreviewNotOnProductionSupabase(
   input: SupabaseEnvGuardInput
@@ -49,8 +50,10 @@ export function assertPingzaPreviewNotOnProductionSupabase(
   const productionHost = normalizeHost(input.productionUrl ?? "")
   if (!productionHost) {
     return {
-      ok: true,
-      skipped: "production_url_unset",
+      ok: false,
+      reason:
+        `Pingza ${env} deployment cannot verify Supabase environment isolation because ` +
+        `PINGZA_PRODUCTION_SUPABASE_URL is missing.`,
     }
   }
 
