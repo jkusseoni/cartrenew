@@ -174,6 +174,33 @@ test("migration serializes the cart row and makes equal-timestamp false win", ()
   assert.match(sql, /grant execute on function[\s\S]+to service_role/i)
 })
 
+test("migration and fresh Pingza schema reject unversioned positive consent on INSERT", () => {
+  for (const file of [
+    "db/migrations/2026-10-21-pingza-shopify-consent-ordering.sql",
+    "pingza-schema.sql",
+  ]) {
+    const sql = fs.readFileSync(path.join(process.cwd(), file), "utf8")
+    assert.match(sql, /if tg_op = 'INSERT' then/i)
+    assert.match(sql, /before insert or update of[\s\S]+sms_marketing_consent/i)
+    assert.match(
+      sql,
+      /new\.sms_marketing_consent = true[\s\S]+new\.shopify_sms_consent_updated_at is null[\s\S]+new\.sms_marketing_consent := false[\s\S]+new\.shopify_sms_consent_updated_at := v_received_at/i
+    )
+    assert.match(
+      sql,
+      /new\.email_marketing_consent = true[\s\S]+new\.shopify_email_consent_updated_at is null[\s\S]+new\.email_marketing_consent := false[\s\S]+new\.shopify_email_consent_updated_at := v_received_at/i
+    )
+  }
+})
+
+test("shared CartRenew migration runner excludes the Pingza-only consent migration", () => {
+  const runner = fs.readFileSync(
+    path.join(process.cwd(), "scripts/run-db-migrations.ts"),
+    "utf8"
+  )
+  assert.doesNotMatch(runner, /2026-10-21-pingza-shopify-consent-ordering\.sql/)
+})
+
 test("webhook base upsert no longer writes consent outside the atomic helper", () => {
   const route = fs.readFileSync(
     path.join(process.cwd(), "app/api/webhooks/shopify/route.ts"),

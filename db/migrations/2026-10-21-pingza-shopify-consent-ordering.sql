@@ -56,6 +56,24 @@ as $$
 declare
   v_received_at timestamptz := clock_timestamp();
 begin
+  if tg_op = 'INSERT' then
+    if new.sms_marketing_consent = true
+      and new.shopify_sms_consent_updated_at is null
+    then
+      new.sms_marketing_consent := false;
+      new.shopify_sms_consent_updated_at := v_received_at;
+    end if;
+
+    if new.email_marketing_consent = true
+      and new.shopify_email_consent_updated_at is null
+    then
+      new.email_marketing_consent := false;
+      new.shopify_email_consent_updated_at := v_received_at;
+    end if;
+
+    return new;
+  end if;
+
   if new.sms_marketing_consent is distinct from old.sms_marketing_consent
     and new.shopify_sms_consent_updated_at is not distinct from old.shopify_sms_consent_updated_at
   then
@@ -90,7 +108,7 @@ $$;
 
 drop trigger if exists trg_abandoned_carts_consent_ordering on public.abandoned_carts;
 create trigger trg_abandoned_carts_consent_ordering
-  before update of
+  before insert or update of
     sms_marketing_consent,
     email_marketing_consent,
     shopify_sms_consent_updated_at,
