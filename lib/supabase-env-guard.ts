@@ -61,8 +61,10 @@ export function assertPingzaPreviewNotOnProductionSupabase(
     if (process.env.CURSOR_DEBUG_SUPABASE_GUARD === "1") appendFileSync("/opt/cursor/logs/debug.log", JSON.stringify({ hypothesisId: "A", location: "lib/supabase-env-guard.ts:61", message: "missing production host branch", data: { returnsOk: true, skipped: "production_url_unset" }, timestamp: Date.now() }) + "\n")
     // #endregion
     return {
-      ok: true,
-      skipped: "production_url_unset",
+      ok: false,
+      reason:
+        `Pingza ${env} deployment cannot verify Supabase environment isolation because ` +
+        `PINGZA_PRODUCTION_SUPABASE_URL is missing.`,
     }
   }
 
