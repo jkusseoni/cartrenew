@@ -11,6 +11,39 @@ alter table public.abandoned_carts
   add column if not exists shopify_sms_consent_updated_at timestamptz,
   add column if not exists shopify_email_consent_updated_at timestamptz;
 
+-- Existing open carts have no trustworthy source watermark and may already
+-- contain a stale opt-in written by the vulnerable handler. Revoke each
+-- unversioned channel once and establish a database-time barrier. The
+-- coalesce/case predicates make this safe to re-run.
+with migration_barrier as (
+  select clock_timestamp() as received_at
+)
+update public.abandoned_carts as cart
+set
+  sms_marketing_consent = case
+    when cart.shopify_sms_consent_updated_at is null then false
+    else cart.sms_marketing_consent
+  end,
+  email_marketing_consent = case
+    when cart.shopify_email_consent_updated_at is null then false
+    else cart.email_marketing_consent
+  end,
+  shopify_sms_consent_updated_at = coalesce(
+    cart.shopify_sms_consent_updated_at,
+    migration_barrier.received_at
+  ),
+  shopify_email_consent_updated_at = coalesce(
+    cart.shopify_email_consent_updated_at,
+    migration_barrier.received_at
+  )
+from migration_barrier
+where lower(coalesce(cart.platform, 'shopify')) <> 'woocommerce'
+  and cart.status in ('pending', 'messaged')
+  and (
+    cart.shopify_sms_consent_updated_at is null
+    or cart.shopify_email_consent_updated_at is null
+  );
+
 create or replace function public.apply_shopify_checkout_marketing_consent(
   p_cart_id uuid,
   p_event_at timestamptz,
