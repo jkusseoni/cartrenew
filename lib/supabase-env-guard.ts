@@ -4,8 +4,6 @@
  * CartRenew (isDefaultBrand) never runs this guard.
  */
 
-import { appendFileSync } from "node:fs"
-
 export type SupabaseEnvGuardInput = {
   isDefaultBrand: boolean
   /** Vercel: "production" | "preview" | "development" */
@@ -36,18 +34,11 @@ function normalizeHost(url: string): string {
 export function assertPingzaPreviewNotOnProductionSupabase(
   input: SupabaseEnvGuardInput
 ): SupabaseEnvGuardResult {
-  const observedEnv = (input.vercelEnv ?? "").trim().toLowerCase()
-  // #region agent log
-  if (process.env.CURSOR_DEBUG_SUPABASE_GUARD === "1") appendFileSync("/opt/cursor/logs/debug.log", JSON.stringify({ hypothesisId: "A,C,D", location: "lib/supabase-env-guard.ts:39", message: "guard entry", data: { isDefaultBrand: input.isDefaultBrand, env: ["production", "preview", "development"].includes(observedEnv) ? observedEnv : "other", configuredUrlPresent: Boolean(input.configuredUrl.trim()), productionUrlPresent: Boolean(input.productionUrl?.trim()) }, timestamp: Date.now() }) + "\n")
-  // #endregion
   if (input.isDefaultBrand) {
     return { ok: true, skipped: "default_brand" }
   }
 
-  const env = observedEnv
-  // #region agent log
-  if (process.env.CURSOR_DEBUG_SUPABASE_GUARD === "1") appendFileSync("/opt/cursor/logs/debug.log", JSON.stringify({ hypothesisId: "C", location: "lib/supabase-env-guard.ts:48", message: "environment gate", data: { env, entersPreviewGuard: env === "preview" || env === "development" }, timestamp: Date.now() }) + "\n")
-  // #endregion
+  const env = (input.vercelEnv ?? "").trim().toLowerCase()
   if (env === "production") {
     return { ok: true, skipped: "production" }
   }
@@ -57,9 +48,6 @@ export function assertPingzaPreviewNotOnProductionSupabase(
 
   const productionHost = normalizeHost(input.productionUrl ?? "")
   if (!productionHost) {
-    // #region agent log
-    if (process.env.CURSOR_DEBUG_SUPABASE_GUARD === "1") appendFileSync("/opt/cursor/logs/debug.log", JSON.stringify({ hypothesisId: "A", location: "lib/supabase-env-guard.ts:61", message: "missing production host branch", data: { returnsOk: true, skipped: "production_url_unset" }, timestamp: Date.now() }) + "\n")
-    // #endregion
     return {
       ok: false,
       reason:
@@ -69,9 +57,6 @@ export function assertPingzaPreviewNotOnProductionSupabase(
   }
 
   const configuredHost = normalizeHost(input.configuredUrl)
-  // #region agent log
-  if (process.env.CURSOR_DEBUG_SUPABASE_GUARD === "1") appendFileSync("/opt/cursor/logs/debug.log", JSON.stringify({ hypothesisId: "A,D", location: "lib/supabase-env-guard.ts:72", message: "normalized host comparison", data: { configuredHostPresent: Boolean(configuredHost), productionHostPresent: Boolean(productionHost), hostsMatch: Boolean(configuredHost) && configuredHost === productionHost }, timestamp: Date.now() }) + "\n")
-  // #endregion
   if (!configuredHost) {
     return { ok: true, skipped: "configured_url_empty" }
   }
@@ -86,8 +71,5 @@ export function assertPingzaPreviewNotOnProductionSupabase(
     }
   }
 
-  // #region agent log
-  if (process.env.CURSOR_DEBUG_SUPABASE_GUARD === "1") appendFileSync("/opt/cursor/logs/debug.log", JSON.stringify({ hypothesisId: "A", location: "lib/supabase-env-guard.ts:91", message: "guard success exit", data: { ok: true, comparedHosts: true }, timestamp: Date.now() }) + "\n")
-  // #endregion
   return { ok: true }
 }
