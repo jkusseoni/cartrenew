@@ -29,9 +29,9 @@ function fakeClient({
         update(values: unknown) {
           calls.push({ kind: "fallback", value: { table, values } })
           return {
-            eq(_column: string, _value: string) {
+            eq() {
               return {
-                async in(_column: string, _values: string[]) {
+                async in() {
                   return { data: null, error: fallbackError }
                 },
               }
@@ -94,9 +94,10 @@ test("missing or invalid timestamps reach the RPC as null for fail-closed SQL ha
     { client, nowMs: NOW }
   )
 
-  assert.equal((calls[0]?.value as any).args.p_event_at, null)
-  assert.equal((calls[0]?.value as any).args.p_sms_consent, true)
-  assert.equal((calls[0]?.value as any).args.p_email_consent, false)
+  const rpc = calls[0]?.value as { args: Record<string, unknown> }
+  assert.equal(rpc.args.p_event_at, null)
+  assert.equal(rpc.args.p_sms_consent, true)
+  assert.equal(rpc.args.p_email_consent, false)
 })
 
 test("code-before-migration rollout applies only revocations and ignores positive consent", async () => {
@@ -117,7 +118,8 @@ test("code-before-migration rollout applies only revocations and ignores positiv
     { client: revocation.client, nowMs: NOW }
   )
   assert.equal(revoked.mode, "fallback_revocation")
-  assert.deepEqual((revocation.calls[1]?.value as any).values, {
+  const fallback = revocation.calls[1]?.value as { values: Record<string, unknown> }
+  assert.deepEqual(fallback.values, {
     sms_marketing_consent: false,
     email_marketing_consent: false,
   })
@@ -148,7 +150,8 @@ test("non-schema RPC failures are retried by Shopify instead of bypassing orderi
       },
       { client, nowMs: NOW }
     ),
-    (error: any) => error?.code === "500"
+    (error: unknown) =>
+      Boolean(error && typeof error === "object" && (error as { code?: unknown }).code === "500")
   )
 })
 
