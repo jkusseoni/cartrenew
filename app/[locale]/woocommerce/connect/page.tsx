@@ -9,8 +9,10 @@ import { legacyCommerceRouteEnabled } from "@/lib/privacy/legacy-commerce";
 
 type Step = 1 | 2 | 3;
 
+// WordPress.org always serves the latest stable release (the old GitHub v0.1.2 zip was outdated).
+const PLUGIN_PAGE_URL = "https://wordpress.org/plugins/cartrenew-for-woocommerce/";
 const PLUGIN_DOWNLOAD_URL =
-  "https://github.com/jkusseoni/cartrenew-woocommerce/releases/download/v0.1.2/cartrenew-woocommerce.1.zip";
+  "https://downloads.wordpress.org/plugin/cartrenew-for-woocommerce.latest-stable.zip";
 
 type Credentials = {
   store_id: string;
@@ -326,22 +328,23 @@ export default function WooCommerceConnectPage() {
 
             <ol className="space-y-3 text-sm text-neutral-300 list-decimal list-inside">
               <li>
-                Download{" "}
+                In WordPress admin go to{" "}
+                <strong className="text-white">Plugins → Add New</strong>, search for{" "}
                 <a
-                  href={PLUGIN_DOWNLOAD_URL}
+                  href={PLUGIN_PAGE_URL}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="font-bold text-[#00DF89] underline-offset-2 hover:underline"
                 >
                   CartRenew for WooCommerce
-                </a>{" "}
-                (plugin zip).
+                </a>
+                , then click <strong className="text-white">Install Now</strong>.
               </li>
               <li>
-                In WordPress admin go to{" "}
+                Prefer a file? Use the zip above with{" "}
                 <strong className="text-white">Plugins → Add New → Upload Plugin</strong>.
               </li>
-              <li>Upload the zip and activate the plugin.</li>
+              <li>Activate the plugin.</li>
               <li>
                 Open <strong className="text-white">WooCommerce → CartRenew</strong> settings.
               </li>
