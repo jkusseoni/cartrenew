@@ -13,6 +13,10 @@ import {
 import { Link } from "@/i18n/routing";
 import { growthChannelsLabel } from "@/lib/brand";
 
+// WordPress.org plugin listing (always serves the latest stable release).
+const PLUGIN_PAGE_URL =
+  "https://wordpress.org/plugins/cartrenew-for-woocommerce/";
+
 const STEPS = [
   {
     num: "01",
@@ -188,6 +192,14 @@ export default function WooCommerceLanding() {
               >
                 Connect Your Store →
               </Link>
+              <a
+                href={PLUGIN_PAGE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center rounded-xl border border-blue-200 bg-white px-6 py-4 text-sm font-black text-blue-700 shadow-sm transition hover:bg-blue-50"
+              >
+                Install free plugin from WordPress.org
+              </a>
               <Link
                 href="/"
                 className="flex items-center justify-center rounded-xl border border-slate-200 bg-white px-6 py-4 text-sm font-bold text-slate-600 shadow-sm transition hover:bg-slate-50"
@@ -195,6 +207,16 @@ export default function WooCommerceLanding() {
                 View Shopify version
               </Link>
             </div>
+            <ul className="flex flex-wrap gap-x-5 gap-y-2 pt-1 text-sm font-semibold text-slate-500">
+              <li className="flex items-center gap-1.5">
+                <ShieldCheck className="h-4 w-4 text-emerald-600" aria-hidden />
+                Consent-first: messages only to shoppers who opt in
+              </li>
+              <li className="flex items-center gap-1.5">
+                <Plug className="h-4 w-4 text-emerald-600" aria-hidden />
+                Connect in one click, no coding
+              </li>
+            </ul>
           </div>
         </section>
 
