@@ -16,9 +16,51 @@ import { legacyCommerceRouteEnabled } from '@/lib/privacy/legacy-commerce'
 import { supabaseAdmin } from '@/lib/supabase'
 import { maskPhone, toE164 } from '@/lib/phone'
 import { triggerWhatsAppRecoveryForCart } from '@/lib/services/messaging'
+import { evaluateTrialCap, resolveFreeMessageLimit } from '@/lib/woocommerce/trial-cap'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
+
+const UPGRADE_URL = 'https://www.cartrenew.com/en#pricing'
+
+/**
+ * Counts messages WhatsApp already accepted for this store and applies the
+ * free-message cap. Fails OPEN on lookup errors: a database hiccup must not
+ * silently stop paying merchants from recovering carts.
+ */
+async function checkTrialCap(storeId: string, billingStatus: string | null) {
+  const defaultLimit = resolveFreeMessageLimit(process.env.WOOCOMMERCE_FREE_MESSAGE_LIMIT)
+
+  // Fast path: paid stores never need the count.
+  if ((billingStatus ?? '').toLowerCase() === 'active') {
+    return evaluateTrialCap({ billingStatus, messageCapOverride: null, used: 0, defaultLimit })
+  }
+
+  // Optional per-store override. Separate query so the route keeps working
+  // before the message_cap_override migration has been applied.
+  let messageCapOverride: number | null = null
+  const { data: overrideRow, error: overrideError } = await supabaseAdmin
+    .from('stores')
+    .select('message_cap_override')
+    .eq('id', storeId)
+    .maybeSingle()
+  if (!overrideError && overrideRow && typeof overrideRow.message_cap_override === 'number') {
+    messageCapOverride = overrideRow.message_cap_override
+  }
+
+  const { count, error: countError } = await supabaseAdmin
+    .from('messages')
+    .select('id', { count: 'exact', head: true })
+    .eq('store_id', storeId)
+    .in('status', ['sent', 'delivered', 'read'])
+
+  if (countError) {
+    console.error('CartRenew WooCommerce: trial cap count failed, allowing send', countError)
+    return evaluateTrialCap({ billingStatus, messageCapOverride, used: 0, defaultLimit })
+  }
+
+  return evaluateTrialCap({ billingStatus, messageCapOverride, used: count ?? 0, defaultLimit })
+}
 
 interface WooCommerceCartItem {
   name: string
@@ -74,7 +116,7 @@ export async function POST(req: NextRequest) {
   // stores has no `name` column — only select fields that exist.
   const { data: store, error: storeError } = await supabaseAdmin
     .from('stores')
-    .select('id, api_key')
+    .select('id, api_key, billing_status')
     .eq('id', store_id)
     .maybeSingle()
 
@@ -117,6 +159,24 @@ export async function POST(req: NextRequest) {
     if (priorMessages?.length) {
       return NextResponse.json({ status: 'retry_scheduled' }, { status: 202 })
     }
+  }
+
+  // --- 2b. Free-message cap ----------------------------------------------
+  // Every WhatsApp template costs money and stores registered through
+  // register-store start unpaid, so cap the free messages per store. Paid
+  // (billing_status "active") and overridden stores are exempt.
+  const capDecision = await checkTrialCap(store_id, store.billing_status)
+  if (!capDecision.allowed) {
+    return NextResponse.json(
+      {
+        status: 'trial_limit_reached',
+        error: 'Free message limit reached. Upgrade your CartRenew plan to keep sending recovery messages.',
+        limit: capDecision.limit,
+        used: capDecision.used,
+        upgrade_url: UPGRADE_URL,
+      },
+      { status: 402 }
+    )
   }
 
   // The plugin sends E.164 built from the billing country; older plugin
