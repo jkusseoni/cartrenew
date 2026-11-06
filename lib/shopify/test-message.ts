@@ -12,15 +12,34 @@ import { storedCustomerError } from '@/lib/privacy/sanitize-customer-text'
 import { resolveWhatsAppRecipient, type WhatsAppSendResult } from '@/lib/services/whatsapp-meta'
 import {
   TEST_MESSAGE_DAILY_LIMIT,
+  TEST_MESSAGE_LOG_CART_ID,
   TEST_MESSAGE_OPTED_OUT_CODE,
   TEST_MESSAGE_OPTED_OUT_TEXT,
 } from '@/lib/shopify/test-message-config'
 import { WHATSAPP_OPTED_OUT_ERROR } from '@/lib/whatsapp/opt-out'
 
-export { TEST_MESSAGE_DAILY_LIMIT, TEST_MESSAGE_OPTED_OUT_CODE, TEST_MESSAGE_OPTED_OUT_TEXT }
+export {
+  TEST_MESSAGE_DAILY_LIMIT,
+  TEST_MESSAGE_LOG_CART_ID,
+  TEST_MESSAGE_OPTED_OUT_CODE,
+  TEST_MESSAGE_OPTED_OUT_TEXT,
+}
 
-/** cart_delivery_metrics.cart_id marker. Not a real cart id. */
-export const TEST_MESSAGE_LOG_CART_ID = 'shopify-test-message'
+export const DEFAULT_PINGZA_TEST_TEMPLATE_NAME = 'pingza_test_message'
+export const PINGZA_TEST_TEMPLATE_LANGUAGE = 'en'
+
+/** Approved Utility template for Pingza dashboard tests. Recovery still uses abandoned_cart_reminder. */
+export function pingzaTestTemplateName(): string {
+  const named = (process.env.PINGZA_TEST_TEMPLATE_NAME ?? '').replace(/['"]/g, '').trim()
+  return named || DEFAULT_PINGZA_TEST_TEMPLATE_NAME
+}
+
+/** Body {{1}}: shop subdomain, or "there" when the domain is empty. */
+export function testMessageShopName(shop: string): string {
+  const host = shop.replace(/^https?:\/\//i, '').split('/')[0] ?? ''
+  const slug = host.replace(/\.myshopify\.com$/i, '').trim()
+  return slug || 'there'
+}
 
 /** Fills the template's customer-name slot so the message reads as a test. */
 export const TEST_MESSAGE_CUSTOMER_NAME = '[TEST] Sample customer'
@@ -64,20 +83,19 @@ export type TestMessageLog = {
 
 export type SendTestTemplate = (input: {
   phone: string
-  customerName: string
-  checkoutUrl: string
+  shopName: string
 }) => Promise<WhatsAppSendResult>
 
 /** How long the request waits for Meta before answering "still sending". */
 export const TEST_MESSAGE_SEND_TIMEOUT_MS = 20_000
 
 export type TestMessageOutcome =
-  | { status: 'sent'; remaining: number }
-  | { status: 'send_failed'; remaining: number }
+  | { status: 'sent'; remaining: number; id: string }
+  | { status: 'send_failed'; remaining: number; id: string }
   /** The typed number replied STOP; nothing was sent. */
-  | { status: 'opted_out'; remaining: number }
+  | { status: 'opted_out'; remaining: number; id: string }
   /** Meta hasn't answered in time. `completion` settles when the send and its log row finish. */
-  | { status: 'pending'; remaining: number; completion: Promise<void> }
+  | { status: 'pending'; remaining: number; id: string; completion: Promise<void> }
   | { status: 'rate_limited' }
   | { status: 'log_unavailable' }
 
@@ -150,8 +168,7 @@ export async function sendShopifyTestMessage({
     try {
       result = await send({
         phone: e164,
-        customerName: TEST_MESSAGE_CUSTOMER_NAME,
-        checkoutUrl: testMessageCheckoutUrl(shop),
+        shopName: testMessageShopName(shop),
       })
     } catch (error) {
       result = { success: false, error: error instanceof Error ? error.message : String(error) }
@@ -194,10 +211,10 @@ export async function sendShopifyTestMessage({
       shop,
       duration_ms: Date.now() - startedAt,
     })
-    return { status: 'pending', remaining, completion: delivery.then(() => undefined) }
+    return { status: 'pending', remaining, id, completion: delivery.then(() => undefined) }
   }
 
-  return { status: first, remaining }
+  return { status: first, remaining, id }
 }
 
 export const TEST_MESSAGE_PENDING_TEXT =
@@ -210,11 +227,17 @@ export function testMessageHttpResult(outcome: TestMessageOutcome): {
 } {
   switch (outcome.status) {
     case 'sent':
-      return { status: 200, body: { ok: true, remaining: outcome.remaining } }
+      return { status: 200, body: { ok: true, remaining: outcome.remaining, id: outcome.id } }
     case 'pending':
       return {
         status: 202,
-        body: { ok: true, pending: true, message: TEST_MESSAGE_PENDING_TEXT, remaining: outcome.remaining },
+        body: {
+          ok: true,
+          pending: true,
+          message: TEST_MESSAGE_PENDING_TEXT,
+          remaining: outcome.remaining,
+          id: outcome.id,
+        },
       }
     case 'send_failed':
       return {
@@ -223,6 +246,7 @@ export function testMessageHttpResult(outcome: TestMessageOutcome): {
           error:
             "WhatsApp didn't accept the test message. Check that the number is on WhatsApp and try again.",
           remaining: outcome.remaining,
+          id: outcome.id,
         },
       }
     case 'opted_out':
@@ -232,6 +256,7 @@ export function testMessageHttpResult(outcome: TestMessageOutcome): {
           error: TEST_MESSAGE_OPTED_OUT_TEXT,
           code: TEST_MESSAGE_OPTED_OUT_CODE,
           remaining: outcome.remaining,
+          id: outcome.id,
         },
       }
     case 'rate_limited':

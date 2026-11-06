@@ -1,6 +1,5 @@
 import { supabaseAdmin } from '@/lib/supabase'
-import { RECOVERY_TEMPLATE_NAME } from '@/lib/services/recovery-dispatch'
-import { TEST_MESSAGE_LOG_CART_ID, type TestMessageLog } from '@/lib/shopify/test-message'
+import { pingzaTestTemplateName, TEST_MESSAGE_LOG_CART_ID, type TestMessageLog } from '@/lib/shopify/test-message'
 
 const TABLE = 'cart_delivery_metrics'
 
@@ -19,7 +18,7 @@ export const supabaseTestMessageLog: TestMessageLog = {
         status: 'FAILED',
         provider: 'meta',
         error_message: 'in_progress',
-        payload: { kind: 'shopify_test_message', phone: maskedPhone, template: RECOVERY_TEMPLATE_NAME },
+        payload: { kind: 'shopify_test_message', phone: maskedPhone, template: pingzaTestTemplateName() },
       })
       .select('id')
       .single()

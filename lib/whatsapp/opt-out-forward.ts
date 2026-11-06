@@ -1,10 +1,10 @@
 /**
- * CartRenew → Pingza forwarding of WhatsApp opt-out replies.
+ * CartRenew → Pingza forwarding of WhatsApp webhooks.
  *
  * Both brands share one Meta app and number, and Meta only calls the
  * CartRenew webhook. CartRenew forwards the original signed body of any
- * payload containing an opt-out reply to PINGZA_WEBHOOK_FORWARD_URL, where
- * Pingza verifies the Meta signature again and records the opt-out.
+ * payload containing an opt-out reply (or an unknown status wamid) to
+ * PINGZA_WEBHOOK_FORWARD_URL, where Pingza verifies the Meta signature again.
  */
 
 import { after } from 'next/server'
@@ -24,11 +24,40 @@ export type ForwardSkipReason =
   | 'signature_unverified'
   | 'signature_header_missing'
   | 'no_opt_out_keyword'
+  | 'no_unknown_status'
   | 'invalid_sender'
   | 'env_unset'
   | 'invalid_url'
 
 export type ForwardDecision = { forward: true; url: string } | { forward: false; reason: ForwardSkipReason }
+
+function skip(reason: ForwardSkipReason): ForwardDecision {
+  return { forward: false, reason }
+}
+
+/** Shared CartRenew → Pingza guards (brand, loop, signature, env). */
+function forwardTarget({
+  isDefaultBrand,
+  configuredUrl,
+  signatureVerified,
+  signatureHeader,
+  alreadyForwarded,
+}: {
+  isDefaultBrand: boolean
+  configuredUrl: string | undefined
+  signatureVerified: boolean
+  signatureHeader: string | null
+  alreadyForwarded: boolean
+}): ForwardDecision | { forward: true; url: string } {
+  if (!isDefaultBrand) return skip('not_cartrenew')
+  if (alreadyForwarded) return skip('already_forwarded')
+  if (!signatureVerified) return skip('signature_unverified')
+  if (!signatureHeader) return skip('signature_header_missing')
+  const configured = configuredUrl?.trim()
+  if (!configured) return skip('env_unset')
+  const url = forwardUrl(configured)
+  return url ? { forward: true, url } : skip('invalid_url')
+}
 
 function forwardUrl(raw: string): string | null {
   try {
@@ -57,17 +86,48 @@ export function optOutForwardDecision({
   alreadyForwarded: boolean
   body: unknown
 }): ForwardDecision {
-  const skip = (reason: ForwardSkipReason): ForwardDecision => ({ forward: false, reason })
-  if (!isDefaultBrand) return skip('not_cartrenew')
-  if (alreadyForwarded) return skip('already_forwarded')
-  if (!signatureVerified) return skip('signature_unverified')
-  if (!signatureHeader) return skip('signature_header_missing')
+  const target = forwardTarget({
+    isDefaultBrand,
+    configuredUrl,
+    signatureVerified,
+    signatureHeader,
+    alreadyForwarded,
+  })
+  if (!target.forward) return target
   if (!summarizeInboundMessages(body).some((m) => m.optOutKeyword)) return skip('no_opt_out_keyword')
   if (extractOptOutSenders(body).length === 0) return skip('invalid_sender')
-  const configured = configuredUrl?.trim()
-  if (!configured) return skip('env_unset')
-  const url = forwardUrl(configured)
-  return url ? { forward: true, url } : skip('invalid_url')
+  return target
+}
+
+/**
+ * Forward a verified status payload when CartRenew did not own the wamid
+ * (`unknown_message`). Opt-out forwarding stays on optOutForwardDecision.
+ */
+export function statusForwardDecision({
+  isDefaultBrand,
+  configuredUrl,
+  signatureVerified,
+  signatureHeader,
+  alreadyForwarded,
+  unknownStatusCount,
+}: {
+  isDefaultBrand: boolean
+  configuredUrl: string | undefined
+  signatureVerified: boolean
+  signatureHeader: string | null
+  alreadyForwarded: boolean
+  unknownStatusCount: number
+}): ForwardDecision {
+  const target = forwardTarget({
+    isDefaultBrand,
+    configuredUrl,
+    signatureVerified,
+    signatureHeader,
+    alreadyForwarded,
+  })
+  if (!target.forward) return target
+  if (!(unknownStatusCount > 0)) return skip('no_unknown_status')
+  return target
 }
 
 /** POST the original body and signature. Never throws; logs carry no phone numbers. */

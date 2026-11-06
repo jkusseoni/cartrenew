@@ -8,6 +8,7 @@ import {
   OPT_OUT_FORWARDED_HEADER,
   optOutForwardDecision,
   runAfterResponse,
+  statusForwardDecision,
   WEBHOOK_LOG_PREFIX as LOG,
 } from '@/lib/whatsapp/opt-out-forward';
 import { extractStatusEvents, verifyMetaSignature } from '@/lib/whatsapp-status';
@@ -131,22 +132,37 @@ export async function POST(request: NextRequest) {
   const optOutCount = brand.isDefault ? {} : { opt_outs: optOuts };
 
   if (brand.isDefault) {
-    const decision = optOutForwardDecision({
-      isDefaultBrand: true,
+    const common = {
+      isDefaultBrand: true as const,
       configuredUrl: process.env.PINGZA_WEBHOOK_FORWARD_URL,
       signatureVerified,
       signatureHeader,
       alreadyForwarded,
-      body,
+    };
+    const optOutDecision = optOutForwardDecision({ ...common, body });
+    const statusDecision = statusForwardDecision({
+      ...common,
+      unknownStatusCount: counts.unknown_message,
     });
+    const decision = optOutDecision.forward ? optOutDecision : statusDecision;
     if (decision.forward && signatureHeader) {
       const { url } = decision;
       const via = runAfterResponse(() =>
         forwardOptOutWebhook({ url, rawBody, signature: signatureHeader })
       );
-      console.log(`${LOG} forward scheduled via=${via}`);
-    } else if (!decision.forward && inbound.length) {
-      console.log(`${LOG} forward skipped reason=${decision.reason}`);
+      if (optOutDecision.forward) {
+        console.log(`${LOG} forward scheduled via=${via}`);
+      } else {
+        console.log(
+          `${LOG} forward scheduled via=${via} unknown_message=${counts.unknown_message}`
+        );
+      }
+    } else if (!optOutDecision.forward && inbound.length) {
+      console.log(`${LOG} forward skipped reason=${optOutDecision.reason}`);
+    } else if (!statusDecision.forward && counts.unknown_message > 0) {
+      console.log(
+        `${LOG} forward skipped reason=${statusDecision.reason} unknown_message=${counts.unknown_message}`
+      );
     }
   }
 

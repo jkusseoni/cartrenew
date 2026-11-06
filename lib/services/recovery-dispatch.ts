@@ -32,6 +32,7 @@ import {
 import {
   buildAbandonedCartTemplateVariables,
   resolveWhatsAppRecipient,
+  sendNamedWhatsAppTemplate,
   sendWhatsAppMessage,
   type WhatsAppSendResult,
 } from '@/lib/services/whatsapp-meta'
@@ -69,6 +70,21 @@ export function sendRecoveryTemplate({
     languageCode: 'en',
     bodyVariables: buildAbandonedCartTemplateVariables({ customerName, checkoutUrl }),
   })
+}
+
+/** Send a named template. Does not change abandoned-cart recovery. */
+export function sendNamedTemplate({
+  phone,
+  templateName,
+  languageCode = 'en',
+  bodyVariables = [],
+}: {
+  phone: string
+  templateName: string
+  languageCode?: string
+  bodyVariables?: string[]
+}): Promise<WhatsAppSendResult> {
+  return sendNamedWhatsAppTemplate(phone, templateName, { languageCode, bodyVariables })
 }
 
 async function markCartEmailSkipped(cartId: string, reason: string) {

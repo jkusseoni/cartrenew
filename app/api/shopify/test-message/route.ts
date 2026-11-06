@@ -7,9 +7,11 @@ import { after, NextRequest, NextResponse } from "next/server";
 
 import { brand } from "@/lib/brand";
 import { supabaseAdmin } from "@/lib/supabase";
-import { sendRecoveryTemplate } from "@/lib/services/recovery-dispatch";
+import { sendNamedTemplate } from "@/lib/services/recovery-dispatch";
 import { hasWhatsAppCredentials } from "@/lib/services/whatsapp-meta";
 import {
+  PINGZA_TEST_TEMPLATE_LANGUAGE,
+  pingzaTestTemplateName,
   sendShopifyTestMessage,
   testMessageHttpResult,
   validateTestPhone,
@@ -24,8 +26,8 @@ import {
  * POST /api/shopify/test-message (Pingza only)
  *
  * Auth: Shopify session token. Shop tenant comes from JWT `dest`, not the body.
- * Body: { phone } in E.164. Sends one sample recovery template via the real
- * send path; no cart or messages row is created.
+ * Body: { phone } in E.164. Sends the Pingza Utility test template via the
+ * named-template send path; no cart or messages row is created.
  */
 export async function POST(req: NextRequest) {
   if (brand.isDefault) {
@@ -92,7 +94,13 @@ export async function POST(req: NextRequest) {
     shop,
     e164: phone.e164,
     log: supabaseTestMessageLog,
-    send: sendRecoveryTemplate,
+    send: ({ phone, shopName }) =>
+      sendNamedTemplate({
+        phone,
+        templateName: pingzaTestTemplateName(),
+        languageCode: PINGZA_TEST_TEMPLATE_LANGUAGE,
+        bodyVariables: [shopName],
+      }),
   });
 
   if (outcome.status === "pending") {
