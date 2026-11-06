@@ -26,6 +26,32 @@ export function plainTestDeliveryError(error: string | null | undefined): string
   return title || 'WhatsApp could not deliver this message.'
 }
 
+export type TestDeliveryView =
+  | { state: 'checking' }
+  | { state: 'delivered'; text: string }
+  | { state: 'failed'; text: string }
+  | { state: 'unconfirmed'; text: string }
+
+/** What the card says about Meta's delivery report. Never claims delivery Meta has not reported. */
+export function testDeliveryView(
+  status: string | null | undefined,
+  error: string | null | undefined,
+  timedOut = false
+): TestDeliveryView {
+  if (status === 'delivered' || status === 'read') {
+    return { state: 'delivered', text: 'Delivered to WhatsApp.' }
+  }
+  if (status === 'failed') {
+    return {
+      state: 'failed',
+      text: `${plainTestDeliveryError(error)} ${TEST_MESSAGE_TRY_ANOTHER_NUMBER}`,
+    }
+  }
+  return timedOut
+    ? { state: 'unconfirmed', text: TEST_MESSAGE_STILL_PENDING }
+    : { state: 'checking' }
+}
+
 /** Response `code` when the typed number replied STOP. Same value as WHATSAPP_OPTED_OUT_ERROR. */
 export const TEST_MESSAGE_OPTED_OUT_CODE = 'whatsapp_opted_out'
 

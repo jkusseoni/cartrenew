@@ -1,7 +1,7 @@
 import { supabaseAdmin } from '@/lib/supabase'
 import { recordCartSendFailure } from '@/lib/services/recovery-dispatch'
 import { TEST_MESSAGE_LOG_CART_ID } from '@/lib/shopify/test-message-config'
-import { ALLOWED_PRIOR_STATUSES, canTransition, type MetaStatusEvent } from '@/lib/whatsapp-status'
+import { ALLOWED_PRIOR_STATUSES, nextTestDeliveryPayload, type MetaStatusEvent } from '@/lib/whatsapp-status'
 
 export type StatusApplyResult = 'updated' | 'no_change' | 'unknown_message'
 
@@ -71,48 +71,45 @@ export async function applyStatusEvent(event: MetaStatusEvent): Promise<StatusAp
   return (transitioned?.length ?? 0) > 0 ? 'updated' : 'no_change'
 }
 
-function asPayload(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? { ...(value as Record<string, unknown>) }
-    : {}
-}
-
 /**
  * Pingza dashboard tests log in cart_delivery_metrics (no messages row).
- * Store Meta delivery on the existing payload; never downgrade.
+ * Store Meta delivery on the existing payload. Meta sends sent/delivered
+ * almost together, so the write only lands if delivery_status is still what
+ * we read; otherwise re-read and re-evaluate (never downgrade).
  */
 async function applyTestMessageDelivery(
   event: MetaStatusEvent,
   occurredAt: string
 ): Promise<StatusApplyResult> {
-  const { data: rows, error } = await supabaseAdmin
-    .from('cart_delivery_metrics')
-    .select('id, payload')
-    .eq('cart_id', TEST_MESSAGE_LOG_CART_ID)
-    .eq('provider_message_id', event.whatsappMessageId)
-    .limit(1)
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const { data: rows, error } = await supabaseAdmin
+      .from('cart_delivery_metrics')
+      .select('id, payload')
+      .eq('cart_id', TEST_MESSAGE_LOG_CART_ID)
+      .eq('provider_message_id', event.whatsappMessageId)
+      .limit(1)
 
-  if (error) throw new Error(`test-message delivery lookup failed: ${error.message}`)
-  const row = rows?.[0] as { id: string; payload: unknown } | undefined
-  if (!row?.id) return 'unknown_message'
+    if (error) throw new Error(`test-message delivery lookup failed: ${error.message}`)
+    const row = rows?.[0] as { id: string; payload: unknown } | undefined
+    if (!row?.id) return 'unknown_message'
 
-  const payload = asPayload(row.payload)
-  const from =
-    typeof payload.delivery_status === 'string' ? payload.delivery_status : 'pending'
-  if (from === event.status || !canTransition(from, event.status)) return 'no_change'
+    const nextPayload = nextTestDeliveryPayload(row.payload, event, occurredAt)
+    if (!nextPayload) return 'no_change'
 
-  const nextPayload = {
-    ...payload,
-    delivery_status: event.status,
-    delivery_error: event.status === 'failed' ? (event.error ?? 'unknown') : null,
-    updated_at: occurredAt,
+    const previous = (row.payload as Record<string, unknown> | null)?.delivery_status
+    let update = supabaseAdmin
+      .from('cart_delivery_metrics')
+      .update({ payload: nextPayload })
+      .eq('id', row.id)
+    update =
+      typeof previous === 'string'
+        ? update.eq('payload->>delivery_status', previous)
+        : update.is('payload->>delivery_status', null)
+
+    const { data: updated, error: updateError } = await update.select('id')
+    if (updateError) throw new Error(`test-message delivery update failed: ${updateError.message}`)
+    if (updated?.length) return 'updated'
+    // Lost a race with another status event: re-read and decide again.
   }
-
-  const { error: updateError } = await supabaseAdmin
-    .from('cart_delivery_metrics')
-    .update({ payload: nextPayload })
-    .eq('id', row.id)
-
-  if (updateError) throw new Error(`test-message delivery update failed: ${updateError.message}`)
-  return 'updated'
+  return 'no_change'
 }
