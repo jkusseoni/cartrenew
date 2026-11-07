@@ -16,7 +16,7 @@ const navLinks = [
   { key: "docs", href: "/docs" },
 ] as const;
 
-const hiddenForCustomBrand = new Set(["pricing", "comparison", "woocommerce", "docs"]);
+const hiddenForCustomBrand = new Set(["pricing", "comparison", "woocommerce", "dashboard", "docs"]);
 
 export default function Navbar() {
   const t = useTranslations("nav");
@@ -65,18 +65,22 @@ export default function Navbar() {
 
         <div className="hidden md:flex items-center gap-4">
           <LanguageSwitcher />
-          <Link
-            href="/sign-in"
-            className="text-xs font-bold text-slate-600 hover:text-slate-900 transition-colors"
-          >
-            {t("login")}
-          </Link>
-          <Link
-            href="/sign-up"
-            className="text-xs font-black text-white bg-blue-600 hover:bg-blue-700 px-5 py-2.5 rounded-xl transition-all shadow-md shadow-blue-500/10"
-          >
-            {t("signup")}
-          </Link>
+          {brand.isDefault ? (
+            <>
+              <Link
+                href="/sign-in"
+                className="text-xs font-bold text-slate-600 hover:text-slate-900 transition-colors"
+              >
+                {t("login")}
+              </Link>
+              <Link
+                href="/sign-up"
+                className="text-xs font-black text-white bg-blue-600 hover:bg-blue-700 px-5 py-2.5 rounded-xl transition-all shadow-md shadow-blue-500/10"
+              >
+                {t("signup")}
+              </Link>
+            </>
+          ) : null}
         </div>
 
         <button
@@ -104,22 +108,24 @@ export default function Navbar() {
           <div className="pt-2">
             <LanguageSwitcher />
           </div>
-          <div className="flex flex-col gap-4 pt-4 border-t border-slate-100">
-            <Link
-              href="/sign-in"
-              className="text-sm font-bold text-slate-700 text-center transition-all"
-              onClick={() => setMobileOpen(false)}
-            >
-              {t("login")}
-            </Link>
-            <Link
-              href="/sign-up"
-              className="bg-blue-600 text-white text-xs font-black py-3 rounded-xl text-center shadow-md"
-              onClick={() => setMobileOpen(false)}
-            >
-              {t("signup")}
-            </Link>
-          </div>
+          {brand.isDefault ? (
+            <div className="flex flex-col gap-4 pt-4 border-t border-slate-100">
+              <Link
+                href="/sign-in"
+                className="text-sm font-bold text-slate-700 text-center transition-all"
+                onClick={() => setMobileOpen(false)}
+              >
+                {t("login")}
+              </Link>
+              <Link
+                href="/sign-up"
+                className="bg-blue-600 text-white text-xs font-black py-3 rounded-xl text-center shadow-md"
+                onClick={() => setMobileOpen(false)}
+              >
+                {t("signup")}
+              </Link>
+            </div>
+          ) : null}
         </div>
       )}
     </nav>

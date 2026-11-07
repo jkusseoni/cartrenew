@@ -28,16 +28,33 @@ export default function SupportPage() {
           <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-600">
             <li>Installing {brand.name} on a Shopify store</li>
             <li>Approving or changing a Shopify Billing subscription</li>
-            <li>WhatsApp / Meta Business API connection</li>
-            <li>Webhook delivery and abandoned cart recovery</li>
+            {brand.isDefault ? (
+              <>
+                <li>WhatsApp / Meta Business API connection</li>
+                <li>Webhook delivery and abandoned cart recovery</li>
+              </>
+            ) : (
+              <>
+                <li>Connecting WhatsApp and sending a test message</li>
+                <li>Abandoned cart recovery messages and email follow-ups</li>
+              </>
+            )}
           </ul>
         </div>
         <div className="flex flex-wrap gap-3 pt-2">
+          {brand.isDefault ? (
+            <Link
+              href="/docs"
+              className="rounded-xl bg-blue-600 px-5 py-2.5 text-xs font-black text-white transition hover:bg-blue-700"
+            >
+              Open Docs
+            </Link>
+          ) : null}
           <Link
-            href="/docs"
-            className="rounded-xl bg-blue-600 px-5 py-2.5 text-xs font-black text-white transition hover:bg-blue-700"
+            href="/refund"
+            className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-xs font-black text-slate-700 transition hover:bg-slate-50"
           >
-            Open Docs
+            Refund Policy
           </Link>
           <Link
             href="/privacy"
