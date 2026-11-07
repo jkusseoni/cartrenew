@@ -18,6 +18,7 @@ import {
   TEST_MESSAGE_PENDING_TEXT,
   TEST_MESSAGE_SEND_TIMEOUT_MS,
   testMessageCheckoutUrl,
+  testMessageShopName,
   testMessageHttpResult,
   utcDayStart,
   validateTestPhone,
@@ -70,6 +71,13 @@ function memoryLog(clock: { now: Date }) {
   return { log, rows }
 }
 
+/** Outcomes carry the log row id (for delivery polling); compare the rest. */
+function noId<T extends { id?: string }>(value: T): Omit<T, "id"> {
+  const { id, ...rest } = value
+  assert.equal(typeof id, "string", "outcome carries a log row id")
+  return rest
+}
+
 function recordingSend(result: Awaited<ReturnType<SendTestTemplate>> = { success: true, messageId: "wamid.test" }) {
   const calls: Parameters<SendTestTemplate>[0][] = []
   const send: SendTestTemplate = async (input) => {
@@ -94,19 +102,19 @@ test("utcDayStart is midnight UTC", () => {
   assert.equal(utcDayStart(new Date("2026-10-13T23:59:59.999Z")).toISOString(), "2026-10-13T00:00:00.000Z")
 })
 
-test("test send uses the sample name and the shop cart link, not a cart", async () => {
+test("test send uses the Utility template variable (shop name), not a cart", async () => {
   const clock = { now: new Date("2026-10-13T10:00:00Z") }
   const { log, rows } = memoryLog(clock)
   const { send, calls } = recordingSend()
 
   const outcome = await sendShopifyTestMessage({ storeId: "store-1", shop: SHOP, e164: PHONE, now: clock.now, log, send })
 
-  assert.deepEqual(outcome, { status: "sent", remaining: TEST_MESSAGE_DAILY_LIMIT - 1 })
-  assert.deepEqual(calls, [
-    { phone: PHONE, customerName: TEST_MESSAGE_CUSTOMER_NAME, checkoutUrl: testMessageCheckoutUrl(SHOP) },
-  ])
+  assert.deepEqual(noId(outcome as { id?: string }), { status: "sent", remaining: TEST_MESSAGE_DAILY_LIMIT - 1 })
+  assert.deepEqual(calls, [{ phone: PHONE, shopName: "demo-store" }])
   assert.match(TEST_MESSAGE_CUSTOMER_NAME, /TEST/)
   assert.equal(testMessageCheckoutUrl(SHOP), `https://${SHOP}/cart?test_message=1`)
+  assert.equal(testMessageShopName(SHOP), "demo-store")
+  assert.equal(testMessageShopName(""), "there")
   assert.equal(rows.length, 1)
   assert.equal(rows[0].success, true)
   assert.equal(rows[0].messageId, "wamid.test")
@@ -119,7 +127,7 @@ test("the log keeps only a masked phone, including in stored errors", async () =
 
   const outcome = await sendShopifyTestMessage({ storeId: "store-1", shop: SHOP, e164: PHONE, now: clock.now, log, send })
 
-  assert.deepEqual(outcome, { status: "send_failed", remaining: TEST_MESSAGE_DAILY_LIMIT - 1 })
+  assert.deepEqual(noId(outcome as { id?: string }), { status: "send_failed", remaining: TEST_MESSAGE_DAILY_LIMIT - 1 })
   const stored = JSON.stringify(rows)
   assert.equal(stored.includes("7700900123"), false)
   assert.equal(rows[0].maskedPhone, "********0123")
@@ -295,17 +303,17 @@ test("a fast send isn't reported as pending", async () => {
     sendTimeoutMs: 1_000,
     send: recordingSend().send,
   })
-  assert.deepEqual(outcome, { status: "sent", remaining: TEST_MESSAGE_DAILY_LIMIT - 1 })
+  assert.deepEqual(noId(outcome as { id?: string }), { status: "sent", remaining: TEST_MESSAGE_DAILY_LIMIT - 1 })
 })
 
 test("HTTP mapping: timeout is 202 with the being-sent text", () => {
-  const pending = testMessageHttpResult({ status: "pending", remaining: 1, completion: Promise.resolve() })
+  const pending = testMessageHttpResult({ status: "pending", remaining: 1, id: "row-1", completion: Promise.resolve() })
   assert.equal(pending.status, 202)
-  assert.deepEqual(pending.body, { ok: true, pending: true, message: TEST_MESSAGE_PENDING_TEXT, remaining: 1 })
+  assert.deepEqual(pending.body, { ok: true, pending: true, message: TEST_MESSAGE_PENDING_TEXT, remaining: 1, id: "row-1" })
   assert.equal(TEST_MESSAGE_PENDING_TEXT, "Your test message is being sent. It can take a minute to arrive.")
 
-  assert.deepEqual(testMessageHttpResult({ status: "sent", remaining: 2 }), { status: 200, body: { ok: true, remaining: 2 } })
-  assert.equal(testMessageHttpResult({ status: "send_failed", remaining: 0 }).status, 502)
+  assert.deepEqual(testMessageHttpResult({ status: "sent", remaining: 2, id: "row-1" }), { status: 200, body: { ok: true, remaining: 2, id: "row-1" } })
+  assert.equal(testMessageHttpResult({ status: "send_failed", remaining: 0, id: "row-1" }).status, 502)
   assert.equal(testMessageHttpResult({ status: "rate_limited" }).status, 429)
   assert.equal(testMessageHttpResult({ status: "log_unavailable" }).status, 503)
 })
@@ -323,10 +331,10 @@ test("an opted-out number is its own outcome; other failures stay generic", asyn
       send: recordingSend({ success: false, error, to: null }).send,
     })
 
-  assert.deepEqual(await run(WHATSAPP_OPTED_OUT_ERROR), { status: "opted_out", remaining: 2 })
+  assert.deepEqual(noId((await run(WHATSAPP_OPTED_OUT_ERROR)) as { id?: string }), { status: "opted_out", remaining: 2 })
   assert.equal(rows[0].error, WHATSAPP_OPTED_OUT_ERROR, "attempt is logged and counts toward the limit")
-  assert.deepEqual(await run(WHATSAPP_OPT_OUT_CHECK_FAILED), { status: "send_failed", remaining: 1 })
-  assert.deepEqual(await run(`Meta error: ${WHATSAPP_OPTED_OUT_ERROR}`), { status: "send_failed", remaining: 0 })
+  assert.deepEqual(noId((await run(WHATSAPP_OPT_OUT_CHECK_FAILED)) as { id?: string }), { status: "send_failed", remaining: 1 })
+  assert.deepEqual(noId((await run(`Meta error: ${WHATSAPP_OPTED_OUT_ERROR}`)) as { id?: string }), { status: "send_failed", remaining: 0 })
 })
 
 test("HTTP mapping: opted-out is a 409 with the STOP text and nothing else", () => {
@@ -335,11 +343,11 @@ test("HTTP mapping: opted-out is a 409 with the STOP text and nothing else", () 
     TEST_MESSAGE_OPTED_OUT_TEXT,
     "This number has opted out of messages (it replied STOP). Use a different number for testing."
   )
-  assert.deepEqual(testMessageHttpResult({ status: "opted_out", remaining: 1 }), {
+  assert.deepEqual(testMessageHttpResult({ status: "opted_out", remaining: 1, id: "row-1" }), {
     status: 409,
-    body: { error: TEST_MESSAGE_OPTED_OUT_TEXT, code: TEST_MESSAGE_OPTED_OUT_CODE, remaining: 1 },
+    body: { error: TEST_MESSAGE_OPTED_OUT_TEXT, code: TEST_MESSAGE_OPTED_OUT_CODE, remaining: 1, id: "row-1" },
   })
-  const failed = testMessageHttpResult({ status: "send_failed", remaining: 1 })
+  const failed = testMessageHttpResult({ status: "send_failed", remaining: 1, id: "row-1" })
   assert.equal("code" in failed.body, false)
   assert.notEqual(failed.body.error, TEST_MESSAGE_OPTED_OUT_TEXT)
 })
@@ -368,11 +376,12 @@ test("card shows the opted-out text for the opted-out code and generic errors ot
     warning: false,
   })
   assert.equal(testMessageResult(429, { error: "limit" }, PHONE).kind === "error", true)
-  assert.deepEqual(testMessageResult(200, { ok: true, remaining: 2 }, PHONE), {
+  assert.deepEqual(testMessageResult(200, { ok: true, remaining: 2, id: "row-1" }, PHONE), {
     kind: "sent",
     phone: PHONE,
     remaining: 2,
     pendingMessage: null,
+    id: "row-1",
   })
 })
 
@@ -397,7 +406,8 @@ test("test-send code never touches carts, messages or analytics", () => {
     assert.doesNotMatch(src, /rpc\(/, file)
   }
   const route = fs.readFileSync(path.join(root, "app/api/shopify/test-message/route.ts"), "utf8")
-  assert.match(route, /send: sendRecoveryTemplate/)
+  assert.match(route, /sendNamedTemplate/)
+  assert.doesNotMatch(route, /sendRecoveryTemplate/)
 })
 
 const CHILD_PRELUDE = `
@@ -623,15 +633,24 @@ test("Pingza route: an opted-out number gets the STOP message and nothing is sen
   assert.ok(line, `${result.stdout}\n${result.stderr}`)
   const out = JSON.parse(line.slice("RESULT:".length))
 
-  assert.deepEqual(out.optedOut, {
-    status: 409,
-    body: { error: TEST_MESSAGE_OPTED_OUT_TEXT, code: TEST_MESSAGE_OPTED_OUT_CODE, remaining: 2 },
-    metaSends: 0,
-  })
+  const optedOutBody = { ...out.optedOut.body }
+  assert.equal(typeof optedOutBody.id, "string")
+  delete optedOutBody.id
+  assert.deepEqual(
+    { ...out.optedOut, body: optedOutBody },
+    {
+      status: 409,
+      body: { error: TEST_MESSAGE_OPTED_OUT_TEXT, code: TEST_MESSAGE_OPTED_OUT_CODE, remaining: 2 },
+      metaSends: 0,
+    }
+  )
   assert.equal(JSON.stringify(out.optedOut.body).includes("7700900123"), false, "number is not echoed")
 
   assert.equal(out.other.status, 200)
-  assert.deepEqual(out.other.body, { ok: true, remaining: 1 }, "no opt-out info about other numbers")
+  const otherBody = { ...out.other.body }
+  assert.equal(typeof otherBody.id, "string")
+  delete otherBody.id
+  assert.deepEqual(otherBody, { ok: true, remaining: 1 }, "no opt-out info about other numbers")
   assert.equal(out.other.metaSends, 1)
 
   const logs = result.stdout

@@ -96,3 +96,26 @@ export function extractStatusEvents(body: unknown): MetaStatusEvent[] {
 
   return events
 }
+
+/**
+ * Pure: the next payload for a Pingza dashboard test message after a Meta
+ * status event, or null when nothing changes (same status, or a downgrade).
+ */
+export function nextTestDeliveryPayload(
+  payload: unknown,
+  event: Pick<MetaStatusEvent, 'status' | 'error'>,
+  occurredAt: string
+): Record<string, unknown> | null {
+  const current =
+    payload && typeof payload === 'object' && !Array.isArray(payload)
+      ? { ...(payload as Record<string, unknown>) }
+      : {}
+  const from = typeof current.delivery_status === 'string' ? current.delivery_status : 'pending'
+  if (from === event.status || !canTransition(from, event.status)) return null
+  return {
+    ...current,
+    delivery_status: event.status,
+    delivery_error: event.status === 'failed' ? (event.error ?? 'unknown') : null,
+    updated_at: occurredAt,
+  }
+}

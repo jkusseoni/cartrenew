@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
 import { maskPhone } from "@/lib/phone";
 import { authFetch } from "@/lib/shopify/authFetch";
 import {
   TEST_MESSAGE_OPTED_OUT_CODE,
   TEST_MESSAGE_OPTED_OUT_TEXT,
+  testDeliveryView,
+  type TestDeliveryView,
 } from "@/lib/shopify/test-message-config";
 
 type Props = {
@@ -17,10 +19,15 @@ type Props = {
 /** Longer than the route's 20s wait on Meta, so its 202 reply arrives. */
 const TEST_MESSAGE_REQUEST_TIMEOUT_MS = 30_000;
 
+/** First check after 3s, then every 4s, for about a minute. */
+const DELIVERY_FIRST_CHECK_MS = 3_000;
+const DELIVERY_POLL_MS = 4_000;
+const DELIVERY_MAX_CHECKS = 15;
+
 const GENERIC_ERROR = "The test message couldn't be sent. Try again.";
 
 export type TestMessageResult =
-  | { kind: "sent"; phone: string; remaining: number; pendingMessage: string | null }
+  | { kind: "sent"; phone: string; remaining: number; pendingMessage: string | null; id: string | null }
   /** `warning` (amber) for the daily limit and an opted-out number; otherwise red. */
   | { kind: "error"; message: string; warning: boolean };
 
@@ -31,6 +38,7 @@ export type TestMessageResponse = {
   remaining?: number;
   error?: string;
   code?: string;
+  id?: string;
 };
 
 /** What the card shows for a response from POST /api/shopify/test-message. */
@@ -50,6 +58,7 @@ export function testMessageResult(
     phone,
     remaining: data.remaining ?? 0,
     pendingMessage: status === 202 || data.pending ? data.message || null : null,
+    id: typeof data.id === "string" && data.id ? data.id : null,
   };
 }
 
@@ -58,18 +67,40 @@ function remainingText(remaining: number): string {
   return `${remaining} test message${remaining === 1 ? "" : "s"} left today.`;
 }
 
-export function TestMessageResultView({ result }: { result: TestMessageResult | null }) {
+export function DeliveryLine({ delivery }: { delivery: TestDeliveryView | null }) {
+  if (!delivery) return null;
+  if (delivery.state === "checking") {
+    return <p className="mt-2 text-emerald-200/80">Checking delivery…</p>;
+  }
+  const tone =
+    delivery.state === "failed"
+      ? "text-rose-300"
+      : delivery.state === "delivered"
+        ? "font-black text-emerald-300"
+        : "text-amber-300";
+  return <p className={`mt-2 ${tone}`}>{delivery.text}</p>;
+}
+
+export function TestMessageResultView({
+  result,
+  delivery = null,
+}: {
+  result: TestMessageResult | null;
+  delivery?: TestDeliveryView | null;
+}) {
   return (
     <div aria-live="polite">
       {result?.kind === "sent" ? (
         <div className="mt-4 rounded-xl border border-emerald-900/40 bg-emerald-950/20 px-4 py-3 text-xs text-emerald-300">
           <p className="font-black">
-            {result.pendingMessage ?? `Test message sent to ${maskPhone(result.phone)}.`}
+            {result.pendingMessage ??
+              `WhatsApp accepted the test message for ${maskPhone(result.phone)}.`}
           </p>
           <p className="mt-1 text-emerald-200/80">
             {result.pendingMessage ? "" : "It can take a minute to arrive. "}
             {remainingText(result.remaining)}
           </p>
+          <DeliveryLine delivery={delivery} />
         </div>
       ) : null}
 
@@ -93,6 +124,57 @@ export default function ShopifyTestMessageCard({ shop, dailyLimit }: Props) {
   const [phone, setPhone] = useState("");
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<TestMessageResult | null>(null);
+  const [deliveryState, setDeliveryState] = useState<{ id: string; view: TestDeliveryView } | null>(
+    null
+  );
+
+  const sentId = result?.kind === "sent" ? result.id : null;
+  // Until the first report for this send arrives, show "checking".
+  const delivery: TestDeliveryView | null = !sentId
+    ? null
+    : deliveryState?.id === sentId
+      ? deliveryState.view
+      : { state: "checking" };
+
+  useEffect(() => {
+    if (!sentId) return;
+    let cancelled = false;
+    let timer: number | undefined;
+    let checks = 0;
+    const setDelivery = (view: TestDeliveryView) => setDeliveryState({ id: sentId, view });
+
+    const check = async () => {
+      checks += 1;
+      const last = checks >= DELIVERY_MAX_CHECKS;
+      try {
+        const res = await authFetch(
+          `/api/shopify/test-message/status?id=${encodeURIComponent(sentId)}`,
+          { timeoutMs: 8_000 }
+        );
+        const data = (await res.json().catch(() => ({}))) as {
+          delivery_status?: string | null;
+          delivery_error?: string | null;
+        };
+        if (cancelled) return;
+        const view = testDeliveryView(data.delivery_status, data.delivery_error, last);
+        setDelivery(view);
+        if (view.state === "delivered" || view.state === "failed" || last) return;
+      } catch {
+        if (cancelled) return;
+        if (last) {
+          setDelivery(testDeliveryView(null, null, true));
+          return;
+        }
+      }
+      timer = window.setTimeout(check, DELIVERY_POLL_MS);
+    };
+
+    timer = window.setTimeout(check, DELIVERY_FIRST_CHECK_MS);
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [sentId]);
 
   const sendTest = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -126,9 +208,8 @@ export default function ShopifyTestMessageCard({ shop, dailyLimit }: Props) {
     <section className="mb-8 rounded-2xl border border-neutral-800 bg-neutral-950/40 p-6">
       <h2 className="text-lg font-black text-white">Send test message</h2>
       <p className="mt-1 text-xs text-neutral-400">
-        Send one sample cart-recovery WhatsApp message to your own phone. It is marked TEST, links
-        to your store&apos;s cart page, and doesn&apos;t create a cart or count toward your plan.
-        Up to {dailyLimit} per day.
+        Send one short test WhatsApp message to your own phone to check that messages reach you. It
+        doesn&apos;t create a cart or count toward your plan. Up to {dailyLimit} per day.
       </p>
 
       <form onSubmit={sendTest} className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -159,7 +240,7 @@ export default function ShopifyTestMessageCard({ shop, dailyLimit }: Props) {
         International format: + then country code and number.
       </p>
 
-      <TestMessageResultView result={result} />
+      <TestMessageResultView result={result} delivery={delivery} />
     </section>
   );
 }

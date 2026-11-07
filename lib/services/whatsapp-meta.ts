@@ -172,6 +172,19 @@ function cleanEnv(value?: string | null): string {
   }
   
   /**
+   * Send any approved WhatsApp template. Opt-out check, E.164 validation and
+   * masked logging live in sendWhatsAppMessage — this only names the template.
+   * Abandoned-cart recovery keeps using sendRecoveryTemplate.
+   */
+  export function sendNamedWhatsAppTemplate(
+    toPhone: string,
+    templateName: string,
+    options: Omit<SendWhatsAppOptions, 'templateName'> = {}
+  ): Promise<WhatsAppSendResult> {
+    return sendWhatsAppMessage(toPhone, { ...options, templateName })
+  }
+
+  /**
    * Send a WhatsApp template message via the Meta Cloud API directly.
    * Drop-in replacement for sendTwilioWhatsAppMessage — same call shape,
    * but always uses an approved template (Meta requires this for
