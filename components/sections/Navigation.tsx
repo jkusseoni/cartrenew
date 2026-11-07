@@ -19,7 +19,7 @@ export default function Navigation() {
   const t = useTranslations("nav");
   const visibleNavLinks = brand.isDefault
     ? navLinks
-    : navLinks.filter((link) => link.key !== "woocommerce");
+    : navLinks.filter((link) => link.key !== "woocommerce" && link.key !== "dashboard");
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -63,7 +63,7 @@ export default function Navigation() {
           ))}
         </div>
 
-        <div className="hidden md:flex items-center gap-3">
+        <div className={`${brand.isDefault ? "hidden md:flex" : "hidden"} items-center gap-3`}>
           <Link
             href="/sign-in"
             onClick={handleNavClick}
@@ -103,7 +103,9 @@ export default function Navigation() {
               </Link>
             ))}
 
-            <div className="flex flex-col gap-2 pt-2 border-t border-[var(--bg-border)]">
+            <div
+              className={`${brand.isDefault ? "flex" : "hidden"} flex-col gap-2 pt-2 border-t border-[var(--bg-border)]`}
+            >
               <Link
                 href="/sign-in"
                 onClick={handleNavClick}

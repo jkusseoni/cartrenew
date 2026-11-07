@@ -2,7 +2,46 @@ import React from 'react';
 import Link from 'next/link';
 import { brand } from '@/lib/brand';
 
+function ShopifyBilledRefundPolicy() {
+  return (
+    <main className="min-h-screen bg-[#0B0F17] text-neutral-300 py-16 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-4xl mx-auto space-y-8 bg-neutral-900/20 border border-neutral-900 p-8 sm:p-12 rounded-2xl backdrop-blur-md">
+        <div>
+          <Link href="/" className="text-sm font-bold text-indigo-400 hover:text-indigo-300 transition-colors">
+            ← Back to Home
+          </Link>
+          <h1 className="text-3xl sm:text-4xl font-black text-white tracking-tight mt-4">Refund &amp; Cancellation Policy</h1>
+          <p className="text-xs text-neutral-500 mt-2">Last updated: November 7, 2026</p>
+        </div>
+
+        <div className="space-y-6 text-sm sm:text-base leading-relaxed">
+          <section className="space-y-2">
+            <h2 className="text-lg font-bold text-white tracking-tight">1. Billing through Shopify</h2>
+            <p>{brand.name} subscriptions are billed through Shopify Billing and appear on your Shopify invoice. We do not collect card details ourselves.</p>
+          </section>
+
+          <section className="space-y-2">
+            <h2 className="text-lg font-bold text-white tracking-tight">2. Cancelling your subscription</h2>
+            <p>You can cancel at any time by uninstalling {brand.name} from your Shopify admin (Settings → Apps and sales channels). Charges stop from the next billing cycle. Your store stays on the plan until the end of the cycle you have already paid for.</p>
+          </section>
+
+          <section className="space-y-2">
+            <h2 className="text-lg font-bold text-white tracking-tight">3. Refunds</h2>
+            <p>If you were charged by mistake, were billed twice, or {brand.name} did not work as described, email us within 14 days of the charge and we will review your request. Approved refunds are issued through Shopify, so they return to your Shopify invoice or payment method on the same basis as the original charge. Messaging costs already incurred with Meta/WhatsApp on your behalf may not be refundable.</p>
+          </section>
+
+          <section className="space-y-2">
+            <h2 className="text-lg font-bold text-white tracking-tight">4. Requesting a refund</h2>
+            <p>Email <a href={`mailto:${brand.supportEmail}`} className="text-blue-500 hover:underline font-mono">{brand.supportEmail}</a> with your store domain (for example your-store.myshopify.com) and the charge date. We reply within 1 business day.</p>
+          </section>
+        </div>
+      </div>
+    </main>
+  );
+}
+
 export default function RefundPolicy() {
+  if (!brand.isDefault) return <ShopifyBilledRefundPolicy />;
   return (
     <main className="min-h-screen bg-[#0B0F17] text-neutral-300 py-16 px-4 sm:px-6 lg:px-8">
       <div className="max-w-4xl mx-auto space-y-8 bg-neutral-900/20 border border-neutral-900 p-8 sm:p-12 rounded-2xl backdrop-blur-md">
