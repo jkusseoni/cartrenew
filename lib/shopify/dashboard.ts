@@ -207,6 +207,38 @@ export async function loadShopifyStoreDashboard(
       );
     }
 
+    // Pingza: the summary cards must agree with the Recent Abandoned Carts
+    // list, so derive them from abandoned_carts (single source of truth)
+    // instead of the separate analytics_daily counters. CartRenew keeps the
+    // analytics_daily path above unchanged.
+    if (!brand.isDefault) {
+      const { data: allCarts, error: allCartsError } = await supabaseAdmin
+        .from("abandoned_carts")
+        .select("status, cart_value")
+        .eq("store_id", store.id)
+        .limit(5000);
+      if (allCartsError) {
+        console.warn(
+          `[CartRenew] abandoned_carts totals failed for ${shop}:`,
+          describeSupabaseError(allCartsError)
+        );
+      } else {
+        metrics.trackedCarts = 0;
+        metrics.recovered = 0;
+        metrics.recoveredValue = 0;
+        for (const row of Array.isArray(allCarts) ? allCarts : []) {
+          metrics.trackedCarts += 1;
+          if (
+            typeof row.status === "string" &&
+            row.status.trim().toLowerCase() === "recovered"
+          ) {
+            metrics.recovered += 1;
+            metrics.recoveredValue += Number(row.cart_value ?? 0);
+          }
+        }
+      }
+    }
+
     return {
       store: {
         ...store,

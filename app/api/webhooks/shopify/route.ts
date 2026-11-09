@@ -755,6 +755,8 @@ async function handleCartDelete(storeId: string, payload: any) {
     .single()
 
   if (cart) {
+    // Pingza: a recovered cart is a finished sale — never rewrite it to lost.
+    if (!brand.isDefault && cart.status === 'recovered') return
     await supabaseAdmin
       .from('abandoned_carts')
       .update({ status: 'lost', updated_at: new Date().toISOString() })
@@ -767,11 +769,14 @@ async function handleCartDelete(storeId: string, payload: any) {
 // ============================================
 async function handleAppUninstalled(storeId: string, shopDomain: string) {
   try {
-    // Mark all carts for this store as lost
-    await supabaseAdmin
+    // Mark all carts for this store as lost. Pingza keeps recovered carts as
+    // recovered so the dashboard totals stay consistent with the cart list.
+    let lostQuery = supabaseAdmin
       .from('abandoned_carts')
       .update({ status: 'lost', updated_at: new Date().toISOString() })
       .eq('store_id', storeId)
+    if (!brand.isDefault) lostQuery = lostQuery.neq('status', 'recovered')
+    await lostQuery
 
     // Clear tokens + mark billing cancelled (keep row for audit / reinstall)
     await supabaseAdmin
