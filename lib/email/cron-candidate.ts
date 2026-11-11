@@ -33,7 +33,7 @@ export function cronFirstChannel(input: {
   if (!input.whatsappConsent && !input.emailConsent) return "skip_no_consent"
   const whatsappSendable = Boolean(phoneText) && resolveWhatsAppRecipient(phoneText).ok
   if (whatsappSendable && input.whatsappConsent) return "whatsapp"
-  return "email"
+  return input.emailConsent ? "email" : "skip_missing_phone"
 }
 
 export async function runCronFirstCandidate(input: {

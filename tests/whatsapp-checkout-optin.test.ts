@@ -144,6 +144,29 @@ test("consent true sends WhatsApp", async () => {
   assert.deepEqual(sent, { email: 0, whatsapp: 1 })
 })
 
+test("opted-in carts with an unsendable phone stay pending for later checkout updates", async () => {
+  for (const phone of [null, "not-a-phone"]) {
+    assert.equal(
+      cronFirstChannel({
+        isDefaultBrand: false,
+        platform: "shopify",
+        phone,
+        whatsappConsent: true,
+        emailConsent: false,
+      }),
+      "skip_missing_phone"
+    )
+
+    const { result, sent } = await runPingza({
+      phone,
+      whatsappConsent: true,
+      buyerAcceptsMarketing: false,
+    })
+    assert.deepEqual(result, { channel: "none", reason: "missing_phone" })
+    assert.deepEqual(sent, { email: 0, whatsapp: 0 })
+  }
+})
+
 test("consent false or missing never sends WhatsApp; email consent falls back to email", async () => {
   for (const whatsappConsent of [false, readCheckoutSmsMarketingConsent({}) === true]) {
     assert.equal(
