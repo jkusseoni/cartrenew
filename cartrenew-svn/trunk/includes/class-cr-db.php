@@ -93,6 +93,30 @@ class CartRenew_WC_DB {
 		return $wpdb->insert_id;
 	}
 
+	/**
+	 * Move guest cart rows to the authenticated user's key during WooCommerce's
+	 * own session migration.
+	 */
+	public static function migrate_cart_key( $old_cart_key, $new_cart_key ) {
+		if ( $old_cart_key === $new_cart_key ) {
+			return;
+		}
+
+		global $wpdb;
+		$table = self::table_name();
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- custom table, no core API available
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.NoCaching -- transient cart data, caching not beneficial
+		$wpdb->update(
+			$table,
+			array(
+				'cart_key'      => $new_cart_key,
+				'last_activity' => current_time( 'mysql' ),
+			),
+			array( 'cart_key' => $old_cart_key )
+		);
+	}
+
 	public static function mark_status( $cart_key, $status, $extra = array() ) {
 		global $wpdb;
 		$table = self::table_name();
