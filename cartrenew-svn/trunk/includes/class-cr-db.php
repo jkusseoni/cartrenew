@@ -93,14 +93,32 @@ class CartRenew_WC_DB {
 		return $wpdb->insert_id;
 	}
 
-	public static function mark_status( $cart_key, $status, $extra = array() ) {
+	/**
+	 * Return an in-flight or unclaimed cart to tracking without overwriting a
+	 * concurrent recovery/opt-out transition.
+	 */
+	public static function release_for_retry( $cart_key ) {
+		$updated = self::mark_status( $cart_key, 'tracking', array(), 'pending_send' );
+		if ( 0 < $updated ) {
+			return $updated;
+		}
+
+		return self::mark_status( $cart_key, 'tracking', array(), 'tracking' );
+	}
+
+	public static function mark_status( $cart_key, $status, $extra = array(), $expected_status = null ) {
 		global $wpdb;
 		$table = self::table_name();
 
 		$data = array_merge( array( 'status' => $status ), $extra );
+		$where = array( 'cart_key' => $cart_key );
+		if ( null !== $expected_status ) {
+			$where['status'] = $expected_status;
+		}
+
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- custom table, no core API available
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.NoCaching -- transient cart data, caching not beneficial
-		$wpdb->update( $table, $data, array( 'cart_key' => $cart_key ) );
+		return $wpdb->update( $table, $data, $where );
 	}
 
 	/**
