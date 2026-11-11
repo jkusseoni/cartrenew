@@ -93,6 +93,27 @@ class CartRenew_WC_DB {
 		return $wpdb->insert_id;
 	}
 
+	/**
+	 * Remove an active snapshot when the shopper intentionally empties the cart.
+	 * Terminal rows are retained for history, and claimed rows are left for the
+	 * cron worker that owns them.
+	 */
+	public static function delete_tracking_cart( $cart_key ) {
+		global $wpdb;
+		$table = self::table_name();
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- custom table, no core API available
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.NoCaching -- transient cart data, caching not beneficial
+		$wpdb->delete(
+			$table,
+			array(
+				'cart_key' => $cart_key,
+				'status'   => 'tracking',
+			),
+			array( '%s', '%s' )
+		);
+	}
+
 	public static function mark_status( $cart_key, $status, $extra = array() ) {
 		global $wpdb;
 		$table = self::table_name();
