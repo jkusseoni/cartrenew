@@ -390,6 +390,8 @@ export async function processFirstAttempts({ limit = 25 } = {}): Promise<Recover
     .from('abandoned_carts')
     .select(FIRST_ATTEMPT_CART_COLUMNS + CART_CONSENT_COLUMNS)
     .eq('status', 'pending')
+    .not('customer_phone', 'is', null)
+    .neq('customer_phone', '')
     .gte('created_at', since)
     .or(dueRecoveryScheduleFilter())
     .order('updated_at', { ascending: true })
@@ -412,7 +414,11 @@ export async function processFirstAttempts({ limit = 25 } = {}): Promise<Recover
 
   const results: RecoveryRunResult[] = []
 
-  for (const cart of pending.filter((row) => !attempted.has(row.id)).slice(0, limit)) {
+  const eligible = pending.filter(
+    (row) => row.customer_phone?.trim() && !attempted.has(row.id)
+  )
+
+  for (const cart of eligible.slice(0, limit)) {
     try {
       const phoneText = cart.customer_phone?.trim() ?? ''
       const whatsappConsent = cart.sms_marketing_consent === true
