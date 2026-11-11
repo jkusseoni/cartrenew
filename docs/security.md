@@ -28,7 +28,7 @@ Access events for admin / data_request / redact / export / send / retention anon
 
 ## Test vs production data
 
-- **Preview / Vercel `development` (Pingza):** if `PINGZA_PRODUCTION_SUPABASE_URL` is set and `NEXT_PUBLIC_SUPABASE_URL` points at the same host, the Supabase admin client is refused (`lib/supabase-env-guard.ts` + `lib/supabase.ts`). CartRenew skips this guard.
+- **Preview / Vercel `development` (Pingza):** `PINGZA_PRODUCTION_SUPABASE_URL` is required so the environment can prove that `NEXT_PUBLIC_SUPABASE_URL` points elsewhere. If the production URL is missing or the hosts match, the Supabase admin client is refused (`lib/supabase-env-guard.ts` + `lib/supabase.ts`). CartRenew skips this guard.
 - **Production Pingza + Shopify development stores:** separate open work / PR #65 (`devStoreGuardActive`) blocks production writes from partner development stores when that guard is merged and enabled. That is not the same as the Preview↔production Supabase check above.
 - Billing: Pingza production ignores `SHOPIFY_BILLING_TEST=true` (`isShopifyBillingTestFlagActive`).
 

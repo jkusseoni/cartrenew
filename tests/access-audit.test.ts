@@ -85,6 +85,48 @@ test("Preview cannot use production Supabase host (Pingza)", () => {
   )
 })
 
+test("Pingza Preview and development fail closed without a production Supabase URL", () => {
+  for (const vercelEnv of ["preview", "development"]) {
+    const result = assertPingzaPreviewNotOnProductionSupabase({
+      isDefaultBrand: false,
+      vercelEnv,
+      configuredUrl: "https://inherited-ref.supabase.co",
+      productionUrl: undefined,
+    })
+    assert.equal(result.ok, false, `${vercelEnv} must fail closed`)
+  }
+})
+
+test("missing production Supabase URL preserves CartRenew, production, and local behavior", () => {
+  assert.deepEqual(
+    assertPingzaPreviewNotOnProductionSupabase({
+      isDefaultBrand: true,
+      vercelEnv: "preview",
+      configuredUrl: "https://configured-ref.supabase.co",
+      productionUrl: undefined,
+    }),
+    { ok: true, skipped: "default_brand" }
+  )
+  assert.deepEqual(
+    assertPingzaPreviewNotOnProductionSupabase({
+      isDefaultBrand: false,
+      vercelEnv: "production",
+      configuredUrl: "https://configured-ref.supabase.co",
+      productionUrl: undefined,
+    }),
+    { ok: true, skipped: "production" }
+  )
+  assert.deepEqual(
+    assertPingzaPreviewNotOnProductionSupabase({
+      isDefaultBrand: false,
+      vercelEnv: undefined,
+      configuredUrl: "https://configured-ref.supabase.co",
+      productionUrl: undefined,
+    }),
+    { ok: true, skipped: "not_preview" }
+  )
+})
+
 test("CartRenew recordAccessAudit is a no-op (no insert attempt required)", () => {
   const result = spawnSync(
     process.execPath,
